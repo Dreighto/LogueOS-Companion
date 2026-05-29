@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+
+@theme {
+	--font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+	--color-background: #050505;
+	--color-surface: #111111;
+	--color-cta: #a3e635;
+
+	--color-status-green: #22c55e;
+	--color-status-amber: #f59e0b;
+	--color-status-red: #ef4444;
+	--color-status-blue: #3b82f6;
+	--color-status-purple: #a855f7;
+	--color-status-grey: #6b7280;
+
+	--color-worker-claude: #8b5cf6;
+	--color-worker-gemini: #3b82f6;
+	--color-worker-operator: #ef4444;
+
+	/* shadcn-svelte compatibility */
+	--radius: 0.5rem;
+
+	--color-primary: #a3e635;
+	--color-primary-foreground: #0d1117;
+
+	--color-secondary: #18181b;
+	--color-secondary-foreground: #ffffff;
+
+	--color-muted: #18181b;
+	--color-muted-foreground: #8b949e;
+
+	--color-accent: #18181b;
+	--color-accent-foreground: #ffffff;
+
+	--color-destructive: #f85149;
+	--color-destructive-foreground: #ffffff;
+
+	--color-border: #27272a;
+	--color-input: #27272a;
+	--color-ring: #a3e635;
+
+	/* Tailwind 4 utility-class tokens — these must live in @theme (not just
+     :root) for text-foreground / bg-card / bg-popover etc. to compile.
+     The :root block below is the legacy Tailwind 3 / shadcn convention
+     kept for any components that read CSS vars directly; these @theme
+     entries are what generates the actual utility classes. */
+	--color-foreground: #ffffff;
+	--color-card: #111111;
+	--color-card-foreground: #ffffff;
+	--color-popover: #111111;
+	--color-popover-foreground: #ffffff;
+}
+
+@layer base {
+	:root {
+		--background: #050505;
+		--foreground: #ffffff;
+		--card: #111111;
+		--card-foreground: #ffffff;
+		--popover: #111111;
+		--popover-foreground: #ffffff;
+		--primary: #a3e635;
+		--primary-foreground: #050505;
+		--secondary: #18181b;
+		--secondary-foreground: #ffffff;
+		--muted: #18181b;
+		--muted-foreground: #8b949e;
+		--accent: #18181b;
+		--accent-foreground: #ffffff;
+		--destructive: #f85149;
+		--destructive-foreground: #ffffff;
+		--border: #27272a;
+		--input: #27272a;
+		--ring: #a3e635;
+		--radius: 0.5rem;
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+		/* Eliminate the 300ms double-tap-to-zoom delay on mobile touch targets */
+		touch-action: manipulation;
+		/* Remove grey tap overlay on iOS Safari */
+		-webkit-tap-highlight-color: transparent;
+	}
+	body {
+		@apply bg-background font-sans text-foreground antialiased;
+		letter-spacing: -0.01em;
+		font-feature-settings:
+			'rlig' 1,
+			'calt' 1;
+		/* Prevent boundary scroll rubber-banding on mobile */
+		overscroll-behavior-y: none;
+	}
+
+	/* Prevent annoying accidental text selection when double tapping tabs/buttons */
+	header,
+	nav,
+	button,
+	a,
+	[role='button'],
+	[role='tab'],
+	img {
+		user-select: none;
+		-webkit-user-select: none;
+	}
+
+	/* iOS Safari auto-zooms the viewport when any input/textarea/select with a
+	   computed font-size below 16px receives focus. There is no opt-out via
+	   viewport meta that doesn't also break pinch-zoom accessibility. The fix
+	   is to enforce a 16px minimum on the inputs themselves on mobile-width
+	   screens. !important is required to override per-component Tailwind
+	   classes (text-xs / text-sm / text-[NNpx]) on existing inputs without
+	   touching every component. Desktop layouts keep their dense font sizes.
+
+	   Codified in skill `ios-pwa-input-hygiene`. New components should pick
+	   text-base on inputs from the start; this is the safety net. */
+	@media (max-width: 768px) {
+		input,
+		textarea,
+		select {
+			font-size: 16px !important;
+		}
+	}
+
+	/* Reusable class for zero-latency mobile touch feedback */
+	.active-trigger {
+		transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1);
+	}
+	.active-trigger:active {
+		transform: scale(0.96);
+		opacity: 0.85;
+	}
+
+	/* Global Inter typography polish. cv11 disambiguates l/I (single-storey g
+	   stays default), ss01/ss03 are Inter's stylistic sets that flatten the
+	   one-storey a and tilt the open-quote — together they read closer to
+	   the proportions of Geist / SF. Antialiasing + optical sizing keep small
+	   sizes crisp on phone screens. */
+	body {
+		font-feature-settings:
+			'cv11' 1,
+			'ss01' 1,
+			'ss03' 1,
+			'tnum' 1,
+			'kern' 1;
+		font-optical-sizing: auto;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		text-rendering: optimizeLegibility;
+	}
+}
