@@ -56,6 +56,10 @@ export interface RealtimeVoiceController {
 	readonly replyText: string;
 	/** Whether the streaming reply text is shown (false = voice-only). */
 	readonly captions: boolean;
+	/** Turn-taking mode: 'ptt' = push-to-talk, 'continuous' = hands-free (VAD). */
+	readonly mode: VoiceInputMode;
+	/** Continuous mic is muted (hands-free only — gates outbound audio). */
+	readonly muted: boolean;
 	/** Push-to-talk is currently held. */
 	readonly holding: boolean;
 	/** Both speech services are up and the WS is ready. */
@@ -72,11 +76,19 @@ export interface RealtimeVoiceController {
 	pressEnd: () => void;
 	/** Toggle the streaming reply captions (voice-only when off). */
 	toggleCaptions: () => void;
+	/** Switch between push-to-talk and hands-free continuous mode. */
+	toggleMode: () => void;
+	/** Mute/unmute the hands-free mic (continuous only). */
+	toggleMute: () => void;
+	/** Interrupt the companion mid-reply (barge-in): stop reply + playback, listen again. */
+	interrupt: () => void;
 	/** Re-resume the audio contexts (call on visibilitychange — iOS suspends them). */
 	resumeAudio: () => void;
 	/** onDestroy hook — release everything. */
 	destroy: () => Promise<void>;
 }
+
+export type VoiceInputMode = 'ptt' | 'continuous';
 
 interface VoiceConfig {
 	voiceEnabled: boolean;
@@ -84,6 +96,7 @@ interface VoiceConfig {
 	ttsPath: string;
 	captionsDefault: boolean;
 	pttDefault: boolean;
+	continuousDefault?: boolean;
 	voiceRef?: string;
 }
 
@@ -97,6 +110,8 @@ export function createRealtimeVoiceController(
 	let userText = $state('');
 	let replyText = $state('');
 	let captions = $state(true);
+	let mode = $state<VoiceInputMode>('ptt');
+	let muted = $state(false);
 	let holding = $state(false);
 	let servicesReady = $state(false);
 	let errorMsg = $state<string | null>(null);
@@ -215,12 +230,16 @@ export function createRealtimeVoiceController(
 	}
 
 	// A turn is finished once the reply stream has ended, nothing is queued or
-	// being synthesized, and every scheduled audio node has played out. Then we
-	// drop back to 'idle' (ready for the next push-to-talk) and sync the feed.
+	// being synthesized, and every scheduled audio node has played out. In PTT we
+	// rest at 'idle' (ready for the next press); in continuous we auto-re-arm
+	// listening so the hands-free conversation keeps flowing (unless muted).
 	function maybeFinishTurn() {
 		if (!open) return;
 		if (replyDone && !pumping && ttsQueue.length === 0 && activeSources.length === 0) {
-			if (phase === 'speaking' || phase === 'thinking') phase = 'idle';
+			if (phase === 'speaking' || phase === 'thinking') {
+				if (mode === 'continuous' && !muted) beginListening();
+				else phase = 'idle';
+			}
 		}
 	}
 
@@ -302,7 +321,8 @@ export function createRealtimeVoiceController(
 		}
 		switch (m.type) {
 			case 'partial':
-				if (holding) partial = m.text ?? '';
+				// Show live partials while actively listening (PTT held or continuous).
+				if (phase === 'listening') partial = m.text ?? '';
 				break;
 			case 'final':
 				handleFinal(m.text ?? '');
@@ -319,8 +339,10 @@ export function createRealtimeVoiceController(
 		const t = text.trim();
 		userText = t;
 		if (!t) {
-			// Nothing intelligible heard — drop back to idle, no reply.
-			if (phase === 'thinking') phase = 'idle';
+			// Nothing intelligible heard. In continuous mode re-arm listening so the
+			// hands-free loop keeps going; in PTT drop back to idle for the next press.
+			if (mode === 'continuous' && !muted && open) beginListening();
+			else if (phase === 'thinking' || phase === 'listening') phase = 'idle';
 			return;
 		}
 		void startReply(t);
@@ -348,7 +370,11 @@ export function createRealtimeVoiceController(
 					clearTimeout(openTimer);
 					try {
 						socket.send(
-							JSON.stringify({ type: 'config', sampleRate: micCtx?.sampleRate ?? 48000 })
+							JSON.stringify({
+								type: 'config',
+								sampleRate: micCtx?.sampleRate ?? 48000,
+								continuous: mode === 'continuous'
+							})
 						);
 					} catch {
 						/* will surface on first send */
@@ -398,8 +424,12 @@ export function createRealtimeVoiceController(
 		micSource = micCtx.createMediaStreamSource(micStream);
 		workletNode = new AudioWorkletNode(micCtx, 'pcm-capture');
 		workletNode.port.onmessage = (e: MessageEvent) => {
-			// Only ship audio while PTT is held; the worklet runs continuously.
-			if (holding && ws && ws.readyState === WebSocket.OPEN) {
+			// The worklet captures continuously; we gate WHAT we ship. PTT: while
+			// held. Continuous: while actively listening (NOT during thinking/
+			// speaking — that would feed the companion's own TTS back into the open
+			// mic, which browser echo-cancellation can't catch for AudioContext
+			// playback). Muting hard-gates in both modes.
+			if (shouldStreamAudio() && ws && ws.readyState === WebSocket.OPEN) {
 				ws.send(e.data as ArrayBuffer);
 			}
 		};
@@ -458,6 +488,7 @@ export function createRealtimeVoiceController(
 		userText = '';
 		replyText = '';
 		replyDone = true;
+		muted = false;
 
 		// In-gesture, SYNCHRONOUS: create + resume the audio contexts NOW so iOS
 		// unlocks them. Any later (post-await) creation loses the user-gesture
@@ -480,6 +511,7 @@ export function createRealtimeVoiceController(
 				wsPath = cfg.wsPath || wsPath;
 				ttsPath = cfg.ttsPath || ttsPath;
 				captions = cfg.captionsDefault ?? true;
+				mode = cfg.continuousDefault ? 'continuous' : 'ptt';
 				voiceRef = cfg.voiceRef;
 			}
 
@@ -510,7 +542,10 @@ export function createRealtimeVoiceController(
 				/* no wake lock — fine */
 			}
 
-			phase = 'idle';
+			// Continuous mode starts listening immediately (hands-free); PTT waits
+			// for the operator to press and hold.
+			if (mode === 'continuous') beginListening();
+			else phase = 'idle';
 		} catch (e) {
 			errorMsg = e instanceof Error ? e.message : 'Voice mode failed to start.';
 			phase = 'error';
@@ -521,6 +556,7 @@ export function createRealtimeVoiceController(
 		if (!open) return;
 		open = false;
 		holding = false;
+		muted = false;
 		partial = '';
 
 		abortReply();
@@ -559,6 +595,45 @@ export function createRealtimeVoiceController(
 		void deps.pollMessages();
 	}
 
+	// Should the worklet ship the current mic chunk to the STT socket? PTT: only
+	// while held. Continuous: only while actively listening (never during
+	// thinking/speaking — avoids feeding the companion's TTS back in). Mute is a
+	// hard gate in both modes.
+	function shouldStreamAudio(): boolean {
+		if (muted) return false;
+		if (mode === 'continuous') return phase === 'listening';
+		return holding;
+	}
+
+	function wsSend(obj: Record<string, unknown>) {
+		if (ws && ws.readyState === WebSocket.OPEN) {
+			try {
+				ws.send(JSON.stringify(obj));
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+
+	// Start (or re-arm) a clean listening turn: clear the utterance/reply state,
+	// reset the server buffer + VAD, open the mic gate. Shared by the PTT press,
+	// the continuous auto-loop, mute-release, and barge-in.
+	function beginListening() {
+		replyText = '';
+		userText = '';
+		partial = '';
+		replyDone = true;
+		wsSend({ type: 'reset' });
+		phase = 'listening';
+	}
+
+	// End the current utterance and wait for the reply. PTT only — in continuous
+	// the SERVER's VAD decides the endpoint and sends the final unprompted.
+	function finalizeUtterance() {
+		wsSend({ type: 'stop' });
+		phase = 'thinking';
+	}
+
 	async function pressStart() {
 		if (!open || phase === 'connecting' || phase === 'error') return;
 		resumeAudio();
@@ -567,38 +642,59 @@ export function createRealtimeVoiceController(
 			abortReply();
 			stopPlayback();
 		}
-		replyText = '';
-		userText = '';
-		partial = '';
-		replyDone = true;
-		// Tell the STT server to start a clean utterance buffer.
-		if (ws && ws.readyState === WebSocket.OPEN) {
-			try {
-				ws.send(JSON.stringify({ type: 'reset' }));
-			} catch {
-				/* ignore */
-			}
-		}
 		holding = true;
-		phase = 'listening';
+		beginListening();
 	}
 
 	function pressEnd() {
 		if (!holding) return;
 		holding = false;
-		if (ws && ws.readyState === WebSocket.OPEN) {
-			try {
-				ws.send(JSON.stringify({ type: 'stop' }));
-			} catch {
-				/* ignore */
-			}
+		finalizeUtterance();
+	}
+
+	// Barge-in for continuous mode (e.g. tapping the orb while it's speaking):
+	// stop the reply + playback and listen again.
+	function interrupt() {
+		if (!open) return;
+		if (phase === 'thinking' || phase === 'speaking') {
+			abortReply();
+			stopPlayback();
+			if (mode === 'continuous' && !muted) beginListening();
+			else phase = 'idle';
 		}
-		// Wait for the server's final → handleFinal kicks off the reply.
-		phase = 'thinking';
 	}
 
 	function toggleCaptions() {
 		captions = !captions;
+	}
+
+	function toggleMode() {
+		if (!open) return;
+		mode = mode === 'ptt' ? 'continuous' : 'ptt';
+		holding = false;
+		abortReply();
+		stopPlayback();
+		// Re-inform the server so it enables/disables VAD auto-endpointing.
+		wsSend({ type: 'config', sampleRate: micCtx?.sampleRate ?? 48000, continuous: mode === 'continuous' });
+		if (mode === 'continuous' && !muted) beginListening();
+		else {
+			wsSend({ type: 'reset' });
+			partial = '';
+			phase = 'idle';
+		}
+	}
+
+	function toggleMute() {
+		muted = !muted;
+		if (muted) {
+			// Stop sending mic audio + clear any half-captured utterance server-side.
+			wsSend({ type: 'reset' });
+			partial = '';
+			if (phase === 'listening') phase = 'idle';
+		} else if (mode === 'continuous' && open && phase === 'idle') {
+			// Resume hands-free listening (only when at rest, not mid reply/speak).
+			beginListening();
+		}
 	}
 
 	return {
@@ -620,6 +716,12 @@ export function createRealtimeVoiceController(
 		get captions() {
 			return captions;
 		},
+		get mode() {
+			return mode;
+		},
+		get muted() {
+			return muted;
+		},
 		get holding() {
 			return holding;
 		},
@@ -634,6 +736,9 @@ export function createRealtimeVoiceController(
 		pressStart,
 		pressEnd,
 		toggleCaptions,
+		toggleMode,
+		toggleMute,
+		interrupt,
 		resumeAudio,
 		destroy: () => exit()
 	};

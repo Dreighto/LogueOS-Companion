@@ -15,7 +15,11 @@ export const GET: RequestHandler = () => {
 		// Per-sentence TTS endpoint (same origin, server-proxied to Chatterbox).
 		ttsPath: '/api/chat/speak-local',
 		captionsDefault: true, // show streaming assistant text by default; user can toggle voice-only
-		// iOS continuous hands-free is foreground-only; push-to-talk is the reliable default.
-		pttDefault: true
+		// Hands-free is the operator's primary workflow (wireless headphones + in-app
+		// mute). Server-side Silero VAD endpoints the turn; the Mute button gates the
+		// mic while listening/thinking. PTT stays available via the in-overlay toggle
+		// (better for noisy rooms / no headphones / iOS backgrounding).
+		pttDefault: false,
+		continuousDefault: true
 	});
 };
