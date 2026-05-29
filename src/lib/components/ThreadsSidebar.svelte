@@ -91,9 +91,12 @@
 		: '-translate-x-full lg:pointer-events-none lg:w-0 lg:opacity-0'}"
 >
 	<!-- Sidebar Header -->
-	<div class="flex shrink-0 items-center justify-between border-b border-zinc-800/50 px-4 py-4">
+	<div
+		class="flex shrink-0 items-center justify-between border-b border-zinc-800/50 px-4 pt-4 pb-4"
+		style="padding-top: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));"
+	>
 		<div class="flex items-center gap-2">
-			<img src="{base}/favicon.png" alt="LogueOS" class="h-6 w-6" />
+			<img src="{base}/favicon.png" alt="Companion" class="h-6 w-6" />
 			<span class="font-mono text-xs font-semibold tracking-wider text-zinc-300 uppercase"
 				>Sessions</span
 			>
@@ -165,7 +168,6 @@
 									type="text"
 									bind:value={renameDraft}
 									class="flex-1 bg-transparent text-xs text-white focus:outline-none"
-									autofocus
 									onkeydown={(e) => {
 										if (e.key === 'Escape') oncancelRename();
 									}}
@@ -285,6 +287,7 @@
 	<!-- Sidebar Footer info -->
 	<div
 		class="shrink-0 space-y-0.5 border-t border-zinc-800/50 bg-black/25 p-3 font-mono text-[9px] text-zinc-600 select-none"
+		style="padding-bottom: max(0.75rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem));"
 	>
 		<div>CORE: LogueOS-Console</div>
 		<div>HOST: 127.0.0.1:18080</div>

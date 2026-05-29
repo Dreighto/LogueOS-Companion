@@ -118,7 +118,7 @@
 	role="presentation"
 ></div>
 
-<aside
+<div
 	class="canvas-panel"
 	role="dialog"
 	aria-modal="true"
@@ -157,7 +157,7 @@
 	<div class="canvas-body">
 		<pre class="canvas-pre"><code class="hljs language-{language}">{@html highlighted}</code></pre>
 	</div>
-</aside>
+</div>
 
 <style>
 	.canvas-backdrop {
@@ -201,7 +201,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
-		padding: 0.5rem 0.75rem;
+		padding: max(0.5rem, calc(env(safe-area-inset-top, 0px) + 0.5rem)) 0.75rem 0.5rem;
 		border-bottom: 1px solid rgb(255 255 255 / 0.06);
 		background: rgb(255 255 255 / 0.02);
 	}
@@ -269,7 +269,7 @@
 	}
 	.canvas-pre {
 		margin: 0;
-		padding: 1rem 1.1rem;
+		padding: 1rem 1.1rem max(1rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
 		font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 		font-size: 0.82rem;
 		line-height: 1.5;

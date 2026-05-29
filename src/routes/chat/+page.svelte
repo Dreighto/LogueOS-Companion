@@ -42,10 +42,10 @@
 	// ─────────────────────────────────────────────────────────────────────
 	// `ChatMessage` (the client view-model row) now lives in $lib/types/chat-ui
 	// so the voice controller can share it.
-	let messages = $state<ChatMessage[]>(data.messages || []);
-	let activeThread = $state(data.activeThread || 'default');
-	let workspaces = $state(data.workspaces || []);
-	let threads = $state(data.threads || []);
+	let messages = $state<ChatMessage[]>(untrack(() => data.messages || []));
+	let activeThread = $state(untrack(() => data.activeThread || 'default'));
+	let workspaces = $state(untrack(() => data.workspaces || []));
+	let threads = $state(untrack(() => data.threads || []));
 
 	let textDraft = $state('');
 	let selectedRepo = $state('LogueOS-Console');
@@ -1319,7 +1319,7 @@
 </script>
 
 <svelte:head>
-	<title>LogueOS — Conversational Kernel</title>
+	<title>Companion</title>
 </svelte:head>
 
 <!-- Persistent audio element for ElevenLabs speech -->

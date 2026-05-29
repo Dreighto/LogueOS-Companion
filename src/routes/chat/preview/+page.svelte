@@ -92,7 +92,10 @@
 	></div>
 
 	<!-- Header -->
-	<header class="relative z-10 flex shrink-0 items-center justify-between px-4 pt-3 pb-2 select-none">
+	<header
+		class="relative z-10 flex shrink-0 items-center justify-between px-4 pt-3 pb-2 select-none"
+		style="padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));"
+	>
 		<a
 			href={resolve('/chat')}
 			class="flex h-9 items-center gap-1.5 rounded-xl border border-zinc-800/80 bg-zinc-950/60 px-3 text-xs text-zinc-400 transition-all hover:text-white active:scale-95"
@@ -234,7 +237,7 @@
 				autocapitalize="sentences"
 				spellcheck="false"
 				disabled={chat.status === 'streaming' || chat.status === 'submitted'}
-				class="w-full resize-none bg-transparent px-1 py-1 font-sans text-[14px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500"
+				class="w-full resize-none bg-transparent px-1 py-1 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500"
 				style="min-height: 40px; max-height: 480px;"
 				data-testid="composer"
 			></textarea>
