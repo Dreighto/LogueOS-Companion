@@ -22,6 +22,8 @@
 		ChatMessage
 	} from '$lib/types/chat-ui';
 	import { MODEL_CHOICES } from '$lib/chat/model-choices';
+	import { createThreadsController } from '$lib/chat/threads.svelte';
+	import { createSlashCommandsController } from '$lib/chat/slash-commands';
 	import { createVoiceController } from '$lib/chat/voice.svelte';
 	import { createRealtimeVoiceController } from '$lib/chat/realtime-voice.svelte';
 	import { replaceState } from '$app/navigation';
@@ -45,10 +47,29 @@
 	// `ChatMessage` (the client view-model row) now lives in $lib/types/chat-ui
 	// so the voice controller can share it.
 	let messages = $state<ChatMessage[]>(untrack(() => data.messages || []));
-	let activeThread = $state(untrack(() => data.activeThread || 'default'));
 	let workspaces = $state(untrack(() => data.workspaces || []));
-	let threads = $state(untrack(() => data.threads || []));
-
+	// Threads + active-thread state + every CRUD action are owned by the
+	// controller (PR E1). Page reads go through `threadsCtrl.*`; bindable
+	// sidebar state uses controller getter/setter pairs.
+	const threadsCtrl = createThreadsController({
+		getInitialThreads: () => data.threads || [],
+		getInitialActiveThread: () => data.activeThread || 'default',
+		setMessages: (next) => {
+			messages = next;
+		},
+		setSidebarOpen: (v) => {
+			sidebarOpen = v;
+		},
+		pollMessages: (threadId) => pollMessages(threadId),
+		loadTier: (threadId) => loadTier(threadId),
+		syncUrlThread: (threadId) => {
+			try {
+				replaceState(resolve('/chat') + '?thread=' + encodeURIComponent(threadId), {});
+			} catch {
+				/* navigation failure shouldn't break the in-page switch */
+			}
+		}
+	});
 	let textDraft = $state('');
 	// Initial workspace from the loader — fork-aware (companion mode starts on
 	// 'companion', wired mode on 'LogueOS-Console'). Never hard-code the wired
@@ -89,10 +110,9 @@
 	let composerMode = $state<ComposerMode>('idle');
 	let openChip = $state<null | 'repo' | 'thread'>(null);
 
-	// Sidebar / thread-management state — declared up here (not next to the
-	// rest of thread-management code lower in the file) so the global popover
-	// handler can reference it without forward-declaration issues.
-	let threadMenuOpenFor = $state<string | null>(null);
+	// threadMenuOpenFor (and renamingFor / renameDraft / showArchived) live on
+	// threadsCtrl now (PR E1) — the global popover handler reads
+	// `threadsCtrl.threadMenuOpenFor` and writes via the controller's setter.
 
 	// Close every open popover. Used by the global Escape + click-outside
 	// handler below. Replaces the per-popover `fixed inset-0 z-40` backdrop
@@ -102,7 +122,7 @@
 	function closeAllPopovers() {
 		openChip = null;
 		showModelOverrideModal = false;
-		threadMenuOpenFor = null;
+		threadsCtrl.threadMenuOpenFor = null;
 	}
 
 	// Global popover dismiss — keyboard Escape + click outside any popover
@@ -115,7 +135,7 @@
 	// popover. Net result: clicking one trigger while another popover is
 	// open swaps the popovers in a single tap.
 	$effect(() => {
-		const anyOpen = openChip !== null || showModelOverrideModal || threadMenuOpenFor !== null;
+		const anyOpen = openChip !== null || showModelOverrideModal || threadsCtrl.threadMenuOpenFor !== null;
 		if (!anyOpen) return;
 		function onKey(e: KeyboardEvent) {
 			if (e.key === 'Escape') {
@@ -152,7 +172,7 @@
 	// page-owned (it spans idle/focused/recording/talkback) and the controller
 	// writes it through setComposerMode.
 	const voice = createVoiceController({
-		getActiveThread: () => activeThread,
+		getActiveThread: () => threadsCtrl.activeThread,
 		getSelectedRepo: () => selectedRepo,
 		getMessages: () => messages,
 		getAudioEl: () => audioEl,
@@ -175,7 +195,7 @@
 	// Distinct from the legacy in-composer `voice` Talkback loop above; entered
 	// from the Composer's Voice button and rendered as a full-screen overlay.
 	const rtVoice = createRealtimeVoiceController({
-		getActiveThread: () => activeThread,
+		getActiveThread: () => threadsCtrl.activeThread,
 		pollMessages
 	});
 
@@ -205,7 +225,7 @@
 		transport: new DefaultChatTransport({
 			api: resolve('/api/chat/sdk-stream'),
 			body: () => ({
-				thread: activeThread,
+				thread: threadsCtrl.activeThread,
 				target_repo: selectedRepo,
 				provider: providerOverride === 'gemini' ? 'google' : (providerOverride ?? undefined),
 				model: modelOverride ?? undefined
@@ -272,7 +292,7 @@
 		const text = textDraft;
 		if (draftDebounceTimer) clearTimeout(draftDebounceTimer);
 		draftDebounceTimer = setTimeout(() => {
-			const tid = activeThread;
+			const tid = threadsCtrl.activeThread;
 			void fetch(resolve(`/api/chat/drafts?thread_id=${encodeURIComponent(tid)}`), {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
@@ -427,7 +447,7 @@
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					thread_id: activeThread,
+					thread_id: threadsCtrl.activeThread,
 					tier: choice.tier,
 					provider: choice.provider
 				})
@@ -437,7 +457,7 @@
 				if (body.current_tier) currentTier = body.current_tier as Tier;
 				operatorOverride = (body.operator_override ?? null) as Tier | null;
 				providerOverride = (body.provider_override ?? null) as ProviderPref;
-				await loadTier(activeThread);
+				await loadTier(threadsCtrl.activeThread);
 				toasts.add(`Model set to ${choice.label}`, 'success');
 			}
 		} catch {
@@ -452,7 +472,7 @@
 		// new thread's (empty) messages with the previous thread's content —
 		// exact symptom the operator reported: "old thread shows up instead
 		// of a clean slate."
-		const requestedThread = forThread ?? activeThread;
+		const requestedThread = forThread ?? threadsCtrl.activeThread;
 		// Skip the reconciliation while an SDK stream is in flight — the
 		// placeholder bubble's partial text would get wiped by the DB-driven
 		// replacement (which doesn't yet contain the streaming reply). The
@@ -469,7 +489,7 @@
 			if (!r.ok) return;
 			// Drop the response if the operator switched threads while the
 			// fetch was in flight. The 3s poll will re-fire with the new thread.
-			if (requestedThread !== activeThread) return;
+			if (requestedThread !== threadsCtrl.activeThread) return;
 			const b = await r.json();
 			const newMessages: ChatMessage[] = b.messages || [];
 			if (
@@ -588,7 +608,7 @@
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						message: messageBody,
-						thread: activeThread,
+						thread: threadsCtrl.activeThread,
 						target_repo: selectedRepo,
 						image: isGenImage || undefined
 					})
@@ -757,7 +777,7 @@
 				timestamp: new Date().toISOString()
 			} as ChatMessage
 		];
-		streamState = { placeholderId: STREAM_ID, threadId: activeThread };
+		streamState = { placeholderId: STREAM_ID, threadId: threadsCtrl.activeThread };
 
 		// Reset SDK chat history before each send — the server assembles the
 		// real context from chat_messages DB. We use sdkChat strictly as a
@@ -930,240 +950,9 @@
 	// humanSize moved into <Composer /> with the staged-attachments chip row
 	// in Task #7 PR 4.
 
-	// ─────────────────────────────────────────────────────────────────────
-	// Sidebar / Thread Management
-	// ─────────────────────────────────────────────────────────────────────
-	async function switchThread(threadId: string) {
-		if (threadId === activeThread) {
-			sidebarOpen = false;
-			return;
-		}
-		activeThread = threadId;
-		sidebarOpen = false;
-		messages = [];
-		// Pass the target thread explicitly so pollMessages can drop the
-		// response if another switch happens before this fetch returns.
-		await pollMessages(threadId);
-		await loadTier(threadId);
-		// Sync the URL's ?thread= query param without triggering a server
-		// data re-fetch. goto() re-runs +page.server.ts load() which fires
-		// DB reads + a network round-trip every thread switch — and on iOS PWA,
-		// if that fetch hits the service worker while the network hiccups, the
-		// SW's fallback returns a plain-text 503 that SvelteKit can't parse,
-		// surfacing as "Network connection unavailable." to the operator.
-		// replaceState() does a shallow navigation: URL bar updates, no load()
-		// re-run, no network request.
-		try {
-			replaceState(resolve('/chat') + '?thread=' + encodeURIComponent(threadId), {});
-		} catch {
-			/* navigation failure shouldn't break the in-page switch */
-		}
-	}
-
 	function switchRepo(name: string) {
 		selectedRepo = name;
 		openChip = null;
-	}
-
-	function slugifyThreadName(name: string): string {
-		return (
-			name
-				.trim()
-				.toLowerCase()
-				.replace(/[^a-z0-9-]+/g, '-')
-				.replace(/^-+|-+$/g, '')
-				.slice(0, 40) || 'thread'
-		);
-	}
-
-	// Resolve a guaranteed-clean slug for a new thread. Checks both the local
-	// sidebar list AND the DB for residual messages — covers three cases the
-	// operator hit:
-	//   (1) name collides with an active thread → suffix -2, -3, ...
-	//   (2) name collides with an archived-and-hidden thread → suffix
-	//   (3) name collides with orphan chat_messages rows left behind by a
-	//       Clear-All / Delete that didn't fully cascade → suffix
-	// Without this, switchThread() would re-open the existing/orphan thread
-	// and pollMessages() would surface the old content — which is exactly
-	// what the operator described as "the old thread shows up instead of a
-	// clean slate."
-	async function findUniqueSlug(baseSlug: string): Promise<string> {
-		const localUsed = new Set(threads.map((t) => t.thread_id));
-		let slug = baseSlug;
-		let i = 1;
-		while (i < 200) {
-			if (!localUsed.has(slug)) {
-				// Probe the DB — orphan rows survive a failed delete.
-				try {
-					const r = await fetch(
-						resolve('/api/chat') + `?thread=${encodeURIComponent(slug)}&limit=1`
-					);
-					if (r.ok) {
-						const b = await r.json();
-						if (!Array.isArray(b.messages) || b.messages.length === 0) return slug;
-					} else {
-						return slug; // assume free if probe failed
-					}
-				} catch {
-					return slug; // offline → assume free
-				}
-			}
-			i++;
-			slug = `${baseSlug}-${i}`;
-		}
-		return `${baseSlug}-${Date.now()}`; // safety net — shouldn't reach here
-	}
-
-	// ChatGPT-style: click + and you immediately get a new thread. No prompt
-	// (`window.prompt()` is silently blocked on iOS Safari + most PWAs, which
-	// is exactly the surface the operator runs on most). Auto-generates a
-	// slug like "chat-7m3q2" — short, collision-tolerant via findUniqueSlug,
-	// rename via the ⋮ menu after the first message lands. Mirrors how
-	// ChatGPT/Claude/Gemini all behave.
-	async function newThread() {
-		const stamp = Date.now().toString(36).slice(-5);
-		const baseSlug = `chat-${stamp}`;
-		const slug = await findUniqueSlug(baseSlug);
-		const title = 'New thread';
-		threads = [
-			{
-				thread_id: slug,
-				title,
-				archived: false,
-				pinned: false,
-				message_count: 0,
-				latest_ts: ''
-			},
-			...threads
-		];
-		void switchThread(slug);
-	}
-
-	// ─────────────────────────────────────────────────────────────────────
-	// Thread management — rename / archive / delete / clear-all. Backend is
-	// /api/chat/threads/[id] PATCH (title/archived) + DELETE (archived only).
-	// `threadMenuOpenFor` is declared up near the other popover-state vars so
-	// the global Escape / click-outside handler can reference it.
-	// ─────────────────────────────────────────────────────────────────────
-	let renamingFor = $state<string | null>(null);
-	let renameDraft = $state('');
-	let showArchived = $state(false);
-
-	function openRename(t: { thread_id: string; title: string }) {
-		threadMenuOpenFor = null;
-		renamingFor = t.thread_id;
-		renameDraft = t.title || t.thread_id;
-	}
-	async function commitRename(threadId: string) {
-		const title = renameDraft.trim();
-		renamingFor = null;
-		if (!title) return;
-		// Optimistic update.
-		threads = threads.map((t) => (t.thread_id === threadId ? { ...t, title } : t));
-		try {
-			await fetch(resolve(`/api/chat/threads/${encodeURIComponent(threadId)}`), {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ title })
-			});
-		} catch {
-			toasts.add('Rename failed — try again', 'error');
-		}
-	}
-	function cancelRename() {
-		renamingFor = null;
-		renameDraft = '';
-	}
-
-	async function toggleArchive(t: { thread_id: string; archived: boolean }) {
-		threadMenuOpenFor = null;
-		const archived = !t.archived;
-		threads = threads.map((x) => (x.thread_id === t.thread_id ? { ...x, archived } : x));
-		try {
-			await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ archived })
-			});
-			toasts.add(archived ? `Archived "${t.thread_id}"` : `Restored "${t.thread_id}"`, 'success');
-		} catch {
-			toasts.add('Archive failed', 'error');
-		}
-	}
-
-	async function togglePin(t: { thread_id: string; pinned: boolean }) {
-		threadMenuOpenFor = null;
-		const pinned = !t.pinned;
-		threads = threads.map((x) => (x.thread_id === t.thread_id ? { ...x, pinned } : x));
-		try {
-			await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ pinned })
-			});
-			toasts.add(pinned ? `Pinned "${t.thread_id}"` : `Unpinned "${t.thread_id}"`, 'success');
-		} catch {
-			toasts.add('Pin update failed', 'error');
-		}
-	}
-
-	async function deleteThreadById(t: { thread_id: string; archived: boolean }) {
-		threadMenuOpenFor = null;
-		// Backend requires archived=true before delete. Auto-archive if needed.
-		if (!t.archived) {
-			await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ archived: true })
-			}).catch(() => null);
-		}
-		const ok = window.confirm(
-			`Delete thread "${t.thread_id}"? This permanently removes all messages, drafts, and metadata for it.`
-		);
-		if (!ok) return;
-		try {
-			const r = await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-				method: 'DELETE'
-			});
-			if (!r.ok) throw new Error(`HTTP ${r.status}`);
-			threads = threads.filter((x) => x.thread_id !== t.thread_id);
-			if (activeThread === t.thread_id) {
-				// Switch to the next available thread, or a fresh one if list is empty.
-				const next = threads[0]?.thread_id;
-				if (next) await switchThread(next);
-				else await newThread();
-			}
-			toasts.add(`Deleted "${t.thread_id}"`, 'success');
-		} catch (e) {
-			toasts.add(`Delete failed: ${e instanceof Error ? e.message : 'unknown'}`, 'error');
-		}
-	}
-
-	async function clearAllSessions() {
-		const ok = window.confirm(
-			'Archive and delete every thread? This cannot be undone. A fresh thread will be created after.'
-		);
-		if (!ok) return;
-		let removed = 0;
-		for (const t of threads) {
-			try {
-				await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ archived: true })
-				});
-				const r = await fetch(resolve(`/api/chat/threads/${encodeURIComponent(t.thread_id)}`), {
-					method: 'DELETE'
-				});
-				if (r.ok) removed++;
-			} catch {
-				/* skip */
-			}
-		}
-		threads = [];
-		toasts.add(`Cleared ${removed} thread${removed === 1 ? '' : 's'}`, 'success');
-		// Hand the operator a fresh thread instead of an empty surface.
-		await newThread();
 	}
 
 	// ─────────────────────────────────────────────────────────────────────
@@ -1201,7 +990,7 @@
 					body: JSON.stringify({
 						sender: 'system',
 						message: '--- NEW CONVERSATION ---',
-						thread: activeThread,
+						thread: threadsCtrl.activeThread,
 						agent: 'silent'
 					})
 				}).catch(() => null);
@@ -1214,17 +1003,17 @@
 			usage: '/new <name>',
 			description: 'Create + switch to a new thread',
 			run: async (rest) => {
-				const baseSlug = slugifyThreadName(rest);
+				const baseSlug = threadsCtrl.slugifyThreadName(rest);
 				if (!baseSlug || baseSlug === 'thread') {
 					toasts.add('Thread name required: /new my-feature', 'error');
 					return;
 				}
-				const slug = await findUniqueSlug(baseSlug);
+				const slug = await threadsCtrl.findUniqueSlug(baseSlug);
 				const title = slug === baseSlug ? rest.trim() || slug : slug;
 				if (slug !== baseSlug) {
 					toasts.add(`"${baseSlug}" was taken — created "${slug}" for a clean slate.`, 'info');
 				}
-				threads = [
+				threadsCtrl.threads = [
 					{
 						thread_id: slug,
 						title,
@@ -1233,9 +1022,9 @@
 						message_count: 0,
 						latest_ts: ''
 					},
-					...threads
+					...threadsCtrl.threads
 				];
-				await switchThread(slug);
+				await threadsCtrl.switchThread(slug);
 				toasts.add(`Switched to thread "${slug}"`, 'success');
 			}
 		},
@@ -1348,7 +1137,7 @@
 	let sentinelObs: IntersectionObserver | null = null;
 
 	onMount(() => {
-		void loadTier(activeThread);
+		void loadTier(threadsCtrl.activeThread);
 		// Restore this device's tools-unlock code (set previously via /unlock).
 		try {
 			toolsKey = localStorage.getItem('companion-tools-key') ?? '';
@@ -1381,6 +1170,7 @@
 		sentinelObs?.disconnect();
 		if (draftDebounceTimer) clearTimeout(draftDebounceTimer);
 		if (activityFadeTimer) clearTimeout(activityFadeTimer);
+		threadsCtrl.destroy?.();
 		void voice.destroy();
 		void rtVoice.destroy();
 	});
@@ -1440,23 +1230,23 @@
 	     COLLAPSIBLE THREADS SIDEBAR (PR 7 redone for Conversational OS)
 	     ═════════════════════════════════════════════════════════════════ -->
 	<ThreadsSidebar
-		{threads}
-		{activeThread}
+		threads={threadsCtrl.threads}
+		activeThread={threadsCtrl.activeThread}
 		bind:sidebarOpen
-		bind:showArchived
-		bind:renamingFor
-		bind:renameDraft
-		bind:threadMenuOpenFor
-		onswitchThread={(id) => void switchThread(id)}
-		onnewThread={() => void newThread()}
+		bind:showArchived={threadsCtrl.showArchived}
+		bind:renamingFor={threadsCtrl.renamingFor}
+		bind:renameDraft={threadsCtrl.renameDraft}
+		bind:threadMenuOpenFor={threadsCtrl.threadMenuOpenFor}
+		onswitchThread={(id) => void threadsCtrl.switchThread(id)}
+		onnewThread={() => void threadsCtrl.newThread()}
 		oncloseSidebar={() => (sidebarOpen = false)}
-		oncommitRename={(id) => void commitRename(id)}
-		oncancelRename={cancelRename}
-		ontogglePin={(t) => void togglePin(t)}
-		ontoggleArchive={(t) => void toggleArchive(t)}
-		ondeleteThread={(t) => void deleteThreadById(t)}
-		onopenRename={openRename}
-		onclearAll={() => void clearAllSessions()}
+		oncommitRename={(id) => void threadsCtrl.commitRename(id)}
+		oncancelRename={threadsCtrl.cancelRename}
+		ontogglePin={(t) => void threadsCtrl.togglePin(t)}
+		ontoggleArchive={(t) => void threadsCtrl.toggleArchive(t)}
+		ondeleteThread={(t) => void threadsCtrl.deleteThreadById(t)}
+		onopenRename={threadsCtrl.openRename}
+		onclearAll={() => void threadsCtrl.clearAllSessions()}
 		coreLabel={data.appIdentity?.coreLabel ?? 'LogueOS-Console'}
 	/>
 
