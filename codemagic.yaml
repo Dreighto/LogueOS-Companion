@@ -32,9 +32,6 @@ workflows:
       app_store_connect: codemagic      # App Store Connect API key integration (key ID R8SY4X6JM4)
 
     environment:
-      ios_signing:
-        distribution_type: app_store    # TestFlight + App Store both use app_store
-        bundle_identifier: com.dreighto.sully
       vars:
         XCODE_WORKSPACE: "App.xcworkspace"   # Capacitor (CocoaPods) workspace name
         XCODE_SCHEME: "App"                  # Capacitor default scheme name
@@ -91,8 +88,14 @@ workflows:
 
       - name: Set up automatic code signing
         script: |
-          # Consumes the distribution cert + provisioning profile Codemagic
-          # fetched/created via the App Store Connect integration (key R8SY4X6JM4).
+          # First-build-safe automatic signing: CREATE the distribution cert + App
+          # Store provisioning profile for the bundle id if they don't exist yet,
+          # then apply them. The removed environment.ios_signing block only FETCHED
+          # existing profiles (none exist on build 1) -> "No matching profiles found".
+          # Requires the App Store Connect API key to have App Manager/Admin role.
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
           xcode-project use-profiles
 
       - name: Increment build number
