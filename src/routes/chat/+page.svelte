@@ -974,159 +974,65 @@
 		];
 	}
 
-	const SLASH_COMMANDS: SlashCmd[] = [
-		{
-			key: 'clear',
-			usage: '/clear',
-			description: 'Reset conversation context (server slices history at this marker)',
-			run: async () => {
-				// Persist a system marker — /api/chat and /api/chat/sdk-stream
-				// slice thread history at the latest `--- NEW CONVERSATION ---`
-				// line, so this drops the LLM's working memory without deleting
-				// prior messages from the operator's view.
-				await fetch(resolve('/api/chat'), {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						sender: 'system',
-						message: '--- NEW CONVERSATION ---',
-						thread: threadsCtrl.activeThread,
-						agent: 'silent'
-					})
-				}).catch(() => null);
-				await pollMessages();
-				toasts.add('Conversation context reset', 'success');
-			}
+	const slashCtrl = createSlashCommandsController({
+		getActiveThread: () => threadsCtrl.activeThread,
+		getMessages: () => messages,
+		setTextDraft: (s) => {
+			textDraft = s;
 		},
-		{
-			key: 'new',
-			usage: '/new <name>',
-			description: 'Create + switch to a new thread',
-			run: async (rest) => {
-				const baseSlug = threadsCtrl.slugifyThreadName(rest);
-				if (!baseSlug || baseSlug === 'thread') {
-					toasts.add('Thread name required: /new my-feature', 'error');
-					return;
-				}
-				const slug = await threadsCtrl.findUniqueSlug(baseSlug);
-				const title = slug === baseSlug ? rest.trim() || slug : slug;
-				if (slug !== baseSlug) {
-					toasts.add(`"${baseSlug}" was taken — created "${slug}" for a clean slate.`, 'info');
-				}
-				threadsCtrl.threads = [
-					{
-						thread_id: slug,
-						title,
-						archived: false,
-						pinned: false,
-						message_count: 0,
-						latest_ts: ''
-					},
-					...threadsCtrl.threads
-				];
-				await threadsCtrl.switchThread(slug);
-				toasts.add(`Switched to thread "${slug}"`, 'success');
-			}
+		clearAttachments: () => {
+			attachments = [];
 		},
-		{
-			key: 'regen',
-			usage: '/regen',
-			description: 'Regenerate the most recent assistant reply',
-			run: async () => {
-				// Walk backwards for the last non-operator, non-system reply
-				for (let i = messages.length - 1; i >= 0; i--) {
-					if (messages[i].sender !== 'operator' && messages[i].sender !== 'system') {
-						await regenerateReply(messages[i]);
-						return;
-					}
-				}
-				toasts.add('No assistant reply to regenerate', 'error');
-			}
+		focusComposer: () => textareaEl?.focus(),
+		appendSystemMessage: addLocalSystemMessage,
+		pollMessages: () => pollMessages(),
+		setToolsKey: (key) => {
+			toolsKey = key;
 		},
-		{
-			key: 'unlock',
-			usage: '/unlock <code>',
-			description: 'Enable file-reading + web tools on this device (paste the code CC gave you)',
-			run: (rest) => {
-				const code = rest.trim();
-				if (!code) {
-					toasts.add('Paste the code: /unlock <code>', 'error');
-					return;
-				}
-				toolsKey = code;
-				try {
-					localStorage.setItem('companion-tools-key', code);
-				} catch {
-					/* private mode — stays in memory for this session */
-				}
-				addLocalSystemMessage(
-					'🔓 Tools unlocked on this device. The companion can now read files and search the web here.'
-				);
+		regenerateReply: (m) => regenerateReply(m),
+		createThread: async (rest) => {
+			// /new wraps the threads controller's slug + switch flow.
+			const baseSlug = threadsCtrl.slugifyThreadName(rest);
+			if (!baseSlug || baseSlug === 'thread') {
+				toasts.add('Thread name required: /new my-feature', 'error');
+				return;
 			}
-		},
-		{
-			key: 'lock',
-			usage: '/lock',
-			description: 'Disable file-reading + web tools on this device',
-			run: () => {
-				toolsKey = '';
-				try {
-					localStorage.removeItem('companion-tools-key');
-				} catch {
-					/* ignore */
-				}
-				addLocalSystemMessage('🔒 Tools locked on this device.');
+			const slug = await threadsCtrl.findUniqueSlug(baseSlug);
+			const title = slug === baseSlug ? rest.trim() || slug : slug;
+			if (slug !== baseSlug) {
+				toasts.add(`"${baseSlug}" was taken — created "${slug}" for a clean slate.`, 'info');
 			}
-		},
-		{
-			key: 'help',
-			usage: '/help',
-			description: 'Show available slash commands',
-			run: () => {
-				const body = SLASH_COMMANDS.map((c) => `- \`${c.usage}\` — ${c.description}`).join('\n');
-				addLocalSystemMessage(`**Slash commands**\n\n${body}`);
-			}
+			threadsCtrl.threads = [
+				{
+					thread_id: slug,
+					title,
+					archived: false,
+					pinned: false,
+					message_count: 0,
+					latest_ts: ''
+				},
+				...threadsCtrl.threads
+			];
+			await threadsCtrl.switchThread(slug);
+			toasts.add(`Switched to thread "${slug}"`, 'success');
 		}
-	];
+	});
 
 	const slashQuery = $derived(
 		textDraft.startsWith('/') ? textDraft.slice(1).split(/\s/)[0].toLowerCase() : null
 	);
 	const slashMatches = $derived(
-		slashQuery === null ? [] : SLASH_COMMANDS.filter((c) => c.key.startsWith(slashQuery))
+		slashQuery === null ? [] : slashCtrl.commands.filter((c) => c.key.startsWith(slashQuery))
 	);
 	const slashMode = $derived(
 		textDraft.startsWith('/') && !textDraft.includes('\n') && slashMatches.length > 0
 	);
 
 	async function runSlashFromDraft(): Promise<boolean> {
-		if (!textDraft.startsWith('/')) return false;
-		const trimmed = textDraft.trim();
-		const spaceIdx = trimmed.indexOf(' ');
-		const key = (spaceIdx === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIdx)).toLowerCase();
-		const rest = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim();
-		const cmd = SLASH_COMMANDS.find((c) => c.key === key);
-		if (!cmd) return false;
-		textDraft = '';
-		attachments = [];
-		try {
-			await cmd.run(rest);
-		} catch (e) {
-			toasts.add(`Command failed: ${e instanceof Error ? e.message : 'unknown'}`, 'error');
-		}
-		return true;
+		return await slashCtrl.runFromDraft(textDraft);
 	}
-
 	async function pickSlash(cmd: SlashCmd) {
-		// If the command takes args (usage has < >), prefill the composer
-		// instead of running immediately so the operator can type the arg.
-		if (cmd.usage.includes('<')) {
-			textDraft = `/${cmd.key} `;
-			textareaEl?.focus();
-			return;
-		}
-		textDraft = `/${cmd.key}`;
-		await runSlashFromDraft();
+		await slashCtrl.pick(cmd, textDraft);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────
