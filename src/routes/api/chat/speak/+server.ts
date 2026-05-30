@@ -27,6 +27,12 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const text: string = body.text.trim();
 	const voiceId: string = EMMA_VOICE_ID; // locked per design §2D.2
+	// Voice mode passes model:'eleven_flash_v2_5' for lowest latency (~75ms);
+	// read-aloud omits it and keeps the higher-quality turbo default. Only allow
+	// genuine ElevenLabs model ids through — never an arbitrary upstream string.
+	const reqModel =
+		typeof body.model === 'string' && body.model.startsWith('eleven_') ? body.model : null;
+	const modelId: string = reqModel ?? 'eleven_turbo_v2_5';
 
 	// Cap check
 	const usedToday = getTodayTtsUsage();
@@ -46,7 +52,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		},
 		body: JSON.stringify({
 			text,
-			model_id: 'eleven_turbo_v2_5',
+			model_id: modelId,
 			voice_settings: { stability: 0.5, similarity_boost: 0.75 }
 		})
 	});

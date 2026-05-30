@@ -1,8 +1,9 @@
 // Realtime Voice Mode controller — the immersive, low-latency voice pipeline
 // the operator asked for: see your own speech transcribed live (like Claude
 // Code), watch the companion's reply stream as text (toggleable off for a
-// voice-only experience), hear it spoken in the natural local Chatterbox voice,
-// and barge in at any time.
+// voice-only experience), hear it spoken in Sully's voice (Emma via ElevenLabs
+// Flash when configured, local Chatterbox otherwise / as fallback), and barge in
+// at any time.
 //
 // This is DISTINCT from the legacy in-composer Talkback loop
 // ($lib/chat/voice.svelte.ts): that uses the browser Web Speech API + cloud
@@ -11,7 +12,9 @@
 //   mic ──AudioWorklet(Int16)──▶ WS /companion-voice (faster-whisper)
 //        live partials ──▶ `partial`   final ──▶ /api/chat/voice-reply
 //        reply tokens ──▶ `replyText` (+ sentence segmenter)
-//        per sentence ──▶ /api/chat/speak-local (Chatterbox) ──▶ gapless Web Audio
+//        per sentence ──▶ `ttsPath` (Emma/ElevenLabs or Chatterbox) ──▶ gapless
+//                         Web Audio; falls forward to `ttsFallbackPath` (local)
+//                         if the primary returns non-OK (cap/quota/5xx)
 //
 // Barge-in: pressing the mic again while the companion is thinking/speaking
 // aborts the reply fetch + the in-flight TTS fetch, stops every scheduled audio
@@ -94,6 +97,8 @@ interface VoiceConfig {
 	voiceEnabled: boolean;
 	wsPath: string;
 	ttsPath: string;
+	ttsModel?: string;
+	ttsFallbackPath?: string;
 	captionsDefault: boolean;
 	pttDefault: boolean;
 	continuousDefault?: boolean;
@@ -119,6 +124,8 @@ export function createRealtimeVoiceController(
 	// ── Config (fetched on first enter) ──────────────────────────────────
 	let wsPath = '/companion-voice';
 	let ttsPath = '/api/chat/speak-local';
+	let ttsModel: string | undefined;
+	let ttsFallbackPath: string | undefined;
 	let voiceRef: string | undefined;
 
 	// ── STT transport / mic capture (imperative) ─────────────────────────
@@ -178,21 +185,42 @@ export function createRealtimeVoiceController(
 
 	async function fetchTtsBuffer(text: string): Promise<AudioBuffer | null> {
 		if (!playCtx) return null;
+		const ctx = playCtx;
 		ttsAbort = new AbortController();
-		try {
-			// ttsPath comes from server config (a runtime string), so it can't go
-			// through the typed route `resolve()`; prepend the app base directly.
-			const r = await fetch(`${base}${ttsPath}`, {
+		const signal = ttsAbort.signal;
+		// One synthesis attempt against a given path. ttsPath/ttsFallbackPath come
+		// from server config (runtime strings), so they can't go through the typed
+		// route `resolve()`; prepend the app base directly. Returns null on a non-OK
+		// response (cap/quota/5xx) so the caller can fall forward; THROWS on abort
+		// (barge-in) so we don't then waste a fallback request.
+		const synth = async (path: string, withModel: boolean): Promise<AudioBuffer | null> => {
+			const r = await fetch(`${base}${path}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ text, voice_ref: voiceRef }),
-				signal: ttsAbort.signal
+				body: JSON.stringify({
+					text,
+					voice_ref: voiceRef,
+					...(withModel && ttsModel ? { model: ttsModel } : {})
+				}),
+				signal
 			});
 			if (!r.ok) return null;
 			const ab = await r.arrayBuffer();
-			return await playCtx.decodeAudioData(ab);
+			return await ctx.decodeAudioData(ab);
+		};
+		try {
+			const primary = await synth(ttsPath, true);
+			if (primary) return primary;
+			// Primary failed (Emma cap/quota exhausted or service 5xx) — fall forward
+			// to the local voice so a sentence is never dropped to silence. The voice
+			// audibly changing is itself the signal that the cloud voice ran out.
+			if (ttsFallbackPath && ttsFallbackPath !== ttsPath) {
+				const fb = await synth(ttsFallbackPath, false);
+				if (fb) return fb;
+			}
+			return null;
 		} catch {
-			// AbortError (barge-in) or decode failure → drop this sentence
+			// AbortError (barge-in) or decode failure → drop this sentence.
 			return null;
 		} finally {
 			ttsAbort = null;
@@ -510,6 +538,8 @@ export function createRealtimeVoiceController(
 				if (cfg.voiceEnabled === false) throw new Error('Voice mode is disabled.');
 				wsPath = cfg.wsPath || wsPath;
 				ttsPath = cfg.ttsPath || ttsPath;
+				ttsModel = cfg.ttsModel;
+				ttsFallbackPath = cfg.ttsFallbackPath;
 				captions = cfg.captionsDefault ?? true;
 				mode = cfg.continuousDefault ? 'continuous' : 'ptt';
 				voiceRef = cfg.voiceRef;
@@ -524,6 +554,10 @@ export function createRealtimeVoiceController(
 			const ctlBody = (await ctl.json().catch(() => ({}))) as { ready?: boolean };
 			if (!ctl.ok || !ctlBody.ready) throw new Error('The voice services did not start.');
 			servicesReady = true;
+
+			// 2b. Pre-warm the voice model into VRAM, fire-and-forget, so it loads in
+			// parallel with mic + socket setup and the FIRST reply isn't a cold load.
+			void fetch(resolve('/api/chat/voice-warm'), { method: 'POST' }).catch(() => {});
 
 			// 3. mic capture + 4. STT socket
 			await startMic();

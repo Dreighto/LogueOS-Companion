@@ -12,6 +12,7 @@
 import type { RequestHandler } from './$types';
 import { addChatMessage, getChatMessages } from '$lib/server/chat';
 import { resolveVoiceModel } from '$lib/server/model_catalog';
+import { VOICE_KEEP_ALIVE } from '$lib/server/voice_runtime';
 
 const OLLAMA = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 // Voice model id resolved via the shared catalog so a "change the default voice
@@ -63,6 +64,9 @@ export const POST: RequestHandler = async ({ request }) => {
 				model: VOICE_MODEL,
 				messages: turns,
 				stream: true,
+				// Keep the model resident across conversational pauses (pre-warmed on
+				// Voice Mode entry); it still unloads after the session frees the GPU.
+				keep_alive: VOICE_KEEP_ALIVE,
 				options: { num_ctx: 8192 }
 			}),
 			signal: request.signal
