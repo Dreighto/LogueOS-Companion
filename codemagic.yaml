@@ -91,7 +91,7 @@ workflows:
           DBG="$CM_BUILD_DIR/signing-debug.log"; : > "$DBG"
           keychain initialize 2>&1 | tee -a "$DBG"
           # --create makes the distribution cert + App Store profile if missing.
-          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create 2>&1 | tee -a "$DBG"
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --certificate-key @env:CERTIFICATE_PRIVATE_KEY --create 2>&1 | tee -a "$DBG"
           keychain add-certificates 2>&1 | tee -a "$DBG"
           echo "=== provisioning profiles on disk ===" | tee -a "$DBG"
           ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>&1 | tee -a "$DBG" || true
