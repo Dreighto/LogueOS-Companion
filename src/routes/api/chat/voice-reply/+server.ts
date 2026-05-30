@@ -11,9 +11,12 @@
 
 import type { RequestHandler } from './$types';
 import { addChatMessage, getChatMessages } from '$lib/server/chat';
+import { resolveVoiceModel } from '$lib/server/model_catalog';
 
 const OLLAMA = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
-const VOICE_MODEL = process.env.COMPANION_VOICE_MODEL || 'companion-v1-voice:latest';
+// Voice model id resolved via the shared catalog so a "change the default voice
+// model" tweak lands in one place (model_catalog.ts), not three (PR D).
+const VOICE_MODEL = resolveVoiceModel();
 const HISTORY = 12; // recent turns of context (model SYSTEM carries the persona)
 
 export const POST: RequestHandler = async ({ request }) => {

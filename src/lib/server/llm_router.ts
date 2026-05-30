@@ -18,35 +18,26 @@ import * as openai from './providers/openai';
 import * as ollama from './providers/ollama';
 import { getTokenUsage, addTokenUsage } from './thread_state';
 import type { Tier } from './phase_classifier';
+import { MODELS as CATALOG_MODELS, type Provider as CatalogProvider } from './model_catalog';
 
 export type { Tier };
 
-// Model IDs per tier per provider.
-const TIER_MODELS: Record<Tier, Partial<Record<Provider, string>>> = {
-	chat: {
-		anthropic: 'claude-haiku-4-5-20251001',
-		gemini: 'gemini-2.5-flash-lite',
-		openai: 'gpt-4o-mini',
-		ollama: 'qwen2.5:7b'
-	},
-	planning: {
-		anthropic: 'claude-sonnet-4-6',
-		gemini: 'gemini-2.5-flash',
-		openai: 'gpt-4o',
-		ollama: 'qwen2.5:14b'
-	},
-	deep: {
-		anthropic: 'claude-opus-4-7',
-		gemini: 'gemini-2.5-pro',
-		openai: 'gpt-4o',
-		ollama: 'qwen2.5:14b'
-	},
-	local: {
-		ollama: 'qwen2.5:14b'
-	}
+// Local Provider type — historical naming (`gemini`/`ollama`) preserved so the
+// router's downstream provider dispatch table (anthropic.run / gemini.run / …)
+// stays one type away from the catalog. The model id lookup uses the catalog
+// (`google`/`local`) via a tiny adapter.
+type Provider = 'anthropic' | 'gemini' | 'openai' | 'ollama';
+
+const CATALOG_BY_LOCAL: Record<Provider, CatalogProvider> = {
+	anthropic: 'anthropic',
+	gemini: 'google',
+	openai: 'openai',
+	ollama: 'local'
 };
 
-type Provider = 'anthropic' | 'gemini' | 'openai' | 'ollama';
+/** Look up the model id for a tier × provider, via the shared catalog. */
+const tierModelFor = (tier: Tier, provider: Provider): string | undefined =>
+	CATALOG_MODELS[tier]?.[CATALOG_BY_LOCAL[provider]];
 
 // Default provider order: Anthropic first (Claude Max sub), Gemini second
 // (OAuth), OpenAI third (API key only), Ollama last (local).
@@ -122,7 +113,7 @@ export async function routeChat(
 
 	for (let i = 0; i < filteredOrder.length; i++) {
 		const provider = filteredOrder[i];
-		const model = TIER_MODELS[tier]?.[provider];
+		const model = tierModelFor(tier, provider);
 		if (!model) continue;
 
 		// Skip unavailable providers and cap-exceeded ones.
@@ -219,7 +210,7 @@ export async function* routeChatStream(
 
 	for (let i = 0; i < filteredOrder.length; i++) {
 		const provider = filteredOrder[i];
-		const model = TIER_MODELS[tier]?.[provider];
+		const model = tierModelFor(tier, provider);
 		if (!model) continue;
 		if (provider !== 'ollama' && isCapExceeded(provider)) {
 			fell_forward = true;

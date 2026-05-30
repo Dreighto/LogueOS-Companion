@@ -49,6 +49,7 @@ import {
 	persistAssistantTurn
 } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
+import { resolveChatModel } from '$lib/server/model_catalog';
 
 // LogueOS-on-SDK tools — read-only operator-context fetches the LLM can call
 // when answering. PR 10a shipped the first tool; PR 10c (this commit) adds
@@ -160,33 +161,8 @@ const OLLAMA_BASE_URL =
 	process.env.OLLAMA_BASE_URL?.replace(/\/+$/, '') || 'http://127.0.0.1:11434';
 const OLLAMA_V1 = `${OLLAMA_BASE_URL}/v1`;
 
-// Tier × provider → model id. Mirrors src/lib/server/llm_router.ts so
-// behaviour stays aligned; we keep a local copy to avoid pulling in the
-// fall-forward routing logic (PR 2b.2 ships single-provider per request;
-// SDK middleware can layer fall-forward later if needed).
-const TIER_MODELS: Record<Tier, Record<Provider, string>> = {
-	chat: {
-		anthropic: 'claude-haiku-4-5-20251001',
-		google: 'gemini-2.5-flash-lite',
-		local: 'qwen2.5:7b'
-	},
-	planning: {
-		anthropic: 'claude-sonnet-4-6',
-		google: 'gemini-2.5-flash',
-		local: 'qwen2.5:14b'
-	},
-	deep: {
-		anthropic: 'claude-opus-4-7',
-		google: 'gemini-2.5-pro',
-		local: 'qwen2.5:14b'
-	},
-	local: {
-		// Local tier uses the local provider exclusively now.
-		anthropic: 'claude-haiku-4-5-20251001',
-		google: 'gemini-2.5-flash-lite',
-		local: 'qwen2.5:14b'
-	}
-};
+// Tier × provider model ids live in src/lib/server/model_catalog.ts (PR D).
+// Routes resolve through `resolveChatModel`; no local mirror.
 
 function getAnthropicApiKey(): string {
 	return (
@@ -230,7 +206,7 @@ function getGoogleKey(): string {
 }
 
 function pickModel(provider: Provider, tier: Tier, requestedModel?: string) {
-	const modelId = requestedModel || TIER_MODELS[tier][provider];
+	const modelId = resolveChatModel({ tier, provider, requestedModel });
 	if (provider === 'anthropic') {
 		const auth = getAnthropicAuthForModel(modelId);
 		if (!auth.authToken && !auth.apiKey) {
@@ -369,14 +345,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	// "use the CLI bridge, do NOT prompt for a billed API key — defeats the
 	// purpose of paying for Max." So Sonnet/Opus ALWAYS route through CLI
 	// regardless of any API-key env presence.
-	// Companion mode + local provider (no explicit model) → the operator's chosen
-	// companion model (companion-v1) rather than the generic local-tier default.
-	// An explicit body.model still wins.
-	const resolvedModelId =
-		body.model ||
-		(runMode.companion && provider === 'local'
-			? serverConfig.companionDefaultModel
-			: TIER_MODELS[currentTier][provider]);
+	// Resolve via the shared catalog — precedence: body.model → companion-mode
+	// local default (companion-v1) → tier × provider matrix. Used here UP-FRONT
+	// to decide between the direct API path and the CLI bridge.
+	const resolvedModelId = resolveChatModel({
+		tier: currentTier,
+		provider,
+		requestedModel: body.model
+	});
 	const useClaudeCLI = provider === 'anthropic' && /sonnet|opus/i.test(resolvedModelId);
 
 	// Sensitive machine-read + web tools are attached only for the operator's own
