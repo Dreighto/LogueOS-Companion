@@ -21,6 +21,9 @@
 		AlertCircle,
 		Hand,
 		Info,
+		Drama,
+		ChevronDown,
+		Check,
 		Infinity as InfinityIcon
 	} from 'lucide-svelte';
 	import type { RealtimeVoiceController } from '$lib/chat/realtime-voice.svelte';
@@ -49,6 +52,7 @@
 		userAgent: ''
 	});
 	let showProbe = $state(false);
+	let showVoicePicker = $state(false);
 
 	async function runProbe(): Promise<void> {
 		const result: MicProbe = {
@@ -134,6 +138,9 @@
 	const isConnecting = $derived(voice.phase === 'connecting');
 	const isContinuous = $derived(voice.mode === 'continuous');
 	const interruptible = $derived(voice.phase === 'thinking' || voice.phase === 'speaking');
+	const activeVoiceLabel = $derived(
+		voice.voices.find((v) => v.id === voice.voiceId)?.label ?? voice.voiceId
+	);
 
 	// Mode-aware status line under the controls.
 	const statusLabel = $derived.by(() => {
@@ -183,6 +190,54 @@
 				<span>Voice</span>
 			</div>
 			<div class="flex items-center gap-1">
+				<!-- Voice picker: switch which voice Sully speaks in (Emma cloud / Sulley local) -->
+				{#if voice.voices.length > 1}
+					<div class="relative">
+						<button
+							type="button"
+							onclick={() => (showVoicePicker = !showVoicePicker)}
+							disabled={isConnecting || isError}
+							class="flex h-10 items-center gap-1.5 rounded-full px-3 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+							aria-label="Change voice"
+							aria-expanded={showVoicePicker}
+							title="Change voice"
+						>
+							<Drama size={16} class="text-orange-400" />
+							<span class="max-w-[7rem] truncate">{activeVoiceLabel}</span>
+							<ChevronDown size={14} class={showVoicePicker ? 'rotate-180' : ''} />
+						</button>
+						{#if showVoicePicker}
+							<div
+								class="absolute right-0 top-12 z-10 w-64 rounded-xl border border-zinc-800 bg-zinc-900/95 p-1 shadow-xl backdrop-blur"
+								role="menu"
+							>
+								{#each voice.voices as v (v.id)}
+									<button
+										type="button"
+										role="menuitemradio"
+										aria-checked={v.id === voice.voiceId}
+										onclick={() => {
+											void voice.setVoice(v.id);
+											showVoicePicker = false;
+										}}
+										class="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-zinc-800"
+									>
+										<Check
+											size={16}
+											class={v.id === voice.voiceId
+												? 'mt-0.5 shrink-0 text-emerald-400'
+												: 'mt-0.5 shrink-0 text-transparent'}
+										/>
+										<span class="flex flex-col">
+											<span class="text-sm text-zinc-100">{v.label}</span>
+											<span class="text-[11px] text-zinc-500">{v.blurb}</span>
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 				<!-- Diagnostic probe (small ⓘ — toggles a permission + PWA state panel) -->
 				<button
 					type="button"
@@ -268,6 +323,16 @@
 					</span>
 					<span class="text-zinc-500">hostname:</span>
 					<span class="break-all">{probe.hostname}</span>
+				</div>
+				<div class="mt-2 border-t border-zinc-800 pt-2 leading-snug text-zinc-400">
+					<p class="mb-1 text-zinc-300">iOS note:</p>
+					<p>
+						If this keeps showing a one-time mic prompt in the Home Screen app, set the
+						Safari website permission manually: open this same domain in Safari, tap the page
+						menu, open Website Settings, then set Microphone to Allow. If iOS still prompts
+						after a cold PWA restart, that is a WebKit/iOS standalone-app limitation, not a
+						Companion setting.
+					</p>
 				</div>
 			</div>
 		{/if}

@@ -69,6 +69,10 @@ export interface RealtimeVoiceController {
 	readonly servicesReady: boolean;
 	/** Set when the session hit an unrecoverable error (phase === 'error'). */
 	readonly errorMsg: string | null;
+	/** Switchable voices for the overlay picker. */
+	readonly voices: VoiceOption[];
+	/** The active voice id (which voice Sully currently speaks in). */
+	readonly voiceId: string;
 	/** Open Voice Mode: start speech services, mic, playback, WS. Call from a user gesture. */
 	enter: () => Promise<void>;
 	/** Close Voice Mode: tear down everything + stop the speech services. */
@@ -87,11 +91,21 @@ export interface RealtimeVoiceController {
 	interrupt: () => void;
 	/** Re-resume the audio contexts (call on visibilitychange — iOS suspends them). */
 	resumeAudio: () => void;
+	/** Switch the active voice (persists + applies live to subsequent sentences). */
+	setVoice: (id: string) => Promise<void>;
 	/** onDestroy hook — release everything. */
 	destroy: () => Promise<void>;
 }
 
 export type VoiceInputMode = 'ptt' | 'continuous';
+
+/** A switchable voice, as surfaced to the overlay's picker (client-safe). */
+export interface VoiceOption {
+	id: string;
+	label: string;
+	blurb: string;
+	engine: 'elevenlabs' | 'chatterbox';
+}
 
 interface VoiceConfig {
 	voiceEnabled: boolean;
@@ -99,10 +113,11 @@ interface VoiceConfig {
 	ttsPath: string;
 	ttsModel?: string;
 	ttsFallbackPath?: string;
+	voice?: string;
+	voices?: VoiceOption[];
 	captionsDefault: boolean;
 	pttDefault: boolean;
 	continuousDefault?: boolean;
-	voiceRef?: string;
 }
 
 export function createRealtimeVoiceController(
@@ -120,13 +135,15 @@ export function createRealtimeVoiceController(
 	let holding = $state(false);
 	let servicesReady = $state(false);
 	let errorMsg = $state<string | null>(null);
+	// Reactive so the overlay's voice picker re-renders on switch.
+	let voices = $state<VoiceOption[]>([]);
+	let voiceId = $state('');
 
 	// ── Config (fetched on first enter) ──────────────────────────────────
 	let wsPath = '/companion-voice';
 	let ttsPath = '/api/chat/speak-local';
 	let ttsModel: string | undefined;
 	let ttsFallbackPath: string | undefined;
-	let voiceRef: string | undefined;
 
 	// ── STT transport / mic capture (imperative) ─────────────────────────
 	let ws: WebSocket | null = null;
@@ -190,18 +207,16 @@ export function createRealtimeVoiceController(
 		const signal = ttsAbort.signal;
 		// One synthesis attempt against a given path. ttsPath/ttsFallbackPath come
 		// from server config (runtime strings), so they can't go through the typed
-		// route `resolve()`; prepend the app base directly. Returns null on a non-OK
-		// response (cap/quota/5xx) so the caller can fall forward; THROWS on abort
-		// (barge-in) so we don't then waste a fallback request.
-		const synth = async (path: string, withModel: boolean): Promise<AudioBuffer | null> => {
+		// route `resolve()`; prepend the app base directly. The server resolves the
+		// `voice` id → engine/voice/model/ref, so the client never holds paths or
+		// provider ids. Returns null on a non-OK response (cap/quota/5xx) so the
+		// caller can fall forward; THROWS on abort (barge-in) so we don't then waste
+		// a fallback request.
+		const synth = async (path: string): Promise<AudioBuffer | null> => {
 			const r = await fetch(`${base}${path}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					text,
-					voice_ref: voiceRef,
-					...(withModel && ttsModel ? { model: ttsModel } : {})
-				}),
+				body: JSON.stringify({ text, voice: voiceId }),
 				signal
 			});
 			if (!r.ok) return null;
@@ -209,13 +224,13 @@ export function createRealtimeVoiceController(
 			return await ctx.decodeAudioData(ab);
 		};
 		try {
-			const primary = await synth(ttsPath, true);
+			const primary = await synth(ttsPath);
 			if (primary) return primary;
 			// Primary failed (Emma cap/quota exhausted or service 5xx) — fall forward
 			// to the local voice so a sentence is never dropped to silence. The voice
 			// audibly changing is itself the signal that the cloud voice ran out.
 			if (ttsFallbackPath && ttsFallbackPath !== ttsPath) {
-				const fb = await synth(ttsFallbackPath, false);
+				const fb = await synth(ttsFallbackPath);
 				if (fb) return fb;
 			}
 			return null;
@@ -540,9 +555,10 @@ export function createRealtimeVoiceController(
 				ttsPath = cfg.ttsPath || ttsPath;
 				ttsModel = cfg.ttsModel;
 				ttsFallbackPath = cfg.ttsFallbackPath;
+				voiceId = cfg.voice ?? voiceId;
+				voices = cfg.voices ?? voices;
 				captions = cfg.captionsDefault ?? true;
 				mode = cfg.continuousDefault ? 'continuous' : 'ptt';
-				voiceRef = cfg.voiceRef;
 			}
 
 			// 2. start the on-demand speech services (may take a while cold).
@@ -731,6 +747,33 @@ export function createRealtimeVoiceController(
 		}
 	}
 
+	// Switch the active voice. Persists server-side and applies the returned TTS
+	// routing live, so subsequent sentences speak in the new voice (a switch mid-
+	// reply just takes effect from the next sentence onward).
+	async function setVoice(id: string): Promise<void> {
+		if (!id || id === voiceId) return;
+		try {
+			const r = await fetch(resolve('/api/chat/voice-select'), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ voice: id })
+			});
+			if (!r.ok) return;
+			const out = (await r.json()) as {
+				voice?: string;
+				ttsPath?: string;
+				ttsModel?: string;
+				ttsFallbackPath?: string;
+			};
+			voiceId = out.voice ?? id;
+			if (out.ttsPath) ttsPath = out.ttsPath;
+			ttsModel = out.ttsModel;
+			ttsFallbackPath = out.ttsFallbackPath;
+		} catch {
+			/* keep current voice on failure */
+		}
+	}
+
 	return {
 		get open() {
 			return open;
@@ -765,6 +808,12 @@ export function createRealtimeVoiceController(
 		get errorMsg() {
 			return errorMsg;
 		},
+		get voices() {
+			return voices;
+		},
+		get voiceId() {
+			return voiceId;
+		},
 		enter,
 		exit,
 		pressStart,
@@ -774,6 +823,7 @@ export function createRealtimeVoiceController(
 		toggleMute,
 		interrupt,
 		resumeAudio,
+		setVoice,
 		destroy: () => exit()
 	};
 }

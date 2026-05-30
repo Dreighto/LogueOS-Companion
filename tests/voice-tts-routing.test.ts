@@ -1,60 +1,73 @@
-// Lock the voice-mode TTS provider routing. The realtime voice controller reads
-// ttsPath / ttsModel / ttsFallbackPath from /api/chat/voice-config to decide
-// whether Sully speaks in Emma (ElevenLabs Flash, cloud) or the local Chatterbox
-// voice — and where to fall forward when the cloud voice caps out. If this
-// contract drifts, voice mode silently speaks in the wrong voice (or none), so
-// it's worth pinning.
+// Lock the /api/chat/voice-config contract. It resolves TTS routing from the
+// ACTIVE voice (persisted in companion_settings; default = emma) plus whether
+// cloud (ElevenLabs) is available. The realtime controller consumes
+// voice/voices/ttsPath/ttsModel/ttsFallbackPath; if this drifts, voice mode
+// speaks in the wrong voice (or none). The DB path is pointed at a nonexistent
+// file so getSetting() returns null → default voice, with no DB side effects.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const ENV: Record<string, string | undefined> = {};
 vi.mock('$env/dynamic/private', () => ({ env: ENV }));
 
+const BASE: Record<string, string> = {
+	LOGUEOS_APP_MODE: 'companion',
+	LOGUEOS_MEMORY_DB_PATH: '/tmp/nonexistent-companion-voice-test.db',
+	COMPANION_DEFAULT_MODEL: 'companion-v1:latest',
+	OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
+	LOGUEOS_RUN_POLL_MS: '5000',
+	LOGUEOS_RUN_FEED_LIMIT: '50',
+	ANTHROPIC_DAILY_TOKEN_CAP: '1000000',
+	OPENAI_DAILY_TOKEN_CAP: '200000',
+	GEMINI_DAILY_TOKEN_CAP: '2000000'
+};
+
 beforeEach(() => {
 	vi.resetModules();
 	for (const k of Object.keys(ENV)) delete ENV[k];
+	Object.assign(ENV, BASE);
 });
 
 async function getConfig(): Promise<Record<string, unknown>> {
 	const { GET } = await import('../src/routes/api/chat/voice-config/+server');
-	// GET ignores its RequestEvent (pure env read), so an empty object is fine.
 	const res = await (GET as unknown as (e: unknown) => Promise<Response>)({});
 	return res.json();
 }
 
-describe('voice-config TTS routing', () => {
-	it('routes to Emma (ElevenLabs Flash) + local fallback when provider=elevenlabs and key present', async () => {
-		ENV.VOICE_TTS_PROVIDER = 'elevenlabs';
+describe('voice-config', () => {
+	it('default active voice is Emma via ElevenLabs Flash + local fallback when a key is present', async () => {
 		ENV.ELEVENLABS_API_KEY = 'xi-test-key';
 		const cfg = await getConfig();
+		expect(cfg.voice).toBe('emma');
 		expect(cfg.ttsPath).toBe('/api/chat/speak');
 		expect(cfg.ttsModel).toBe('eleven_flash_v2_5');
 		expect(cfg.ttsFallbackPath).toBe('/api/chat/speak-local');
 	});
 
-	it('is case-insensitive on the provider value', async () => {
-		ENV.VOICE_TTS_PROVIDER = 'ElevenLabs';
+	it('exposes the switchable voice list (Emma + Goodman-Sulley), no leaked paths', async () => {
 		ENV.ELEVENLABS_API_KEY = 'xi-test-key';
 		const cfg = await getConfig();
-		expect(cfg.ttsPath).toBe('/api/chat/speak');
+		const voices = cfg.voices as Array<{ id: string }>;
+		const ids = voices.map((v) => v.id).sort();
+		expect(ids).toEqual(['emma', 'goodman-sully']);
+		expect(JSON.stringify(voices)).not.toMatch(/\//);
 	});
 
-	it('stays local-only (no Emma, no fallback) when provider=elevenlabs but the key is missing', async () => {
-		ENV.VOICE_TTS_PROVIDER = 'elevenlabs'; // key absent
-		const cfg = await getConfig();
+	it('degrades to local Chatterbox when the ElevenLabs key is missing', async () => {
+		const cfg = await getConfig(); // no key
+		expect(cfg.voice).toBe('emma');
 		expect(cfg.ttsPath).toBe('/api/chat/speak-local');
 		expect(cfg.ttsModel).toBeUndefined();
 		expect(cfg.ttsFallbackPath).toBeUndefined();
 	});
 
-	it('defaults to local Chatterbox when the provider is unset', async () => {
+	it('VOICE_TTS_PROVIDER=local forces everything local even with a key', async () => {
+		ENV.ELEVENLABS_API_KEY = 'xi-test-key';
+		ENV.VOICE_TTS_PROVIDER = 'local';
 		const cfg = await getConfig();
 		expect(cfg.ttsPath).toBe('/api/chat/speak-local');
-		expect(cfg.ttsModel).toBeUndefined();
-		expect(cfg.ttsFallbackPath).toBeUndefined();
 	});
 
 	it('always exposes the STT socket path + hands-free defaults', async () => {
-		ENV.VOICE_TTS_PROVIDER = 'elevenlabs';
 		ENV.ELEVENLABS_API_KEY = 'xi-test-key';
 		const cfg = await getConfig();
 		expect(cfg.voiceEnabled).toBe(true);

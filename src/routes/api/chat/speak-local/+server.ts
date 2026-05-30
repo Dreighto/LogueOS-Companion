@@ -8,11 +8,12 @@
 // (client aborts) cancels the in-flight synthesis.
 
 import type { RequestHandler } from './$types';
+import { getVoice, localRefFor } from '$lib/server/voices';
 
 const TTS_URL = (process.env.COMPANION_TTS_URL || 'http://127.0.0.1:18771').replace(/\/+$/, '');
 
 export const POST: RequestHandler = async ({ request }) => {
-	let body: { text?: string; voice_ref?: string };
+	let body: { text?: string; voice?: string; voice_ref?: string };
 	try {
 		body = await request.json();
 	} catch {
@@ -21,11 +22,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	const text = (body.text || '').trim();
 	if (!text) return new Response('empty text', { status: 400 });
 
+	// Resolve the voice's reference clip server-side by opaque id (local voice →
+	// its own ref; cloud voice synthesized locally → its clone fallback ref). A
+	// legacy explicit `voice_ref` path still works; absent both, the Chatterbox
+	// service falls back to its own TTS_VOICE_REF default.
+	const ref = (body.voice ? localRefFor(getVoice(body.voice)) : undefined) || body.voice_ref;
+
 	try {
 		const upstream = await fetch(`${TTS_URL}/tts`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ text, voice_ref: body.voice_ref }),
+			body: JSON.stringify({ text, voice_ref: ref }),
 			signal: request.signal // barge-in: client abort cancels upstream synthesis
 		});
 		if (!upstream.ok || !upstream.body) {

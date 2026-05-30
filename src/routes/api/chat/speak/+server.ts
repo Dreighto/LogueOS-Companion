@@ -8,6 +8,7 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { getTodayTtsUsage, addTtsUsage } from '$lib/server/voice_usage';
+import { getVoice } from '$lib/server/voices';
 
 const EMMA_VOICE_ID = '56bWURjYFHyYyVf490Dp';
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1';
@@ -26,13 +27,22 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const text: string = body.text.trim();
-	const voiceId: string = EMMA_VOICE_ID; // locked per design §2D.2
-	// Voice mode passes model:'eleven_flash_v2_5' for lowest latency (~75ms);
-	// read-aloud omits it and keeps the higher-quality turbo default. Only allow
-	// genuine ElevenLabs model ids through — never an arbitrary upstream string.
+	// Resolve the requested voice server-side by opaque id. No `voice` → legacy
+	// default (Emma + the body.model override or turbo), keeping read-aloud
+	// unchanged. Voice mode sends voice:'emma' → Emma + flash. A non-ElevenLabs
+	// voice id (e.g. a local-only voice) routes here only as a mistake — fall back
+	// to the Emma default rather than 502.
 	const reqModel =
 		typeof body.model === 'string' && body.model.startsWith('eleven_') ? body.model : null;
-	const modelId: string = reqModel ?? 'eleven_turbo_v2_5';
+	let voiceId: string = EMMA_VOICE_ID; // locked default per design §2D.2
+	let modelId: string = reqModel ?? 'eleven_turbo_v2_5';
+	if (typeof body.voice === 'string') {
+		const v = getVoice(body.voice);
+		if (v.engine === 'elevenlabs') {
+			voiceId = v.voiceId ?? EMMA_VOICE_ID;
+			modelId = v.model ?? modelId;
+		}
+	}
 
 	// Cap check
 	const usedToday = getTodayTtsUsage();
