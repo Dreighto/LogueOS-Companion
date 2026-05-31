@@ -17,6 +17,13 @@ const STUB_ENV: Record<string, string> = {
 };
 vi.mock('$env/dynamic/private', () => ({ env: STUB_ENV }));
 
+// consult_claude routes the OAuth path through the Claude CLI bridge (raw
+// Bearer is Haiku-only; Opus/Sonnet 429). Mock the bridge so the OAuth test
+// asserts the bridge is used rather than a raw Bearer fetch.
+vi.mock('../src/lib/server/claude_cli_stream', () => ({
+	streamViaClaudeCLI: vi.fn()
+}));
+
 beforeEach(() => {
 	vi.resetModules();
 	for (const k of ['OLLAMA_BASE_URL', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {
@@ -78,28 +85,30 @@ describe('consult_claude', () => {
 		expect(out.error).toMatch(/not configured/);
 	});
 
-	it('prefers OAuth (Bearer) when both OAuth token AND API key are present', async () => {
+	it('routes OAuth through the Claude CLI bridge (not a raw Bearer fetch)', async () => {
 		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'sk-ant-oat-test';
 		process.env.ANTHROPIC_API_KEY = 'sk-ant-key-test';
-		let headers: Record<string, string> = {};
-		vi.stubGlobal(
-			'fetch',
-			vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-				headers = (init?.headers as Record<string, string>) ?? {};
-				return new Response(
-					JSON.stringify({ content: [{ type: 'text', text: 'Claude here.' }] }),
-					{ status: 200 }
-				);
-			})
+		const fetchSpy = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ content: [{ type: 'text', text: 'SHOULD-NOT-RUN' }] }), {
+					status: 200
+				})
 		);
+		vi.stubGlobal('fetch', fetchSpy);
+		const cli = await import('../src/lib/server/claude_cli_stream');
+		(cli.streamViaClaudeCLI as ReturnType<typeof vi.fn>).mockImplementation(async function* () {
+			yield { type: 'text-delta', delta: 'Claude ' };
+			yield { type: 'text-delta', delta: 'here.' };
+			yield { type: 'finish', reason: 'stop' };
+		});
 		const { getSensitiveTools } = await import('../src/lib/server/companion_tools');
 		const out = (await getSensitiveTools().consult_claude.execute!(
 			{ question: 'what is the meaning of x' },
 			{} as never
 		)) as { answer?: string };
 		expect(out.answer).toBe('Claude here.');
-		expect(headers.Authorization).toBe('Bearer sk-ant-oat-test');
-		expect(headers['x-api-key']).toBeUndefined();
+		expect(cli.streamViaClaudeCLI).toHaveBeenCalled();
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 
 	it('falls back to x-api-key when only ANTHROPIC_API_KEY is set', async () => {
