@@ -41,3 +41,57 @@ describe('writeActivity', () => {
 		expect(getActivityForTrace('sully-2')[0].target).toBeNull();
 	});
 });
+
+describe('pending_jobs state machine', () => {
+	it('creates a decided job, advances through working to done', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-10',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'fix the build',
+			fingerprint: 'abc',
+			predictedTokens: 0
+		});
+		expect(j.getJob('sully-10')?.status).toBe('decided');
+		j.markDispatched('sully-10');
+		expect(j.getJob('sully-10')?.status).toBe('dispatched');
+		j.markWorking('sully-10', 'reading src/foo.ts');
+		expect(j.getJob('sully-10')?.status).toBe('working');
+		expect(j.getJob('sully-10')?.current_activity).toBe('reading src/foo.ts');
+		j.markDone('sully-10', 'artifact://ref-1');
+		const done = j.getJob('sully-10');
+		expect(done?.status).toBe('done');
+		expect(done?.result_ref).toBe('artifact://ref-1');
+		expect(done?.ended_at).not.toBeNull();
+	});
+
+	it('rejects an illegal transition (done -> working)', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-11',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'd',
+			predictedTokens: 0
+		});
+		j.markDone('sully-11', null);
+		expect(() => j.markWorking('sully-11', 'late')).toThrow(/illegal transition/i);
+	});
+
+	it('lists in-flight jobs (decided/dispatched/working) for kill-switch abort', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-12',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'e',
+			predictedTokens: 0
+		});
+		j.markWorking('sully-12', 'editing');
+		const inflight = j.listInFlight();
+		expect(inflight.map((r) => r.trace_id)).toContain('sully-12');
+	});
+});
