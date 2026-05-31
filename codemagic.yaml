@@ -168,7 +168,11 @@ workflows:
           command -v gh >/dev/null 2>&1 || brew install gh
           # Values come from the LogueOS ASC integration env (masked by Codemagic);
           # never echoed. gh encrypts client-side before upload.
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" | GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_PRIVATE_KEY -R Dreighto/LogueOS-Companion
-          GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_ISSUER_ID -R Dreighto/LogueOS-Companion --body "$APP_STORE_CONNECT_ISSUER_ID"
-          GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_KEY_IDENTIFIER -R Dreighto/LogueOS-Companion --body "$APP_STORE_CONNECT_KEY_IDENTIFIER"
-          echo "Relayed APP_STORE_CONNECT_PRIVATE_KEY + ISSUER_ID + KEY_IDENTIFIER to GitHub secrets."
+          # Codemagic exposes some ASC creds as "@file:/path" REFERENCES (the .p8
+          # especially), not raw values. Resolve to actual content before relaying,
+          # or GitHub gets the literal "@file:..." string instead of the key.
+          resolve() { case "$1" in @file:*) cat "${1#@file:}";; *) printf '%s' "$1";; esac; }
+          resolve "$APP_STORE_CONNECT_PRIVATE_KEY" | GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_PRIVATE_KEY -R Dreighto/LogueOS-Companion
+          GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_ISSUER_ID -R Dreighto/LogueOS-Companion --body "$(resolve "$APP_STORE_CONNECT_ISSUER_ID")"
+          GH_TOKEN="$RELAY_GH_TOKEN" gh secret set APP_STORE_CONNECT_KEY_IDENTIFIER -R Dreighto/LogueOS-Companion --body "$(resolve "$APP_STORE_CONNECT_KEY_IDENTIFIER")"
+          P8="$(resolve "$APP_STORE_CONNECT_PRIVATE_KEY")"; echo "Relayed creds. p8 sanity: len=${#P8} begins=[$(printf '%s' "$P8" | head -c 27)]"
