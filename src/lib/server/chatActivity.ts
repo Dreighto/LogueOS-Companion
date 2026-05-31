@@ -2,6 +2,43 @@ import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import { serverConfig } from './config';
 
+let _activityEnsured = false;
+function ensureActivityTable(db: Database.Database): void {
+	if (_activityEnsured) return;
+	db.exec(`
+		CREATE TABLE IF NOT EXISTS chat_activity (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			trace_id TEXT NOT NULL,
+			action TEXT NOT NULL,
+			target TEXT,
+			timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_chat_activity_trace ON chat_activity(trace_id, timestamp);
+	`);
+	_activityEnsured = true;
+}
+
+/**
+ * Write a single activity row into companion.db. The dispatched worker can't
+ * reach the DB directly, so it HTTP-calls POST /api/chat/activity which calls
+ * this. (The kernel emit_chat_activity.py writes logueos_memory.db, the wrong DB
+ * for the companion.) action ∈ {reading,edited,ran,thinking,completed,failed}.
+ */
+export function writeActivity(traceId: string, action: string, target: string | null): void {
+	if (!traceId || !action) return;
+	const db = new Database(serverConfig.memoryDbPath);
+	try {
+		ensureActivityTable(db);
+		db.prepare('INSERT INTO chat_activity (trace_id, action, target) VALUES (?, ?, ?)').run(
+			traceId,
+			action,
+			target ?? null
+		);
+	} finally {
+		db.close();
+	}
+}
+
 export interface ChatActivity {
 	id: number;
 	trace_id: string;
