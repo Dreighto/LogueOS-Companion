@@ -12,6 +12,8 @@
 
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { resolve, base } from '$app/paths';
+	import { createDispatchStream } from '$lib/chat/dispatchStream.svelte';
+	import WorkingBubble from '$lib/components/WorkingBubble.svelte';
 	import type { SlashCmd } from '$lib/types/slash';
 	import type {
 		Tier,
@@ -114,6 +116,17 @@
 	let activityPill = $state<{ worker: string; step: string; trace_id: string } | null>(null);
 	let activityFadeTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Active companion-dispatch SSE controllers, keyed by sully-* trace_id.
+	let dispatchStreams = $state<Record<string, ReturnType<typeof createDispatchStream>>>({});
+
+	function ensureDispatchStream(traceId: string) {
+		if (dispatchStreams[traceId]) return dispatchStreams[traceId];
+		const ctrl = createDispatchStream(traceId);
+		ctrl.start();
+		dispatchStreams = { ...dispatchStreams, [traceId]: ctrl };
+		return ctrl;
+	}
+
 	// Composer states
 	let composerMode = $state<ComposerMode>('idle');
 	let openChip = $state<null | 'repo' | 'thread'>(null);
@@ -143,7 +156,8 @@
 	// popover. Net result: clicking one trigger while another popover is
 	// open swaps the popovers in a single tap.
 	$effect(() => {
-		const anyOpen = openChip !== null || showModelOverrideModal || threadsCtrl.threadMenuOpenFor !== null;
+		const anyOpen =
+			openChip !== null || showModelOverrideModal || threadsCtrl.threadMenuOpenFor !== null;
 		if (!anyOpen) return;
 		function onKey(e: KeyboardEvent) {
 			if (e.key === 'Escape') {
@@ -273,7 +287,6 @@
 					? '🔧'
 					: '🪶'
 	);
-
 
 	// Composer textarea auto-grow $effect moved into <Composer /> as part of
 	// Task #7 PR 4 — the effect's deps are local to the component (`textDraft`
@@ -570,7 +583,6 @@
 		}
 	}
 
-
 	function handleKey(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
@@ -704,7 +716,6 @@
 	// of the chat surface keeps a single render path off `messages`. While a
 	// stream is active, the last assistant message in chat.messages carries
 
-
 	// Tiny local-only setter for the model label badge — avoids hitting the
 	// /api/chat/tier roundtrip just to display the model used.
 	function upsertThreadTier_local(modelUsed: string) {
@@ -717,9 +728,6 @@
 	function triggerUpload() {
 		fileInputEl?.click();
 	}
-
-
-
 
 	// humanSize moved into <Composer /> with the staged-attachments chip row
 	// in Task #7 PR 4.
@@ -841,12 +849,17 @@
 		}
 		queueMicrotask(() => scrollFeedToBottom('auto'));
 		pollTimer = setInterval(pollMessages, 3000);
-		activityTimer = setInterval(pollActivity, 5000);
+		// Companion dispatch streams live activity over SSE (per-trace). The
+		// legacy 5s pollActivity loop only runs when SSE dispatch is NOT active.
+		if (!data.companionDispatchEnabled) {
+			activityTimer = setInterval(pollActivity, 5000);
+		}
 	});
 
 	onDestroy(() => {
 		clearInterval(pollTimer);
-		clearInterval(activityTimer);
+		if (activityTimer) clearInterval(activityTimer);
+		for (const ctrl of Object.values(dispatchStreams)) ctrl.destroy();
 		sentinelObs?.disconnect();
 		if (activityFadeTimer) clearTimeout(activityFadeTimer);
 		threadsCtrl.destroy?.();
@@ -864,7 +877,6 @@
 			return '';
 		}
 	}
-
 </script>
 
 <svelte:head>
@@ -1101,6 +1113,16 @@
 								</div>
 							</div>
 						</div>
+						{#if m.sender === 'system' && m.trace_id?.startsWith('sully-')}
+							{@const ctrl = ensureDispatchStream(m.trace_id)}
+							<WorkingBubble
+								worker={m.trace_id.includes('agy') ? 'gemini' : 'claude-code'}
+								rows={ctrl.rows}
+								status={ctrl.status}
+								resultRef={ctrl.resultRef}
+								startedAt={new Date(m.timestamp).getTime()}
+							/>
+						{/if}
 					{/if}
 				{/each}
 
