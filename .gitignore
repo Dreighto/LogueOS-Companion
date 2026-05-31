@@ -16,3 +16,12 @@ data/chat_uploads/
 # Capacitor — generated fresh in Codemagic CI, never committed
 /ios
 /www
+
+# Per-spawn MCP config the dispatch listener writes into worker worktrees; if
+# tracked it dirties the tree and dispatch fails with pre_spawn_dirty_refusal.
+# Mirror LogueOS-Orchestrator / LogueOS-Console.
+.mcp.json
+mcp.json
+
+# Transient dispatch prompt envelopes written at runtime
+data/dispatch-prompts/

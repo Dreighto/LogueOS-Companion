@@ -85,8 +85,11 @@ export async function dispatchToWorker(input: DispatchInput): Promise<DispatchRe
 	try {
 		const dir = path.join(path.dirname(serverConfig.memoryDbPath), 'dispatch-prompts');
 		fs.mkdirSync(dir, { recursive: true });
-		promptPath = path.join(dir, `${input.traceId}.md`);
-		fs.writeFileSync(promptPath, buildWorkerPrompt(input), 'utf8');
+		// The listener JSON.parses the prompt file and reads `.prompt` (dispatch
+		// listener index.js ~L365) — it wants an envelope, not raw text. Write
+		// `{ prompt: <worker prompt string> }` as a .prompt.json (kernel convention).
+		promptPath = path.join(dir, `${input.traceId}.prompt.json`);
+		fs.writeFileSync(promptPath, JSON.stringify({ prompt: buildWorkerPrompt(input) }), 'utf8');
 	} catch (e) {
 		const why = e instanceof Error ? e.message : String(e);
 		jobs.markFailed(input.traceId, `prompt write failed: ${why}`);
