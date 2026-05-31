@@ -36,6 +36,12 @@ icon 512 static/icon-512.png
 icon 512 static/icon-512-maskable.png 80 # maskable safe-zone
 icon 1024 static/icon-1024.png
 
+# In-app logo — TRANSPARENT trimmed mark for the chat header / sidebar / empty
+# state. NOT flattened, so the magenta glow hugs the mark itself (a flattened
+# square reads as an unpolished dark box on the app background).
+convert "$SRC" -trim +repage -resize 452x452 -background none -gravity center \
+  -extent 512x512 static/sully-mark.png
+
 # Splash: icon centered on BG at ~38% of the shorter edge.
 splash() {
   local w="$1" h="$2" out="$3"
