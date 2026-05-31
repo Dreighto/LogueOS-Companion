@@ -42,10 +42,8 @@ TASK: ${input.task}
 TARGET REPO: ${input.targetRepo}
 BRIEF: ${input.brief}
 
-PROGRESS CALLBACK — POST each step to ${cbUrl} as JSON:
+PROGRESS CALLBACK — POST each step to ${cbUrl} as JSON (no auth header needed; it's a local/tailnet callback):
   { "trace_id": "${input.traceId}", "action": "reading|edited|ran|thinking", "target": "<path or cmd>" }
-sign the raw JSON body with HMAC-SHA256 (hex) in the X-Companion-HMAC header using
-the shared secret in your COMPANION_CALLBACK_SECRET env var.
 
 CLOSING — POST a terminal row, then your result-marker telemetry:
   { "trace_id": "${input.traceId}", "action": "completed", "result_ref": "<final message or artifact ref>",

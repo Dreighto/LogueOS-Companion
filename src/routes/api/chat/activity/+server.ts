@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
-import crypto from 'node:crypto';
 import type { RequestHandler } from './$types';
 import { getActivityForTrace, getRecentActivity, writeActivity } from '$lib/server/chatActivity';
-import { runMode, serverConfig } from '$lib/server/config';
+import { runMode } from '$lib/server/config';
 import { markWorking, markDone, markFailed, getJob } from '$lib/server/dispatchJobs';
 import { captureActualTokens, type ResultMarker } from '$lib/server/dispatchUsage';
 
@@ -25,22 +24,16 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST — the dispatched worker calls back here to stream its activity into
-// companion.db (it can't reach the DB directly). HMAC-authed; fail closed.
+// companion.db (it can't reach the DB directly). Auth = the Tailscale boundary
+// (see hooks.server.ts): the worker is co-located (loopback/tailnet), so a
+// callback for a KNOWN in-flight job that did NOT arrive via the public Funnel
+// is trusted. Public-Funnel callers are rejected, so guessing a trace_id over
+// the public URL can't forge activity. No shared secret to distribute.
 export const POST: RequestHandler = async ({ request }) => {
 	if (!runMode.companionDispatchEnabled) {
 		return json({ error: 'dispatch_disabled' }, { status: 404 });
 	}
-	const secret = serverConfig.companionCallbackSecret;
 	const raw = await request.text();
-	if (!secret) return json({ error: 'callback_auth_unconfigured' }, { status: 401 });
-	const provided = request.headers.get('x-companion-hmac') || '';
-	const expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');
-	if (
-		provided.length !== expected.length ||
-		!crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
-	) {
-		return json({ error: 'hmac_reject' }, { status: 401 });
-	}
 	let body: {
 		trace_id?: string;
 		action?: string;
@@ -56,6 +49,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { trace_id, action } = body;
 	if (!trace_id || !action) return json({ error: 'trace_id_and_action_required' }, { status: 400 });
 	if (!getJob(trace_id)) return json({ error: 'unknown_trace' }, { status: 404 });
+
+	// The tailnet/loopback boundary is the auth (matches sdk-stream's Funnel
+	// gate). Reject anything arriving via the public Funnel.
+	if (request.headers.get('tailscale-funnel-request') !== null) {
+		return json({ error: 'forbidden_public_callback' }, { status: 401 });
+	}
 
 	// Always log the raw activity row for the bubble/SSE.
 	writeActivity(trace_id, action, body.target ?? null);
