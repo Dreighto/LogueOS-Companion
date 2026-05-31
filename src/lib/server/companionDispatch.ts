@@ -2,6 +2,8 @@
 // createJob(decided) -> HMAC handoff POST to the dispatch listener -> dispatched.
 // Reuses dispatch-listener.ts's HMAC contract (sha256 hex in X-W4-HMAC).
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { serverConfig } from './config';
 import * as jobs from './dispatchJobs';
 import {
@@ -76,14 +78,25 @@ export async function dispatchToWorker(input: DispatchInput): Promise<DispatchRe
 		return { ok: false, reason: 'listener HMAC secret not configured' };
 	}
 	const url = `${serverConfig.dispatchListenerUrl.replace(/\/+$/, '')}/dispatch`;
+	// The listener reads the prompt from a FILE (prompt_path), not inline. Write
+	// it to an absolute path under the companion data dir — the co-located
+	// listener (loopback, same machine) reads it directly.
+	let promptPath: string;
+	try {
+		const dir = path.join(path.dirname(serverConfig.memoryDbPath), 'dispatch-prompts');
+		fs.mkdirSync(dir, { recursive: true });
+		promptPath = path.join(dir, `${input.traceId}.md`);
+		fs.writeFileSync(promptPath, buildWorkerPrompt(input), 'utf8');
+	} catch (e) {
+		const why = e instanceof Error ? e.message : String(e);
+		jobs.markFailed(input.traceId, `prompt write failed: ${why}`);
+		return { ok: false, reason: `prompt write failed: ${why}` };
+	}
 	const body = JSON.stringify({
-		task: input.task,
-		scope: input.brief,
-		target_repo: input.targetRepo,
-		brief: input.brief,
 		trace_id: input.traceId,
 		worker: input.worker,
-		prompt: buildWorkerPrompt(input)
+		target_repo: input.targetRepo,
+		prompt_path: promptPath
 	});
 	try {
 		const resp = await fetch(url, {
