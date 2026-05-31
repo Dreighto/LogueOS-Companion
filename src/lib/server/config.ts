@@ -131,6 +131,28 @@ export const serverConfig = {
 	orchestratorEnvPath: getEnv(
 		'LOGUEOS_ORCHESTRATOR_ENV_PATH',
 		'/home/dreighto/dev/LogueOS-Orchestrator/.env'
+	),
+	// ── Companion dispatcher (Phase 1) ──────────────────────────────────────
+	// Companion-native dispatch is gated by its OWN flag, NOT the kernel `_wired`
+	// gate. `_wired`/`dispatchEnabled` stay false in companion mode (they govern
+	// the kernel GATEWAY path); this flag governs the NEW companion->listener path.
+	companionDispatchCap: parsePositiveInt(
+		getEnv('COMPANION_DISPATCH_CAP', '20'),
+		'COMPANION_DISPATCH_CAP'
+	),
+	companionDispatchWindowMin: parsePositiveInt(
+		getEnv('COMPANION_DISPATCH_WINDOW_MIN', '1440'),
+		'COMPANION_DISPATCH_WINDOW_MIN'
+	),
+	// Shared secret the dispatched worker uses to authenticate its activity
+	// callback POST to /api/chat/activity (HMAC over the raw body). Empty =
+	// callback auth disabled (callbacks rejected) — fail closed.
+	companionCallbackSecret: getEnv('COMPANION_CALLBACK_SECRET', ''),
+	// Absolute base URL the worker prompt embeds so the worker can reach this
+	// app's callback endpoint (e.g. the :8444 tailnet origin).
+	companionCallbackBaseUrl: getEnv(
+		'COMPANION_CALLBACK_BASE_URL',
+		'https://room.taila28611.ts.net:8444/companion'
 	)
 };
 
@@ -141,15 +163,18 @@ export const serverConfig = {
 // full matrix: 'wired' -> all true, 'companion' -> all false, ''/garbage -> all
 // true (the fail-closed default).
 const _wired = serverConfig.mode !== 'companion';
+const _companionDispatch =
+	serverConfig.mode === 'companion' && getEnv('COMPANION_DISPATCH_ENABLED', 'false') === 'true';
 export const runMode = {
 	mode: serverConfig.mode,
 	companion: !_wired,
 	kernelWired: _wired, // master gate
-	dispatchEnabled: _wired, // @cc/@agy + workflow gateway dispatch
+	dispatchEnabled: _wired, // @cc/@agy + workflow gateway dispatch (KERNEL path)
 	observationsEnabled: _wired, // Tier-0 observation emit to the shared DB
 	gatewayWorkspaces: _wired, // fetch workspace list from the gateway
 	completionPoller: _wired, // tail cc_completion_log.jsonl for push
-	killSwitchEnabled: _wired // read the system_halt kernel artifact
+	killSwitchEnabled: _wired, // read the system_halt kernel artifact
+	companionDispatchEnabled: _companionDispatch // NEW companion->listener dispatch
 } as const;
 
 // ── App identity ──────────────────────────────────────────────────────────
