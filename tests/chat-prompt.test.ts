@@ -29,20 +29,21 @@ describe('buildSystemPrompt — companion mode', () => {
 			currentTier: 'chat',
 			threadId: 't1'
 		});
-		// Sully persona, daily-driver framing
+		// Sully persona — companion-first identity
 		expect(out).toMatch(/You are Sully/);
-		expect(out).toMatch(/Captain's local companion/);
-		expect(out).toMatch(/daily driver/);
-		// Cross-chat texture cue (so she matches CH/GMI/PXY/GPT vibe)
-		expect(out).toMatch(/Claude, Gemini, Perplexity, ChatGPT/);
-		// Stress-test instruction (not a yes-man)
-		expect(out).toMatch(/Stress-test/);
+		expect(out).toMatch(/just talk to/);
+		// The two-textures mechanic (talk vs work) is the core of her
+		expect(out).toMatch(/two textures/);
+		// Warm, present companion vibe
+		expect(out).toMatch(/genuinely present/);
+		// Honest, not a yes-man
+		expect(out).toMatch(/honest/);
 		// Console-mode artifacts must NOT appear here
 		expect(out).not.toMatch(/LogueOS Console/);
 		expect(out).not.toMatch(/inside LogueOS/);
-		// The PR-A "NOT a dispatcher" line is gone; she can help draft prompts
-		// for other agents now (capability framing, not a flat denial).
-		expect(out).toMatch(/draft a prompt/);
+		// She's the hub — dispatches code work to CC/AGY
+		expect(out).toMatch(/hand code off/);
+		expect(out).toMatch(/@cc/);
 		expect(out).toMatch(/Active workspace: companion/);
 	});
 
