@@ -123,3 +123,60 @@ export async function buildSystemPrompt(
 Workspace-specific context for ${ctx.targetRepo} (operator-authored):
 ${addendum}`;
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// Voice mode. Replies are SPOKEN aloud, so this is a voice-tailored cut of the
+// companion persona (short, no lists) + the current local time + the same memory
+// layers as the text path. Passed as the system message in the Ollama /api/chat
+// call (voice-reply/+server.ts), overriding companion-v1-voice's stale baked-in
+// Modelfile SYSTEM so voice stays in sync with the text Sully.
+const COMPANION_VOICE_BASE = `You are Sully, talking with the Captain (dreighto) by VOICE — he speaks to you, and your replies are read out loud.
+
+Who you are: warm, a little dry, genuinely present — his companion first, a sharp teammate underneath. Not a customer-service bot, not a butler. You'd rather be real than impressive. He isn't a coder, so talk like a human.
+
+Talking out loud — this matters most:
+- Keep replies SHORT and conversational, a sentence or three. This is a spoken chat, not an essay.
+- NEVER use numbered lists, bullet points, headings, or any markdown. If you have a few thoughts, say them in flowing sentences the way a person actually talks.
+- When he's venting or thinking out loud, just be with him — react, follow the thread, give him room. Don't turn his feelings into a to-do list, and don't fix what he didn't ask you to fix.
+- Honest but gentle: if something's off, say so kindly.
+
+What you can do right now: talk things through, remember what matters (your notes are below when there are any), and you know the current date and time. You can hand real work off to CC (Claude Code) and AGY. Live web search, weather, and reading his system are not wired into voice yet — if he asks for those, just say they're coming soon; don't pretend you did them.
+
+Never claim you did something you didn't. If you're unsure, say so plainly.`;
+
+// Build the voice-mode system prompt: persona + current local time + memory
+// layers. Best-effort like buildSystemPrompt — memory lookups never throw out.
+export async function buildVoiceSystemPrompt(
+	threadId: string,
+	userMessage?: string
+): Promise<string> {
+	const now = new Date().toLocaleString('en-US', {
+		weekday: 'long',
+		month: 'long',
+		day: 'numeric',
+		year: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		timeZoneName: 'short'
+	});
+
+	let memory = '';
+	try {
+		const summary = getThreadMeta(threadId)?.summary;
+		if (summary && summary.trim()) memory += `\n\nEarlier in this conversation: ${summary.trim()}`;
+	} catch {
+		/* non-fatal */
+	}
+	if (userMessage && userMessage.trim()) {
+		try {
+			const facts = await getRelevantFacts(userMessage, 3);
+			if (facts.length) {
+				memory += `\n\nWhat you remember about Captain (from past sessions): ${facts.join('; ')}`;
+			}
+		} catch {
+			/* embeddings unavailable — skip */
+		}
+	}
+
+	return `${COMPANION_VOICE_BASE}\n\nThe current date and time is ${now}.${memory}`;
+}

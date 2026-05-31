@@ -13,6 +13,7 @@ import type { RequestHandler } from './$types';
 import { addChatMessage, getChatMessages } from '$lib/server/chat';
 import { resolveVoiceModel } from '$lib/server/model_catalog';
 import { VOICE_KEEP_ALIVE } from '$lib/server/voice_runtime';
+import { buildVoiceSystemPrompt } from '$lib/server/chat_prompt';
 
 const OLLAMA = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 // Voice model id resolved via the shared catalog so a "change the default voice
@@ -55,6 +56,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		else turns.push({ ...m });
 	}
 
+	// Prepend the voice system prompt (persona + live local time + memory layers).
+	// Overrides companion-v1-voice's stale baked-in Modelfile SYSTEM so voice
+	// matches the text Sully — warm, short, no spoken lists, time-aware.
+	const voiceSystem = await buildVoiceSystemPrompt(threadId, text);
+	const chatMessages = [{ role: 'system', content: voiceSystem }, ...turns];
+
 	let upstream: Response;
 	try {
 		upstream = await fetch(`${OLLAMA}/api/chat`, {
@@ -62,7 +69,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				model: VOICE_MODEL,
-				messages: turns,
+				messages: chatMessages,
 				stream: true,
 				// Keep the model resident across conversational pauses (pre-warmed on
 				// Voice Mode entry); it still unloads after the session frees the GPU.
