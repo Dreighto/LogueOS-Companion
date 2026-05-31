@@ -33,7 +33,12 @@ jobs:
           node-version: 22
 
       - name: Install codemagic-cli-tools
-        run: pip3 install codemagic-cli-tools
+        run: |
+          # The runner's system Python is externally-managed (PEP 668), so
+          # `pip3 install` is blocked. pipx is the runner-sanctioned way to
+          # install CLI tools; add its bin dir to PATH for later steps.
+          pipx install codemagic-cli-tools
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install JS dependencies
         run: npm ci
