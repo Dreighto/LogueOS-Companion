@@ -34,10 +34,8 @@ export interface PendingJob {
 
 // Allowed forward transitions. decided -> dispatched -> working -> terminal;
 // retry loops back to dispatched. Terminal states accept no further moves.
-// decided also allows direct short-circuit to working/done/failed/aborted for
-// cases where the dispatcher resolves immediately without a full lifecycle step.
 const TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-	decided: ['dispatched', 'working', 'done', 'aborted', 'failed'],
+	decided: ['dispatched', 'aborted', 'failed'],
 	dispatched: ['working', 'done', 'failed', 'retry', 'aborted'],
 	working: ['done', 'failed', 'retry', 'aborted'],
 	retry: ['dispatched', 'aborted', 'failed'],

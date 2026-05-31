@@ -76,6 +76,8 @@ describe('pending_jobs state machine', () => {
 			fingerprint: 'd',
 			predictedTokens: 0
 		});
+		j.markDispatched('sully-11');
+		j.markWorking('sully-11', 'running');
 		j.markDone('sully-11', null);
 		expect(() => j.markWorking('sully-11', 'late')).toThrow(/illegal transition/i);
 	});
@@ -90,6 +92,7 @@ describe('pending_jobs state machine', () => {
 			fingerprint: 'e',
 			predictedTokens: 0
 		});
+		j.markDispatched('sully-12');
 		j.markWorking('sully-12', 'editing');
 		const inflight = j.listInFlight();
 		expect(inflight.map((r) => r.trace_id)).toContain('sully-12');
