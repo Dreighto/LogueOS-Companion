@@ -16,6 +16,7 @@ import {
 	persistAssistantTurn
 } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
+import { dispatchToWorker } from '$lib/server/companionDispatch';
 
 const GATEWAY_TIMEOUT_MS = 10_000;
 
@@ -199,10 +200,49 @@ export const POST: RequestHandler = async ({ request }) => {
 		// Back-compat alias for the existing dispatch block below.
 		const shouldTrigger = shouldDispatch;
 
-		// Companion mode: @cc/@agy worker dispatch runs through the kernel gateway,
-		// which is OFF here. Return a friendly note instead of dispatching (and
-		// don't silently route the @-mention to the local model). Everything else
-		// flows through the normal local conversational path below.
+		// Companion-native dispatch (Phase 1). When enabled, an explicit
+		// @cc/@agy intent reaches a worker via the dispatch listener (HMAC) and
+		// the worker streams activity back into companion.db. The KERNEL gateway
+		// path below (runMode.dispatchEnabled) stays OFF in companion mode.
+		if (shouldTrigger && !runMode.dispatchEnabled && runMode.companionDispatchEnabled) {
+			const traceId = `sully-${Date.now()}`;
+			// `worker` was resolved above to 'claude-code' | 'agy' | 'auto'.
+			// Spec §4.3: emit 'gemini' (the listener-accepted frontend name).
+			const dispatchWorker = worker === 'claude-code' ? 'claude-code' : 'gemini';
+			const res = await dispatchToWorker({
+				traceId,
+				worker: dispatchWorker,
+				category: 'code',
+				brief: message.trim().slice(0, 200),
+				targetRepo,
+				task: message.trim(),
+				threadId
+			});
+			if (res.ok) {
+				addChatMessage(
+					'system',
+					`Sully sent this to **${dispatchWorker === 'claude-code' ? 'CC' : 'AGY'}** on **${targetRepo}**. (Trace: ${traceId})`,
+					traceId,
+					ticket_id || null,
+					null,
+					'sent',
+					threadId
+				);
+			} else {
+				addChatMessage(
+					'system',
+					`⚠️ Dispatch held: ${res.reason}.`,
+					null,
+					ticket_id || null,
+					null,
+					'sent',
+					threadId
+				);
+			}
+			return json({ ok: true, trace_id: traceId });
+		}
+
+		// Companion mode WITHOUT the dispatch flag: @cc/@agy is unavailable.
 		if (shouldTrigger && !runMode.dispatchEnabled) {
 			addChatMessage(
 				'system',
