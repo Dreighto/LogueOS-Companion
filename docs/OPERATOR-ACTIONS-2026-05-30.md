@@ -14,7 +14,13 @@ Plain-English status + the few things only **you** can do. CC did everything els
   - **It waits longer before replying** (0.8s → 1.2s) so it stops cutting you off mid-thought.
 - **iOS app icon + GitHub Actions CI** built and pushed to `main`: custom icon pipeline, a TestFlight build workflow, and a keepalive workflow. Both workflows are live in your repo's Actions tab.
 
-## ⏳ DONE EXCEPT THE PARTS ONLY YOU CAN DO
+## 🚢 SHIPPED — app + new icon are on TestFlight (via Codemagic, just now)
+
+Build `6a1ba67a` went green end-to-end: generated the custom icon, signed, archived `App.ipa`, and **published to TestFlight**. Apple accepted the upload, which means the 1024 icon passed validation (the alpha-flatten worked). **Open TestFlight on your phone — the build updates with the new icon**, and it loads the improved (voice + image) app remotely.
+
+Codemagic already auto-signs every build, so you have hands-off signing on this path *today*. The GitHub Actions path below is the long-term replacement you asked for — fully wired, just needs two secrets only you can retrieve.
+
+## ⏳ GitHub path — wired, needs 2 secrets only you can get
 
 The GitHub iOS build is fully wired but **cannot run until 2 secrets are added** (they're locked inside Codemagic / your Apple account — I can't reach them):
 
