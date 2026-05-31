@@ -10,8 +10,8 @@ name: Sully iOS keepalive (beat the 90-day TestFlight expiry)
 # cycle. Uncomment it after the first successful ios-testflight run.
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 9 */21 * *'   # every ~21 days, well inside the 90-day window
+  schedule:
+    - cron: '0 9 */21 * *'   # every ~21 days, well inside the 90-day window
 
 jobs:
   rebuild:
