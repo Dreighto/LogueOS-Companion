@@ -94,37 +94,42 @@
 		? 'translateX(0)'
 		: 'translateX(-100%)'}"
 >
-	<!-- Sidebar Header — padded below the dynamic island / safe area -->
+	<!-- Safe-area spacer — a background-matched div that fills the exact height of
+	     env(safe-area-inset-top). Using a spacer instead of padding on the fixed
+	     element itself is the reliable pattern for WKWebView (Capacitor iOS):
+	     env() on padding of position:fixed can mis-compute; a height-only spacer
+	     at the top of the fixed container is unambiguous. -->
+	<div class="shrink-0" style="height: env(safe-area-inset-top, 0px);"></div>
+
+	<!-- Sidebar Header -->
 	<div
-		class="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pb-3"
-		style="padding-top: max(1.25rem, calc(env(safe-area-inset-top, 0px) + 1rem));"
+		class="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 pt-3 pb-3"
 	>
-		<div class="flex items-center gap-2.5">
-			<div
-				class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-				style="background: radial-gradient(circle at 30% 25%, #ff8fc0, #ec2d78 55%, #c4186a); box-shadow: 0 0 12px rgba(236,45,120,0.45);"
-			>
-				<Moon size={13} class="text-white" strokeWidth={2.5} />
-			</div>
-			<span class="font-sans text-[13px] font-semibold tracking-tight text-zinc-200">Sully</span>
+		<div class="flex items-center gap-2">
+			<img
+				src="{base}/sully-mark.png"
+				alt="Sully"
+				class="h-7 w-7 shrink-0 drop-shadow-[0_0_8px_rgba(236,45,120,0.45)]"
+			/>
+			<span class="font-sans text-sm font-semibold tracking-tight text-zinc-100">Sully</span>
 		</div>
 		<div class="flex items-center gap-1">
 			<button
 				type="button"
 				onclick={onnewThread}
-				class="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-zinc-400 transition-all hover:bg-white/[0.08] hover:text-zinc-200 active:scale-90 sm:h-7 sm:w-7"
+				class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-400 transition-all hover:bg-white/[0.07] hover:text-white active:scale-90 sm:h-9 sm:w-9"
 				title="New conversation"
 				aria-label="New thread"
 			>
-				<Compass size={14} />
+				<Compass size={16} />
 			</button>
 			<button
 				type="button"
 				onclick={oncloseSidebar}
-				class="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.04] text-zinc-400 transition-all hover:text-white active:scale-90 sm:h-7 sm:w-7 lg:hidden"
+				class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-400 transition-all hover:text-white active:scale-90 sm:h-9 sm:w-9 lg:hidden"
 				aria-label="Close sidebar"
 			>
-				<X size={14} />
+				<X size={16} />
 			</button>
 		</div>
 	</div>
