@@ -57,7 +57,7 @@
 		<button
 			type="button"
 			onclick={ontoggleSidebar}
-			class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-400 transition-all hover:bg-white/[0.07] hover:text-white active:scale-90 sm:h-9 sm:w-9"
+			class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-400 transition-all hover:bg-white/[0.07] hover:text-white active:scale-90 sm:h-9 sm:w-9 lg:hidden"
 			aria-label="Toggle Sessions Sidebar"
 			title="Toggle Sessions Sidebar"
 		>
