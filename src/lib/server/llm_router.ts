@@ -28,6 +28,12 @@ export type { Tier };
 // (`google`/`local`) via a tiny adapter.
 type Provider = 'anthropic' | 'gemini' | 'openai' | 'ollama';
 
+// NOTE: deliberately NOT `providerPrefToApi` (the client-side ProviderPref
+// normalizer). This map is keyed by THIS router's own provider namespace
+// (`openai`, `ollama`) which has no ProviderPref equivalent — `ollama`→`local`
+// and `openai`→`openai` are mappings the picker normalizer can't express. Only
+// the `gemini`→`google` row overlaps; folding it in would require per-key
+// branching more complex than the table. Left as a dedicated adapter.
 const CATALOG_BY_LOCAL: Record<Provider, CatalogProvider> = {
 	anthropic: 'anthropic',
 	gemini: 'google',

@@ -23,6 +23,7 @@ import { DefaultChatTransport } from 'ai';
 import { resolve } from '$app/paths';
 import { toasts } from '$lib/utils/toasts';
 import { untrack } from 'svelte';
+import { providerPrefToApi } from './model-registry';
 import type { ChatMessage, ProviderPref } from '$lib/types/chat-ui';
 
 export interface StreamingDeps {
@@ -65,7 +66,7 @@ export function createStreamingController(deps: StreamingDeps): StreamingControl
 				return {
 					thread: deps.getActiveThread(),
 					target_repo: deps.getSelectedRepo(),
-					provider: provider === 'gemini' ? 'google' : (provider ?? undefined),
+					provider: providerPrefToApi(provider),
 					model: deps.getModelOverride() ?? undefined
 				};
 			},
@@ -185,8 +186,7 @@ export function createStreamingController(deps: StreamingDeps): StreamingControl
 		get sdkChat() {
 			return sdkChat;
 		},
-		isStreamingFor: (threadId: string) =>
-			streamState !== null && streamState.threadId === threadId,
+		isStreamingFor: (threadId: string) => streamState !== null && streamState.threadId === threadId,
 		run,
 		destroy: () => {
 			/* sdkChat has no explicit close; rely on GC */

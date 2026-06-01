@@ -58,6 +58,7 @@ import {
 } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
 import { resolveChatModel } from '$lib/server/model_catalog';
+import { providerPrefToApi } from '$lib/chat/model-registry';
 
 // LogueOS-on-SDK tools — read-only operator-context fetches the LLM can call
 // when answering. PR 10a shipped the first tool; PR 10c (this commit) adds
@@ -361,14 +362,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	//   2. thread_state.provider_override (persisted via model picker)
 	//   3. Default 'google' (matches legacy AGY-chat-lock UX). Operator can
 	//      flip to Anthropic via picker; Anthropic-via-OAuth is free.
-	const overrideFromState: Provider | null =
-		threadState.provider_override === 'anthropic'
-			? 'anthropic'
-			: threadState.provider_override === 'gemini'
-				? 'google'
-				: threadState.provider_override === 'local'
-					? 'local'
-					: null;
+	const overrideFromState: Provider | undefined = providerPrefToApi(threadState.provider_override);
 	// Tier 'local' implicitly selects the local provider unless the operator
 	// has explicitly overridden. Lets the existing "Local (Ollama)" model
 	// picker option route through Ollama without per-thread setup.
