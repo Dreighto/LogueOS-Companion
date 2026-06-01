@@ -320,6 +320,35 @@ export const POST: RequestHandler = async ({ request }) => {
 		userText
 	});
 
+	// ── Hot window ──────────────────────────────────────────────────────────
+	// The frontend resets its SDK chat each send (streaming.svelte.ts), so
+	// `body.messages` carries only the CURRENT turn. The server is the single
+	// source of truth: assemble the model's real conversation from chat_messages
+	// here. Without this, switching models mid-thread (or any second turn) ships
+	// the new turn with NO history — the model genuinely "forgets" the chat.
+	// HOT_WINDOW must match working_memory.ts (the Layer-1 summary covers only
+	// older-than-window history; these last turns are sent verbatim).
+	const HOT_WINDOW = 20;
+	const priorTurns: UIMessage[] = getChatMessages(HOT_WINDOW, threadId)
+		.filter(
+			(r) => r.sender !== 'system' && typeof r.message === 'string' && r.message.trim() !== ''
+		)
+		.map(
+			(r) =>
+				({
+					id: String(r.id),
+					role: r.sender === 'operator' ? 'user' : 'assistant',
+					parts: [{ type: 'text', text: r.message }]
+				}) as UIMessage
+		);
+	// Drop the DB's text-only copy of the current turn(s) and use the body's
+	// version instead — it preserves rich parts (e.g. image attachments) that
+	// chat_messages stores only as text.
+	const modelMessages: UIMessage[] = [
+		...priorTurns.slice(0, Math.max(0, priorTurns.length - messages.length)),
+		...messages
+	];
+
 	const targetRepo = detectTargetRepo(userText, body.target_repo);
 
 	// Provider preference:
@@ -410,7 +439,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 				// Flatten the conversation into a single text prompt for the
 				// stateless CLI. The CLI doesn't see prior turns otherwise.
-				const transcript = messages
+				const transcript = modelMessages
 					.map((m) => {
 						const role = m.role === 'assistant' ? 'assistant' : 'user';
 						const text = (m.parts || [])
@@ -548,7 +577,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const result = streamText({
 		model: modelHandle.model,
 		system: systemPrompt,
-		messages: await convertToModelMessages(messages),
+		messages: await convertToModelMessages(modelMessages),
 		tools,
 		// Cap multi-step tool loops — keeps a runaway "call → reflect → call"
 		// chain from consuming Max quota / API budget. Raised to 8 so a
