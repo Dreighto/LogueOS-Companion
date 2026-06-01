@@ -41,7 +41,7 @@ import { createUIMessageStream, createUIMessageStreamResponse } from 'ai';
 import { type Tier } from '$lib/server/phase_classifier';
 import { upsertThreadTier } from '$lib/server/thread_state';
 import { touchLastActivity } from '$lib/server/thread_meta';
-import { serverConfig, runMode, appIdentity } from '$lib/server/config';
+import { runMode, appIdentity } from '$lib/server/config';
 import { getSensitiveTools } from '$lib/server/companion_tools';
 import {
 	ruleGate,
@@ -195,8 +195,13 @@ function getAnthropicOAuth(): string | undefined {
  *
  * Sealed routing (operator directive — no band-aids):
  *   Haiku  → OAuth-first (free Max quota), API-key fallback
- *   Sonnet → API key only (billed)
- *   Opus   → API key only (billed)
+ *   Sonnet → CLI bridge over OAuth (see `useClaudeCLI` above; never reaches
+ *            this direct-API path)
+ *   Opus   → CLI bridge over OAuth (same)
+ *
+ * This helper only runs on the direct-API path. Sonnet/Opus are intercepted
+ * earlier by `useClaudeCLI` and streamed through the Claude CLI binary (the
+ * authorized OAuth client), so they don't fall back to a billed API key.
  */
 function getAnthropicAuthForModel(modelId: string): { authToken?: string; apiKey?: string } {
 	const isHaiku = /haiku/i.test(modelId);

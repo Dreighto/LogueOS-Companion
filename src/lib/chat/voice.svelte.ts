@@ -1,10 +1,8 @@
 // Voice / talkback state machine — extracted from chat/+page.svelte (cleanup ③
-// slice 3c). Owns three cohesive concerns:
+// slice 3c). Owns two cohesive concerns:
 //   1. iOS audio-unlock workaround (a muted blip on first user gesture so the
 //      persistent <audio> element is allowed to play TTS later).
-//   2. One-shot mic dictation (MediaRecorder → /api/chat/transcribe → composer
-//      draft).
-//   3. The hands-free continuous "Talkback" loop: capture (Web Speech API
+//   2. The hands-free continuous "Talkback" loop: capture (Web Speech API
 //      primary, MediaRecorder + VAD + async transcription fallback) → dispatch
 //      → wait for reply → speak (TTS) → chime → loop.
 //
@@ -38,8 +36,6 @@ export interface VoiceDeps {
 	getAudioEl: () => HTMLAudioElement | null;
 	getComposerMode: () => ComposerMode;
 	setComposerMode: (mode: ComposerMode) => void;
-	/** Append dictated text to the composer draft (one-shot mic). */
-	appendDictation: (text: string) => void;
 	/** Re-focus the composer textarea after a dictation lands. */
 	focusComposer: () => void;
 	/** Append a server-returned row to the rendered feed (talkback dispatch). */
@@ -57,8 +53,6 @@ export interface VoiceController {
 	readonly phase: TalkbackPhase | null;
 	/** iOS audio-unlock blip — call on the first user gesture (also on send). */
 	unlockAudio: () => void;
-	/** Toggle one-shot mic dictation. */
-	toggleRecord: () => Promise<void>;
 	/** Toggle the hands-free talkback loop. */
 	toggleTalkback: () => Promise<void>;
 	/** Stop talkback + release every device resource. `reason` toasts if set. */
@@ -77,10 +71,6 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 	// ── Reactive UI state ───────────────────────────────────────────────
 	let active = $state(false);
 	let phase = $state<TalkbackPhase | null>(null);
-
-	// ── One-shot dictation (imperative) ─────────────────────────────────
-	let mediaRecorder: MediaRecorder | null = null;
-	let recordChunks: Blob[] = [];
 
 	// ── Persistent-audio unlock (imperative) ────────────────────────────
 	let audioUnlocked = false;
@@ -114,50 +104,6 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			audioUnlocked = true;
 		} catch {
 			/* best effort */
-		}
-	}
-
-	// ── Voice dictation (Mic button — one-shot) ─────────────────────────
-	async function toggleRecord() {
-		unlockAudio();
-		if (deps.getComposerMode() === 'recording') {
-			mediaRecorder?.stop();
-			return;
-		}
-		try {
-			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true, noiseSuppression: true }
-			});
-			recordChunks = [];
-			mediaRecorder = new MediaRecorder(stream);
-			mediaRecorder.ondataavailable = (e) => {
-				if (e.data.size > 0) recordChunks.push(e.data);
-			};
-			mediaRecorder.onstop = async () => {
-				deps.setComposerMode('idle');
-				stream.getTracks().forEach((t) => t.stop());
-				const blob = new Blob(recordChunks, { type: 'audio/webm' });
-				const fd = new FormData();
-				fd.append('file', blob, 'rec.webm');
-				try {
-					const r = await fetch(resolve('/api/chat/transcribe'), { method: 'POST', body: fd });
-					if (!r.ok) {
-						toasts.add('Transcription failed', 'error');
-						return;
-					}
-					const b = await r.json();
-					if (b.text) {
-						deps.appendDictation(b.text);
-						deps.focusComposer();
-					}
-				} catch {
-					toasts.add('Transcription service unreachable', 'error');
-				}
-			};
-			mediaRecorder.start();
-			deps.setComposerMode('recording');
-		} catch {
-			toasts.add('Microphone permission denied', 'error');
 		}
 	}
 
@@ -590,7 +536,6 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			return phase;
 		},
 		unlockAudio,
-		toggleRecord,
 		toggleTalkback,
 		stopTalkback,
 		destroy: () => stopTalkback()

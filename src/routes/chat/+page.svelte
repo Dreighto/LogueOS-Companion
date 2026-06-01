@@ -8,7 +8,7 @@
 	//   - Solid, readable menus (no transparent text overlays on gradients).
 	//   - Glowing orange operator outlines & cyan agent labels.
 	//   - Dedicated collapsible left sidebar for threads & pinned sessions.
-	//   - 100% wired controls (Mic dictation, Paperclip uploads, Sparkles image mode, Talkback loop).
+	//   - 100% wired controls (Paperclip uploads, Sparkles image mode, Talkback loop).
 
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { resolve, base } from '$app/paths';
@@ -33,8 +33,6 @@
 	import { createVoiceController } from '$lib/chat/voice.svelte';
 	import { createRealtimeVoiceController } from '$lib/chat/realtime-voice.svelte';
 	import { replaceState } from '$app/navigation';
-	import { Chat } from '@ai-sdk/svelte';
-	import { DefaultChatTransport } from 'ai';
 	import { Sparkles, Check, Copy, RefreshCw, Volume2, Square, Loader2 } from 'lucide-svelte';
 	import { toasts } from '$lib/utils/toasts';
 	import Markdown from '$lib/components/Markdown.svelte';
@@ -136,7 +134,6 @@
 
 	// Composer states
 	let composerMode = $state<ComposerMode>('idle');
-	let openChip = $state<null | 'repo' | 'thread'>(null);
 
 	// threadMenuOpenFor (and renamingFor / renameDraft / showArchived) live on
 	// threadsCtrl now (PR E1) — the global popover handler reads
@@ -148,7 +145,6 @@
 	// 2026-05-27 and [[reference_chat_app_competitive_borrows]] for the bug
 	// shape.
 	function closeAllPopovers() {
-		openChip = null;
 		showModelOverrideModal = false;
 		threadsCtrl.threadMenuOpenFor = null;
 	}
@@ -163,8 +159,7 @@
 	// popover. Net result: clicking one trigger while another popover is
 	// open swaps the popovers in a single tap.
 	$effect(() => {
-		const anyOpen =
-			openChip !== null || showModelOverrideModal || threadsCtrl.threadMenuOpenFor !== null;
+		const anyOpen = showModelOverrideModal || threadsCtrl.threadMenuOpenFor !== null;
 		if (!anyOpen) return;
 		function onKey(e: KeyboardEvent) {
 			if (e.key === 'Escape') {
@@ -203,7 +198,7 @@
 	// WakeLock, SpeechRecognition) and reaches the page's reactive state ONLY
 	// through this getter/setter port — keeping reactive ownership where the
 	// template binds it. The template reads `voice.phase`; `composerMode` stays
-	// page-owned (it spans idle/focused/recording/talkback) and the controller
+	// page-owned (it spans idle/focused/talkback) and the controller
 	// writes it through setComposerMode.
 	const voice = createVoiceController({
 		getActiveThread: () => threadsCtrl.activeThread,
@@ -212,9 +207,6 @@
 		getAudioEl: () => audioEl,
 		getComposerMode: () => composerMode,
 		setComposerMode: (m) => (composerMode = m),
-		appendDictation: (text) => {
-			composerCtrl.textDraft = (textDraft + ' ' + text).trim();
-		},
 		focusComposer: () => textareaEl?.focus(),
 		appendMessage: (m) => {
 			messages = [...messages, m];
@@ -752,12 +744,6 @@
 	// of the chat surface keeps a single render path off `messages`. While a
 	// stream is active, the last assistant message in chat.messages carries
 
-	// Tiny local-only setter for the model label badge — avoids hitting the
-	// /api/chat/tier roundtrip just to display the model used.
-	function upsertThreadTier_local(modelUsed: string) {
-		if (modelUsed) lastModelUsed = modelUsed;
-	}
-
 	// ─────────────────────────────────────────────────────────────────────
 	// Paperclip Upload Wiring
 	// ─────────────────────────────────────────────────────────────────────
@@ -767,11 +753,6 @@
 
 	// humanSize moved into <Composer /> with the staged-attachments chip row
 	// in Task #7 PR 4.
-
-	function switchRepo(name: string) {
-		selectedRepo = name;
-		openChip = null;
-	}
 
 	// ─────────────────────────────────────────────────────────────────────
 	// Slash commands. Operator types `/` at the start of the composer →
@@ -984,17 +965,12 @@
 		     QUIET HEADER
 		     ═════════════════════════════════════════════════════════════════ -->
 		<ChatHeader
-			{selectedRepo}
-			{selectedWorkspace}
-			{workspaces}
 			{tierEmoji}
 			{lastModelUsed}
 			{selectedModelChoice}
 			{MODEL_CHOICES}
-			bind:openChip
 			bind:showModelOverrideModal
 			ontoggleSidebar={() => (sidebarOpen = !sidebarOpen)}
-			onswitchRepo={switchRepo}
 			onsetModelChoice={(choice) => void setModelChoice(choice)}
 			onopenWorkspaceContext={() => void openWorkspaceContextEditor()}
 			oncloseAllPopovers={closeAllPopovers}
@@ -1312,7 +1288,6 @@
 			onfocus={() => composerMode === 'idle' && (composerMode = 'focused')}
 			onblur={() => composerMode === 'focused' && (composerMode = 'idle')}
 			ontriggerUpload={triggerUpload}
-			ontoggleRecord={() => void voice.toggleRecord()}
 			ontoggleTalkback={() => void voice.toggleTalkback()}
 			onstopTalkback={() => void voice.stopTalkback()}
 			onvoiceMode={() => void rtVoice.enter()}

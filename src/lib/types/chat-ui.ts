@@ -39,7 +39,7 @@ export type Attachment = {
 	text?: string;
 };
 
-export type ComposerMode = 'idle' | 'focused' | 'recording' | 'talkback';
+export type ComposerMode = 'idle' | 'focused' | 'talkback';
 export type TalkbackPhase = 'capture' | 'transcribe' | 'dispatch' | 'speak' | 'loop';
 
 // Realtime Voice Mode (the immersive full-screen pipeline: local STT WS with

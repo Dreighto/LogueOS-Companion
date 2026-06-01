@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Chat composer pill — textarea + slash-command autocomplete + staged
-	// attachment chips + dictation/talkback/image-mode strips + 5 utility
-	// buttons (Attach, Sparkles/Image, Mic, Talkback, Send) + the drag-and-drop
+	// attachment chips + talkback/image-mode strips + utility buttons
+	// (Attach, Sparkles/Image, Talkback, Send/Voice-mode) + the drag-and-drop
 	// overlay.
 	// Extracted from /chat as Task #7 PR 4 of the +page.svelte decomposition.
 	//
@@ -20,7 +20,7 @@
 	// the parent — composer doesn't host popovers keyed on those vars.
 	//
 	// ARIA labels (`Send Message`, `Attach File`, `Toggle Image Gen Mode`,
-	// `Voice Dictation`, `Hands-free continuous Talkback`) and tap-target
+	// `Voice mode`, `Hands-free continuous Talkback`) and tap-target
 	// sizes (h-11 w-11 on mobile, sm:h-9 sm:w-9 on desktop) are load-bearing
 	// for the chat e2e suite and PR #143's mobile spec. Do not change.
 
@@ -77,7 +77,6 @@
 		onfocus,
 		onblur,
 		ontriggerUpload,
-		ontoggleRecord,
 		ontoggleTalkback,
 		onstopTalkback,
 		onvoiceMode,
@@ -100,7 +99,6 @@
 		onfocus: () => void;
 		onblur: () => void;
 		ontriggerUpload: () => void;
-		ontoggleRecord: () => void;
 		ontoggleTalkback: () => void;
 		onstopTalkback: () => void;
 		onvoiceMode: () => void;
@@ -156,33 +154,22 @@
 	<!-- Outer border shifting glow container -->
 	<div
 		class="relative flex flex-col gap-2 rounded-3xl border p-2 transition-all duration-300
-			{composerMode === 'recording'
-			? 'border-amber-500/40 bg-amber-500/[0.04] shadow-[0_0_30px_rgba(245,158,11,0.15)]'
-			: composerMode === 'talkback'
-				? 'border-emerald-500/40 bg-emerald-500/[0.04] shadow-[0_0_30px_rgba(16,185,129,0.15)]'
-				: imageMode
-					? 'border-cyan-500/40 bg-cyan-500/[0.04] shadow-[0_0_30px_rgba(6,182,212,0.15)]'
-					: sending
-						? 'animate-pulse border-[#ec2d78]/45 bg-[#ec2d78]/[0.05] shadow-[0_0_34px_rgba(236,45,120,0.28)]'
-						: 'border-white/[0.08] bg-[#0e0e11]/60 backdrop-blur-2xl focus-within:border-white/20'}"
+			{composerMode === 'talkback'
+			? 'border-emerald-500/40 bg-emerald-500/[0.04] shadow-[0_0_30px_rgba(16,185,129,0.15)]'
+			: imageMode
+				? 'border-cyan-500/40 bg-cyan-500/[0.04] shadow-[0_0_30px_rgba(6,182,212,0.15)]'
+				: sending
+					? 'animate-pulse border-[#ec2d78]/45 bg-[#ec2d78]/[0.05] shadow-[0_0_34px_rgba(236,45,120,0.28)]'
+					: 'border-white/[0.08] bg-[#0e0e11]/60 backdrop-blur-2xl focus-within:border-white/20'}"
 	>
-		<!-- Dictation / Talkback Status indicators inside composer -->
-		{#if composerMode === 'recording' || composerMode === 'talkback'}
+		<!-- Talkback Status indicator inside composer -->
+		{#if composerMode === 'talkback'}
 			<div
 				class="flex items-center justify-between border-b border-white/5 px-2 pt-0.5 pb-1 font-mono text-[10px] select-none"
 			>
 				<div class="flex items-center gap-1.5">
-					<span
-						class="h-2 w-2 animate-ping rounded-full
-						{composerMode === 'recording' ? 'bg-amber-400' : 'bg-emerald-400'}"
-					></span>
-					<span
-						class={composerMode === 'recording'
-							? 'text-amber-400'
-							: 'font-semibold text-emerald-400'}
-					>
-						{composerMode === 'recording' ? '🔴 Voice Dictation Hot' : '🔊 Walkie-Talkie Engaged'}
-					</span>
+					<span class="h-2 w-2 animate-ping rounded-full bg-emerald-400"></span>
+					<span class="font-semibold text-emerald-400"> 🔊 Walkie-Talkie Engaged </span>
 					{#if composerMode === 'talkback' && talkbackPhase}
 						<span class="rounded border border-zinc-800 bg-black/40 px-1 text-zinc-500">
 							{TALKBACK_PHASE_LABELS[talkbackPhase]}
@@ -191,7 +178,7 @@
 				</div>
 				<button
 					type="button"
-					onclick={composerMode === 'recording' ? ontoggleRecord : onstopTalkback}
+					onclick={onstopTalkback}
 					class="rounded-full border border-red-500/30 bg-red-950/20 px-2 py-0.5 text-[9px] tracking-wider text-red-400 uppercase transition-all hover:bg-red-900/30"
 				>
 					Disconnect
@@ -304,17 +291,15 @@
 					{onfocus}
 					{onblur}
 					rows="1"
-					placeholder={composerMode === 'recording'
-						? 'Listening dictation… press stop when done.'
-						: composerMode === 'talkback'
-							? 'Continuously monitoring stream… hands free.'
-							: imageMode
-								? 'Describe the image you want to generate…'
-								: 'Talk to Sully…'}
+					placeholder={composerMode === 'talkback'
+						? 'Continuously monitoring stream… hands free.'
+						: imageMode
+							? 'Describe the image you want to generate…'
+							: 'Talk to Sully…'}
 					autocomplete="off"
 					autocapitalize="sentences"
 					spellcheck="false"
-					disabled={composerMode === 'recording' || composerMode === 'talkback'}
+					disabled={composerMode === 'talkback'}
 					class="w-full resize-none bg-transparent px-1 py-1 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500"
 					style="min-height: 36px; max-height: 480px;"
 				></textarea>
@@ -354,7 +339,7 @@
 						<button
 							type="button"
 							onclick={() => (imageMode = !imageMode)}
-							disabled={composerMode === 'recording' || composerMode === 'talkback'}
+							disabled={composerMode === 'talkback'}
 							class="h-11 w-11 shrink-0 disabled:opacity-40 sm:h-9 sm:w-9 {imageMode
 								? 'flex items-center justify-center rounded-[0.8rem] border border-cyan-500/50 bg-cyan-950 text-cyan-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_3px_10px_-3px_rgba(0,0,0,0.55)] transition active:scale-95'
 								: 'btn-tactile'}"
@@ -383,7 +368,6 @@
 					<button
 						type="button"
 						onclick={ontoggleTalkback}
-						disabled={composerMode === 'recording'}
 						class="h-11 w-11 shrink-0 disabled:opacity-40 sm:h-9 sm:w-9 {composerMode === 'talkback'
 							? 'flex animate-pulse items-center justify-center rounded-[0.8rem] border border-emerald-500/50 bg-emerald-950 text-emerald-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_3px_10px_-3px_rgba(0,0,0,0.55)] transition active:scale-95'
 							: 'btn-tactile'}"
@@ -403,7 +387,6 @@
 							type="button"
 							onclick={onsend}
 							disabled={sending ||
-								composerMode === 'recording' ||
 								composerMode === 'talkback' ||
 								attachments.some((a) => a.uploading)}
 							class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
@@ -416,7 +399,7 @@
 						<button
 							type="button"
 							onclick={onvoiceMode}
-							disabled={composerMode === 'recording' || composerMode === 'talkback'}
+							disabled={composerMode === 'talkback'}
 							class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
 							aria-label="Voice mode"
 							title="Voice mode — talk out loud"

@@ -1,12 +1,12 @@
 <script lang="ts">
-	// Chat header — sidebar-toggle + home-anchor logo + target-repo chip
-	// + model-picker chip, with their respective popovers.
+	// Chat header — sidebar-toggle + home-anchor logo + model-picker chip,
+	// with its popover.
 	// Extracted from /chat as Task #7 PR 3 of the +page.svelte decomposition.
 	//
 	// Self-contained markup, but state crossing the boundary stays as props +
 	// callbacks (no store). The parent owns all $state runes; bindable props
 	// are used where the parent's global popover-close $effect needs to read
-	// the value by name (`openChip`, `showModelOverrideModal`).
+	// the value by name (`showModelOverrideModal`).
 	//
 	// The `selectedModelChoice` $derived stays in the parent (it reads
 	// `operatorOverride`, `currentTier`, `providerOverride` from parent
@@ -14,8 +14,8 @@
 	// table is also owned by the parent and passed in — single source of
 	// truth.
 	//
-	// ARIA labels (`Toggle Sessions Sidebar`, `Target repository`,
-	// `Model picker`, `Return to Dashboard`), and the
+	// ARIA labels (`Toggle Sessions Sidebar`, `Sully — home`,
+	// `Model picker`), and the
 	// `data-popover` / `data-popover-trigger` attributes are load-bearing —
 	// the chat e2e suite and the parent's global popover effect select on
 	// them. Do not change.
@@ -23,45 +23,25 @@
 	import { base, resolve } from '$app/paths';
 	import { Menu, ChevronDown, Check, Edit3 } from 'lucide-svelte';
 	import { fly } from 'svelte/transition';
-	import type { Workspace } from '../../routes/chat/+page.server';
-
-	type Tier = 'chat' | 'planning' | 'deep' | 'local';
-	type ProviderPref = 'anthropic' | 'gemini' | 'local' | null;
-	type ModelChoice = {
-		id: string;
-		label: string;
-		sublabel: string;
-		tier: Tier | null;
-		provider: ProviderPref;
-	};
+	import type { ModelChoice } from '$lib/types/chat-ui';
 
 	let {
-		selectedRepo,
-		selectedWorkspace,
-		workspaces,
 		tierEmoji,
 		lastModelUsed,
 		selectedModelChoice,
 		MODEL_CHOICES,
-		openChip = $bindable(),
 		showModelOverrideModal = $bindable(),
 		ontoggleSidebar,
-		onswitchRepo,
 		onsetModelChoice,
 		onopenWorkspaceContext,
 		oncloseAllPopovers
 	}: {
-		selectedRepo: string;
-		selectedWorkspace: Workspace | null | undefined;
-		workspaces: Workspace[];
 		tierEmoji: string;
 		lastModelUsed: string;
 		selectedModelChoice: ModelChoice;
 		MODEL_CHOICES: ModelChoice[];
-		openChip: null | 'repo' | 'thread';
 		showModelOverrideModal: boolean;
 		ontoggleSidebar: () => void;
-		onswitchRepo: (name: string) => void;
 		onsetModelChoice: (choice: ModelChoice) => void;
 		onopenWorkspaceContext: () => void;
 		oncloseAllPopovers: () => void;

@@ -93,12 +93,11 @@ async function runViewport(page, width, height) {
 			const r = el.getBoundingClientRect();
 			return { left: r.left, right: r.right, width: r.width, height: r.height };
 		};
-		const repo = document.querySelector('[aria-label="Target repository"]');
 		const model = document.querySelector('[aria-label="Model picker"]');
 		const header = document.querySelector('header');
-		const toolbar = repo?.closest('header > div:last-child');
+		const toolbar = model?.closest('header > div:last-child');
 		const feed = document.querySelector('main [data-chat-feed], main .overflow-y-auto');
-		const entries = { header, toolbar, repo, model };
+		const entries = { header, toolbar, model };
 		return {
 			width: vw,
 			docScrollWidth: document.documentElement.scrollWidth,
@@ -114,16 +113,7 @@ async function runViewport(page, width, height) {
 		};
 	})()`);
 
-	await evaluate(`document.querySelector('[aria-label="Target repository"]').click()`);
-	await delay(150);
-	const repoOpen = await evaluate(`(() => {
-		const vw = window.innerWidth;
-		const p = document.querySelector('[data-popover]');
-		const r = p.getBoundingClientRect();
-		return { left: r.left, right: r.right, width: r.width, overflows: r.left < 0 || r.right > vw };
-	})()`);
-
-	await evaluate(`document.querySelector('[aria-label="Target repository"]').click(); document.querySelector('[aria-label="Model picker"]').click()`);
+	await evaluate(`document.querySelector('[aria-label="Model picker"]').click()`);
 	await delay(150);
 	const modelOpen = await evaluate(`(() => {
 		const vw = window.innerWidth;
@@ -138,14 +128,13 @@ async function runViewport(page, width, height) {
 	for (const [key, overflows] of Object.entries(closed.overflow)) {
 		if (overflows) failures.push(`${key} overflows viewport`);
 	}
-	if (repoOpen.overflows) failures.push('repo popover overflows viewport');
 	if (modelOpen.overflows) failures.push('model popover overflows viewport');
 	if (closed.bodyOverflow !== 'hidden' || closed.htmlOverflow !== 'hidden') {
 		failures.push(`page shell overflow is ${closed.htmlOverflow}/${closed.bodyOverflow}, expected hidden/hidden`);
 	}
 	if (closed.feedOverflowY !== 'auto') failures.push(`chat feed overflow-y is ${closed.feedOverflowY}, expected auto`);
 
-	return { width, closed, repoOpen, modelOpen, failures };
+	return { width, closed, modelOpen, failures };
 }
 
 const chrome = await findChrome();
