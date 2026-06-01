@@ -10,6 +10,7 @@ import { env } from '$env/dynamic/private';
 import { getTodayTtsUsage, addTtsUsage } from '$lib/server/voice_usage';
 import { getVoice, cloudAvailable, localRefFor, DEFAULT_VOICE_ID } from '$lib/server/voices';
 import { startVoiceServices } from '$lib/server/voice_services';
+import { speakableText } from '$lib/server/tts_normalize';
 
 const EMMA_VOICE_ID = '56bWURjYFHyYyVf490Dp';
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1';
@@ -20,7 +21,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!body || typeof body.text !== 'string' || !body.text.trim()) {
 		throw error(400, { message: 'Missing text' });
 	}
-	const text: string = body.text.trim();
+	const text: string = speakableText(body.text.trim());
 
 	// Force-local master switch (VOICE_TTS_PROVIDER=local): route this "cloud"
 	// endpoint to the local Chatterbox service instead of ElevenLabs. Talkback

@@ -9,6 +9,7 @@
 
 import type { RequestHandler } from './$types';
 import { getVoice, localRefFor } from '$lib/server/voices';
+import { speakableText } from '$lib/server/tts_normalize';
 
 const TTS_URL = (process.env.COMPANION_TTS_URL || 'http://127.0.0.1:18771').replace(/\/+$/, '');
 
@@ -19,7 +20,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	} catch {
 		return new Response('invalid json', { status: 400 });
 	}
-	const text = (body.text || '').trim();
+	const text = speakableText((body.text || '').trim());
 	if (!text) return new Response('empty text', { status: 400 });
 
 	// Resolve the voice's reference clip server-side by opaque id (local voice →
