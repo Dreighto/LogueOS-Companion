@@ -68,7 +68,7 @@
 </script>
 
 <header
-	class="relative z-50 flex shrink-0 items-center justify-between gap-2 px-4 pt-3 pb-2 select-none"
+	class="relative z-50 flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.05] bg-[#0b0b0d]/55 px-4 pt-3 pb-2 backdrop-blur-2xl select-none"
 	style="padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));"
 >
 	<div class="flex shrink-0 items-center gap-1.5">
@@ -76,7 +76,7 @@
 		<button
 			type="button"
 			onclick={ontoggleSidebar}
-			class="flex h-11 w-11 items-center justify-center rounded-xl border border-zinc-800/80 bg-zinc-950/60 text-zinc-400 transition-all hover:text-white active:scale-90 sm:h-9 sm:w-9"
+			class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-400 transition-all hover:bg-white/[0.07] hover:text-white active:scale-90 sm:h-9 sm:w-9"
 			aria-label="Toggle Sessions Sidebar"
 			title="Toggle Sessions Sidebar"
 		>
@@ -101,9 +101,7 @@
 	<!-- Brain / voice picker — the one control Sully needs up top. The
 	     workspace context-editor (Projects-light) is preserved as a footer
 	     item in this menu rather than a second redundant chip. -->
-	<div
-		class="flex max-w-[calc(100vw-9rem)] min-w-0 items-center rounded-2xl border border-zinc-800/80 bg-zinc-950/70 p-0.5 shadow-sm backdrop-blur-md"
-	>
+	<div class="flex min-w-0 shrink-0 items-center">
 		<!-- Model Picker Badge -->
 		<div class="relative min-w-0">
 			<button
@@ -114,7 +112,7 @@
 					oncloseAllPopovers();
 					showModelOverrideModal = next;
 				}}
-				class="flex h-10 max-w-[10.5rem] min-w-0 items-center gap-1.5 rounded-[0.85rem] px-2.5 font-sans text-xs text-zinc-300 transition-all hover:bg-zinc-900/80 hover:text-white active:scale-95 sm:h-9 sm:max-w-[12rem]"
+				class="flex h-9 max-w-[8.5rem] min-w-0 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.04] px-3 font-sans text-xs text-zinc-300 backdrop-blur-md transition-all hover:bg-white/[0.08] hover:text-white active:scale-95"
 				aria-label="Model picker"
 				title="Pick a specific model or leave on Auto"
 			>
