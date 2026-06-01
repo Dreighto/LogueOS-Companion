@@ -163,8 +163,8 @@
 				: imageMode
 					? 'border-cyan-500/40 bg-cyan-500/[0.04] shadow-[0_0_30px_rgba(6,182,212,0.15)]'
 					: sending
-						? 'animate-pulse border-purple-500/40 bg-purple-500/[0.04] shadow-[0_0_30px_rgba(168,85,247,0.15)]'
-						: 'border-white/[0.08] bg-[#0e0e11]/60 shadow-[0_8px_40px_-12px_rgba(236,45,120,0.18)] backdrop-blur-2xl focus-within:border-[#ec2d78]/40 focus-within:shadow-[0_8px_44px_-10px_rgba(236,45,120,0.28)]'}"
+						? 'animate-pulse border-[#ec2d78]/45 bg-[#ec2d78]/[0.05] shadow-[0_0_34px_rgba(236,45,120,0.28)]'
+						: 'border-white/[0.08] bg-[#0e0e11]/60 backdrop-blur-2xl focus-within:border-white/20'}"
 	>
 		<!-- Dictation / Talkback Status indicators inside composer -->
 		{#if composerMode === 'recording' || composerMode === 'talkback'}

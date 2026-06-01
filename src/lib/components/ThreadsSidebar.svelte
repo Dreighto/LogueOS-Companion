@@ -17,6 +17,7 @@
 		X,
 		Plus,
 		Pin,
+		Home,
 		MessageSquare,
 		MoreVertical,
 		Edit3,
@@ -156,7 +157,12 @@
 				{#each threads
 					.filter((t) => showArchived || !t.archived)
 					.slice()
-					.sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false)) as t (t.thread_id)}
+					.sort((a, b) => {
+						// The Den (home) is always pinned to the very top, above everything.
+						if (a.thread_id === 'default') return -1;
+						if (b.thread_id === 'default') return 1;
+						return Number(b.pinned ?? false) - Number(a.pinned ?? false);
+					}) as t (t.thread_id)}
 					<div class="relative">
 						{#if renamingFor === t.thread_id}
 							<!-- Rename input replaces the row in-place. -->
@@ -188,24 +194,37 @@
 								>
 							</form>
 						{:else}
+							{@const isDen = t.thread_id === 'default'}
 							<div
 								class="group flex w-full items-center gap-1 rounded-xl pr-1 transition-all
-									{activeThread === t.thread_id
-									? 'border border-zinc-700/50 bg-zinc-800/40'
-									: 'border border-transparent hover:bg-zinc-900/40'}
+									{isDen
+									? activeThread === t.thread_id
+										? 'border border-brand/45 bg-brand/[0.12] shadow-[0_0_16px_-4px_rgba(236,45,120,0.4)]'
+										: 'border border-brand/25 bg-brand/[0.07] hover:bg-brand/[0.12]'
+									: activeThread === t.thread_id
+										? 'border border-zinc-700/50 bg-zinc-800/40'
+										: 'border border-transparent hover:bg-zinc-900/40'}
 									{t.archived ? 'opacity-60' : ''}"
 							>
 								<button
 									type="button"
 									onclick={() => onswitchThread(t.thread_id)}
 									class="flex flex-1 items-center justify-between truncate px-3 py-2 text-left font-sans text-xs
-										{activeThread === t.thread_id ? 'font-medium text-white' : 'text-zinc-300'}"
+										{isDen
+										? 'font-semibold text-brand-soft'
+										: activeThread === t.thread_id
+											? 'font-medium text-white'
+											: 'text-zinc-300'}"
 								>
 									<div class="flex min-w-0 items-center gap-2.5 truncate">
-										<MessageSquare
-											size={13}
-											class={activeThread === t.thread_id ? 'text-purple-400' : 'text-zinc-500'}
-										/>
+										{#if isDen}
+											<Home size={14} class="shrink-0 text-brand-soft" />
+										{:else}
+											<MessageSquare
+												size={13}
+												class={activeThread === t.thread_id ? 'text-purple-400' : 'text-zinc-500'}
+											/>
+										{/if}
 										<span class="truncate"
 											>{t.thread_id === 'default' && t.title === 'default'
 												? 'The Den'

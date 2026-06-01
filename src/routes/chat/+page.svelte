@@ -261,6 +261,30 @@
 	});
 	const streamState = $derived(streamingCtrl.streamState);
 	const sdkChat = $derived(streamingCtrl.sdkChat);
+	// True while the current stream is running tool calls (e.g. web search). The
+	// tool row shows the working monster, so we hide the plain thinking-dots
+	// indicator to avoid two avatars at once.
+	const hasActiveToolCalls = $derived(
+		!!streamState &&
+			sdkChat.messages.some((m) => (m.parts || []).some((p) => p.type?.startsWith('tool-')))
+	);
+	// Friendly labels for the tool-call chips shown while Sully works, instead of
+	// raw tool ids like "web_search".
+	function toolLabel(type: string): string {
+		const name = (type || '').replace(/^tool-/, '');
+		const map: Record<string, string> = {
+			web_search: 'Searching the web',
+			web_fetch: 'Reading a page',
+			read_file: 'Reading a file',
+			list_directory: 'Browsing files',
+			deep_think: 'Thinking it through',
+			consult_claude: 'Consulting Claude',
+			list_chat_threads: 'Checking your threads',
+			read_thread_messages: 'Recalling the conversation',
+			get_server_status: 'Checking the system'
+		};
+		return map[name] ?? name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
 
 	// Pending attachments — uploads stage here as removable chips above the
 	// composer rather than getting injected as markdown into the textarea.
@@ -1152,7 +1176,7 @@
 				     immediately on send so the old check never fires. We instead
 				     gate on streamState (set when a stream starts) AND the
 				     placeholder message text being empty (no tokens yet). -->
-				{#if streamState && messages.find((m) => m.id === streamState!.placeholderId)?.message === ''}
+				{#if streamState && !hasActiveToolCalls && messages.find((m) => m.id === streamState!.placeholderId)?.message === ''}
 					<div class="flex flex-col items-start gap-1">
 						<div
 							class="mb-1.5 flex w-fit items-center gap-1.5 rounded-full border border-brand/30 bg-brand/[0.08] px-2.5 py-0.5 font-sans text-[11px] font-semibold tracking-wide text-brand-soft select-none"
@@ -1201,28 +1225,47 @@
 				{#each sdkChat.messages as sdkMsg (sdkMsg.id)}
 					{#if sdkMsg.role === 'assistant' && (sdkMsg.parts || []).some( (p) => p.type?.startsWith('tool-') )}
 						<div class="flex flex-col items-start gap-1" data-testid="sdk-tool-row">
-							{#each sdkMsg.parts as part, i (i)}
-								{#if part.type?.startsWith('tool-')}
-									<div
-										class="my-1 flex flex-col gap-0.5 rounded-lg border border-purple-500/30 bg-purple-500/[0.04] px-2.5 py-1.5 font-mono text-[11px]"
-									>
-										<div class="flex items-center gap-1.5 text-purple-300">
-											<Sparkles size={11} aria-hidden="true" />
-											<span class="font-semibold tracking-wide">
-												{part.type.replace(/^tool-/, '')}
-											</span>
-											<span class="ml-auto text-[9px] tracking-wider text-purple-400/70 uppercase">
-												{(part as { state?: string }).state ?? 'pending'}
-											</span>
-										</div>
-										{#if (part as { state?: string }).state === 'output-error'}
-											<div class="text-[10px] text-red-400">
-												{(part as { errorText?: string }).errorText ?? 'tool error'}
+							<!-- ● Sully name-tag — matches the thinking indicator so tool work
+							     reads as Sully working, not a bare system chip. -->
+							<div
+								class="mb-1.5 flex w-fit items-center gap-1.5 rounded-full border border-brand/30 bg-brand/[0.08] px-2.5 py-0.5 font-sans text-[11px] font-semibold tracking-wide text-brand-soft select-none"
+							>
+								<span
+									class="h-2 w-2 shrink-0 rounded-full"
+									style="background: radial-gradient(circle at 30% 25%, #ff8fc0, #ec2d78 55%, #c4186a); box-shadow: 0 0 6px rgba(236, 45, 120, 0.6);"
+								></span>
+								<span>{data.appIdentity?.coreLabel ?? 'Sully'}</span>
+							</div>
+							<div class="flex items-start gap-2.5">
+								<!-- Working monster — a living cue that Sully is on the tools. -->
+								<SullyAvatar state="working" size={34} glow={false} />
+								<div class="flex flex-col gap-1">
+									{#each sdkMsg.parts as part, i (i)}
+										{#if part.type?.startsWith('tool-')}
+											<div
+												class="flex flex-col gap-0.5 rounded-lg border border-brand/25 bg-brand/[0.05] px-2.5 py-1.5 font-sans text-[11px]"
+											>
+												<div class="flex items-center gap-1.5 text-brand-soft">
+													<Sparkles size={11} aria-hidden="true" />
+													<span class="font-semibold tracking-wide">
+														{toolLabel(part.type)}
+													</span>
+													<span
+														class="ml-auto text-[9px] tracking-wider text-brand-soft/60 uppercase"
+													>
+														{(part as { state?: string }).state ?? 'pending'}
+													</span>
+												</div>
+												{#if (part as { state?: string }).state === 'output-error'}
+													<div class="text-[10px] text-red-400">
+														{(part as { errorText?: string }).errorText ?? 'tool error'}
+													</div>
+												{/if}
 											</div>
 										{/if}
-									</div>
-								{/if}
-							{/each}
+									{/each}
+								</div>
+							</div>
 						</div>
 					{/if}
 				{/each}
