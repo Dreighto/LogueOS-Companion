@@ -15,6 +15,7 @@
 	import { createDispatchStream } from '$lib/chat/dispatchStream.svelte';
 	import { parseDbTimestamp } from '$lib/utils/format';
 	import WorkingBubble from '$lib/components/WorkingBubble.svelte';
+	import SullyAvatar from '$lib/components/SullyAvatar.svelte';
 	import type { SlashCmd } from '$lib/types/slash';
 	import type {
 		Tier,
@@ -1071,7 +1072,7 @@
 									<button
 										type="button"
 										onclick={() => copyMessage(m)}
-										class="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-zinc-600 uppercase transition-colors hover:bg-zinc-900 hover:text-zinc-300"
+										class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95"
 										aria-label="Copy reply"
 										title={copiedIds.has(m.id) ? 'Copied' : 'Copy reply'}
 									>
@@ -1087,7 +1088,7 @@
 										type="button"
 										onclick={() => regenerateReply(m)}
 										disabled={sending || regeneratingIds.has(m.id)}
-										class="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-zinc-600 uppercase transition-colors hover:bg-zinc-900 hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+										class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
 										aria-label="Regenerate reply"
 										title={regeneratingIds.has(m.id) ? 'Regenerating…' : 'Regenerate reply'}
 									>
@@ -1097,10 +1098,10 @@
 									<button
 										type="button"
 										onclick={() => void speakMessage(m)}
-										class="flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors hover:bg-zinc-900 {speakingId ===
+										class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {speakingId ===
 										m.id
 											? 'text-brand-soft'
-											: 'text-zinc-600 hover:text-zinc-300'}"
+											: 'text-zinc-500 hover:text-zinc-200'}"
 										aria-label="Read aloud"
 										title={speakingId === m.id
 											? 'Stop'
@@ -1120,7 +1121,7 @@
 										{/if}
 									</button>
 								{/if}
-								<div class="font-mono text-[9px] text-zinc-600">
+								<div class="font-sans text-[10px] text-zinc-600 tabular-nums">
 									{fmtTime(m.timestamp)}
 								</div>
 							</div>
@@ -1163,22 +1164,27 @@
 							<span>{data.appIdentity?.coreLabel ?? 'Sully'}</span>
 						</div>
 						<div
-							class="flex items-center gap-1.5 rounded-2xl border border-[#ec2d78]/20 bg-[#ec2d78]/[0.06] px-4 py-3.5"
+							class="flex items-center gap-2.5 rounded-2xl border border-[#ec2d78]/20 bg-[#ec2d78]/[0.06] py-2 pr-4 pl-2.5"
 							aria-label="Sully is thinking"
 							role="status"
 						>
-							<span
-								class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
-								style="animation-delay: 0ms"
-							></span>
-							<span
-								class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
-								style="animation-delay: 150ms"
-							></span>
-							<span
-								class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
-								style="animation-delay: 300ms"
-							></span>
+							<!-- Tiny working monster — a living cue that Sully is busy, not
+							     hung. The sprite's own 'thinking' sway provides the motion. -->
+							<SullyAvatar state="thinking" size={34} glow={false} />
+							<div class="flex items-center gap-1.5">
+								<span
+									class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
+									style="animation-delay: 0ms"
+								></span>
+								<span
+									class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
+									style="animation-delay: 150ms"
+								></span>
+								<span
+									class="h-1.5 w-1.5 animate-bounce rounded-full bg-[#ec2d78]"
+									style="animation-delay: 300ms"
+								></span>
+							</div>
 						</div>
 					</div>
 				{/if}
