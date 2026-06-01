@@ -7,6 +7,11 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/chat_uploads/
+# Personal data drops — chat exports, voice samples. Treat data/ as
+# operator-only; only schema (in code) is committed, never the files.
+data/*.zip
+data/*.tar.gz
+data/ch_data/
 *.log
 
 # Aider CLI session artifacts (operator's interactive tool)
