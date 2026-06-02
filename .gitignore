@@ -17,6 +17,9 @@ data/ch_data/
 # but the artifacts themselves are heavyweight and never committed.
 scripts/finetune/.venv/
 scripts/finetune/__pycache__/
+# Unsloth's per-run Triton kernel cache; lands in the cwd of train_qlora.py
+# (= repo root by default). 3-10+ MB of compiled Python helpers per run.
+unsloth_compiled_cache/
 *.log
 
 # Aider CLI session artifacts (operator's interactive tool)
