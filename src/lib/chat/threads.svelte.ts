@@ -39,6 +39,7 @@ export interface ThreadsController {
 	togglePin: (thread: { thread_id: string; pinned: boolean }) => Promise<void>;
 	deleteThreadById: (thread: { thread_id: string; archived: boolean }) => Promise<void>;
 	clearAllSessions: () => Promise<void>;
+	maybeAutoTitleAfterReply: (threadId: string) => Promise<void>;
 	destroy: () => void;
 }
 
@@ -211,6 +212,34 @@ export function createThreadsController(deps: ThreadsDeps): ThreadsController {
 		}
 	}
 
+	async function maybeAutoTitleAfterReply(threadId: string): Promise<void> {
+		// Never auto-title 'default' (The Den) — it's the hardcoded home thread.
+		if (!threadId || threadId === 'default') return;
+		const t = threads.find((x) => x.thread_id === threadId);
+		if (!t) return;
+		// Client-local newThread sets title='New thread'. After an SSR reload, an
+		// untitled thread's displayTitle falls back to the slug (== thread_id).
+		// Either case = "looks default, safe to attempt auto-title". The server
+		// endpoint re-checks meta.title === 'New thread' as the authoritative gate.
+		if (t.title !== 'New thread' && t.title !== t.thread_id) return;
+		try {
+			const r = await fetch(
+				resolve(`/api/chat/threads/${encodeURIComponent(threadId)}/auto-title`),
+				{ method: 'POST' }
+			);
+			if (!r.ok) return;
+			const body = (await r.json()) as { title?: string; skipped?: boolean };
+			if (body.skipped || !body.title) return;
+			// Patch the local row in place so the sidebar re-renders without a
+			// full GET refetch (which would also re-render every other row).
+			threads = threads.map((x) =>
+				x.thread_id === threadId ? { ...x, title: body.title as string } : x
+			);
+		} catch {
+			/* silent — sidebar auto-title is best-effort, never blocks the UI */
+		}
+	}
+
 	async function clearAllSessions() {
 		const ok = window.confirm(
 			'Archive and delete every thread? This cannot be undone. A fresh thread will be created after.'
@@ -285,6 +314,7 @@ export function createThreadsController(deps: ThreadsDeps): ThreadsController {
 		togglePin,
 		deleteThreadById,
 		clearAllSessions,
+		maybeAutoTitleAfterReply,
 		destroy: () => {}
 	};
 }

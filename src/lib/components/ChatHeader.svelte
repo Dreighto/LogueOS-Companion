@@ -1,18 +1,29 @@
 <script lang="ts">
-	// Chat header — sidebar-toggle + home-anchor logo + model-picker chip,
-	// with its popover.
+	// Chat header — sidebar-toggle + home-anchor logo + workspace-context
+	// chip + model-picker chip, with the model picker's popover.
 	// Extracted from /chat as Task #7 PR 3 of the +page.svelte decomposition.
 	//
 	// Self-contained markup, but state crossing the boundary stays as props +
 	// callbacks (no store). The parent owns all $state runes; bindable props
 	// are used where the parent's global popover-close $effect needs to read
-	// the value by name (`showModelOverrideModal`).
+	// the value by name (`showModelOverrideModal`, `workspaceContextOpen`).
 	//
 	// The `selectedModelChoice` $derived stays in the parent (it reads
 	// `operatorOverride`, `currentTier`, `providerOverride` from parent
 	// scope); the resolved value is passed in as a prop. The MODEL_CHOICES
 	// table is also owned by the parent and passed in — single source of
 	// truth.
+	//
+	// The workspace-context chip (added 2026-06-01) is a persistent
+	// header-level entry point to the Edit Sully's context modal. It REPLACES
+	// the old footer item that lived inside the model-picker popover — the
+	// chip sits as the first child of the right-side cluster, BEFORE the
+	// model picker, so the cluster reads left-to-right as Context | Model.
+	// Tap target mirrors the model-picker chip exactly (min-h-[44px] on
+	// mobile, h-9 on sm+) for spatial harmony. Active state mirrors the
+	// model-picker open state (brand-tinted magenta) so when the modal is
+	// open the chip glows in the same idiom. Driven by `workspaceContextOpen`
+	// (bindable so the parent's global popover-close effect can null it).
 	//
 	// ARIA labels (`Toggle Sessions Sidebar`, `Sully — home`), and the
 	// `data-popover` / `data-popover-trigger` attributes are load-bearing —
@@ -27,7 +38,7 @@
 	// aria-label.
 
 	import { base, resolve } from '$app/paths';
-	import { Menu, ChevronDown, Check, Edit3 } from 'lucide-svelte';
+	import { Menu, ChevronDown, Check, BookOpen } from 'lucide-svelte';
 	import { scale } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import type { ModelChoice } from '$lib/types/chat-ui';
@@ -38,6 +49,7 @@
 		selectedModelChoice,
 		MODEL_CHOICES,
 		showModelOverrideModal = $bindable(),
+		workspaceContextOpen = $bindable(false),
 		ontoggleSidebar,
 		onsetModelChoice,
 		onopenWorkspaceContext,
@@ -48,6 +60,11 @@
 		selectedModelChoice: ModelChoice;
 		MODEL_CHOICES: ModelChoice[];
 		showModelOverrideModal: boolean;
+		// Bindable so the parent's global popover-close $effect can mirror its
+		// own `workspaceContextOpen` $state here; drives the chip's brand-tinted
+		// active state only. Defaults to false so callers that haven't wired the
+		// prop yet still get a functioning (always-resting) chip.
+		workspaceContextOpen?: boolean;
 		ontoggleSidebar: () => void;
 		onsetModelChoice: (choice: ModelChoice) => void;
 		onopenWorkspaceContext: () => void;
@@ -86,10 +103,47 @@
 		</a>
 	</div>
 
-	<!-- Brain / voice picker — the one control Sully needs up top. The
-	     workspace context-editor (Projects-light) is preserved as a footer
-	     item in this menu rather than a second redundant chip. -->
-	<div class="flex min-w-0 shrink-0 items-center">
+	<!-- Right-side cluster: workspace-context chip THEN model-picker chip.
+	     The two chips share every geometric + material token (border alpha,
+	     backdrop-blur, rounded-full, height ladder, motion) so they read as
+	     a coherent pair, with `gap-1.5` matching the left cluster rhythm. -->
+	<div class="flex min-w-0 shrink-0 items-center gap-1.5">
+		<!-- Workspace context chip — persistent header entry point to the
+		     Edit Sully's context modal. Replaces the old footer entry that
+		     lived inside the model-picker popover. Single-tap to open the
+		     modal; the modal IS the editor. Label is state-agnostic
+		     ('Context') — the set/unset axis lives behind the tap (modal
+		     opens to the current addendum or an empty editor). BookOpen icon
+		     reads as 'reference material Sully consults', which is what
+		     workspace context IS (a standing addendum injected into every
+		     prompt). Active state borrows the model-picker open recipe
+		     verbatim so the two chips glow in the same idiom. -->
+		<button
+			type="button"
+			onclick={() => {
+				oncloseAllPopovers();
+				onopenWorkspaceContext();
+			}}
+			class="flex min-h-[44px] min-w-0 items-center gap-1.5 rounded-full border px-3 font-sans text-xs backdrop-blur-md transition-all active:scale-95 sm:h-9 sm:min-h-0 {workspaceContextOpen
+				? 'border-[#ec2d78]/40 bg-[#ec2d78]/10 text-white shadow-[0_0_18px_rgba(236,45,120,0.15)]'
+				: 'border-white/[0.07] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'}"
+			aria-label="Sully's workspace context"
+			aria-haspopup="dialog"
+			aria-expanded={workspaceContextOpen}
+			title="Edit the notes Sully sees on every message"
+		>
+			<BookOpen
+				size={12}
+				class={workspaceContextOpen ? 'shrink-0 text-[#ff7eb3]' : 'shrink-0 text-zinc-500'}
+				aria-hidden="true"
+			/>
+			<span
+				class="font-sans text-[10px] tracking-wide {workspaceContextOpen
+					? 'text-zinc-100'
+					: 'text-zinc-400'}">Context</span
+			>
+		</button>
+
 		<!-- Model Picker Badge -->
 		<div class="relative min-w-0">
 			<button
@@ -155,24 +209,10 @@
 							{/if}
 						</button>
 					{/each}
-					<!-- Projects-light: edit Sully's standing context addendum.
-					     Preserved from the old repo chip (Task #22) — auto-injects
-					     into every send for this workspace. The two-line layout
-					     was added 2026-06-01 after operator feedback "I have no
-					     idea what this does"; the subtitle explains the function. -->
-					<button
-						type="button"
-						onclick={() => onopenWorkspaceContext()}
-						class="mt-1 flex min-h-[44px] w-full items-center gap-2.5 border-t border-white/[0.06] px-3 py-2 text-left transition-all hover:bg-white/[0.04] active:scale-[0.985]"
-					>
-						<Edit3 size={12} class="shrink-0 text-zinc-500" aria-hidden="true" />
-						<span class="flex min-w-0 flex-col leading-[1.15]">
-							<span class="truncate text-[11px] text-zinc-300">Edit Sully's context</span>
-							<span class="truncate font-sans text-[9px] text-zinc-500/80"
-								>Notes added to every message you send</span
-							>
-						</span>
-					</button>
+					<!-- (The Edit Sully's context entry that used to live here
+					     was relocated 2026-06-01 to a persistent chip in the
+					     header itself — see the BookOpen chip above. The model
+					     picker is now single-purpose: brain selection only.) -->
 				</div>
 			{/if}
 		</div>

@@ -251,6 +251,28 @@
 	});
 	const streamState = $derived(streamingCtrl.streamState);
 	const sdkChat = $derived(streamingCtrl.sdkChat);
+
+	// Auto-title wiring: when a stream just finished on a thread that still
+	// looks default ('New thread' or slug-fallback), POST to the auto-title
+	// endpoint and patch the sidebar row in place. The endpoint is idempotent
+	// (server-side gate on meta.title === 'New thread') and skips threads with
+	// too few messages, so we fire optimistically on every stream-completion
+	// edge. Best-effort — failures are silent, never block the UI.
+	let _prevStreamState: typeof streamState = null;
+	$effect(() => {
+		const cur = streamState;
+		const prev = _prevStreamState;
+		_prevStreamState = cur;
+		// Edge: was streaming, now finished. Capture the threadId from PREV so
+		// a mid-stream thread-switch still routes the auto-title to the
+		// originating thread.
+		if (prev !== null && cur === null) {
+			const threadId = prev.threadId;
+			untrack(() => {
+				void threadsCtrl.maybeAutoTitleAfterReply(threadId);
+			});
+		}
+	});
 	// True while the current stream is running tool calls (e.g. web search). The
 	// tool row shows the working monster, so we hide the plain thinking-dots
 	// indicator to avoid two avatars at once.
