@@ -39,9 +39,32 @@
 
 	import { base, resolve } from '$app/paths';
 	import { Menu, ChevronDown, Check, BookOpen } from 'lucide-svelte';
-	import { scale } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import type { TransitionConfig } from 'svelte/transition';
+	import type { ActionReturn } from 'svelte/action';
 	import type { ModelChoice } from '$lib/types/chat-ui';
+
+	// Portal action — moves the node to <body> on mount, removes it on
+	// destroy. Used ONLY on mobile (< lg) so the model-picker sheet + its
+	// backdrop scrim escape the chat-header's backdrop-filter ancestor,
+	// which (per CSS spec) creates a containing block for position:fixed
+	// descendants and would otherwise crush the sheet into a 64px strip
+	// at the top of the header. Desktop (lg+) leaves the popover in place
+	// so its `lg:absolute lg:top-full lg:right-0` can anchor against the
+	// trigger chip's wrapping `<div class="relative">` — portaling there
+	// would break the anchor. Viewport captured ONCE at mount; rotating
+	// the device while the picker is open is a known edge case we accept.
+	function mobilePortal(node: HTMLElement): ActionReturn | void {
+		if (typeof window === 'undefined') return;
+		if (window.innerWidth >= 1024) return;
+		document.body.appendChild(node);
+		return {
+			destroy() {
+				if (node.parentNode === document.body) node.remove();
+			}
+		};
+	}
 
 	let {
 		tierEmoji,
@@ -70,6 +93,38 @@
 		onopenWorkspaceContext: () => void;
 		oncloseAllPopovers: () => void;
 	} = $props();
+
+	// Responsive transition for the model-picker surface.
+	//
+	// Branches on viewport width ONCE at transition start so the orientation
+	// stays consistent if the user rotates mid-animation. Below lg (1024px)
+	// the picker is a bottom-anchored sheet that slides up + fades in
+	// (sheets feel cheap when they also scale, so we deliberately do NOT
+	// scale on mobile). At lg+ the picker is a top-right-anchored dropdown
+	// that uses the original scale-from-0.94 + fade recipe with
+	// `transform-origin: top right` so it reads as blooming out of the
+	// trigger chip. SSR-safe via the `typeof window` guard.
+	function sheetTransition(_node: Element): TransitionConfig {
+		const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+		if (isDesktop) {
+			return {
+				duration: 220,
+				easing: cubicOut,
+				css: (t) => {
+					const scaleVal = 0.94 + 0.06 * t;
+					return `opacity: ${t}; transform: scale(${scaleVal}); transform-origin: top right;`;
+				}
+			};
+		}
+		return {
+			duration: 280,
+			easing: cubicOut,
+			css: (t) => {
+				const y = (1 - t) * 100;
+				return `opacity: ${t}; transform: translateY(${y}%);`;
+			}
+		};
+	}
 </script>
 
 <header
@@ -178,16 +233,49 @@
 			</button>
 
 			{#if showModelOverrideModal}
-				<!-- transform-origin anchors the bloom to the trigger chip so the
-				     popover reads as growing OUT of the button it came from, not
-				     dropping in from nowhere. cubicOut feels premium without the
-				     cartoony overshoot of backOut. -->
+				<!-- Backdrop scrim — mobile-only visual dim under the bottom
+				     sheet. The +page.svelte global popover-close $effect handles
+				     tap-to-dismiss because the scrim sits OUTSIDE [data-popover]
+				     / [data-popover-trigger]. Intentionally NOT a <button> and
+				     intentionally MISSING data-popover — either would defeat
+				     the global click-outside path. -->
 				<div
+					use:mobilePortal
+					class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+					transition:fade={{ duration: 200, easing: cubicOut }}
+					aria-hidden="true"
+				></div>
+
+				<!-- Below lg: bottom-anchored sheet flush with screen edge
+				     (border-b-0, rounded only at the top, padding absorbs the
+				     home-indicator inset via env(safe-area-inset-bottom)).
+				     At lg+: top-right-anchored dropdown blooming out of the
+				     trigger chip via the custom transition. The data-popover
+				     attribute is load-bearing for the parent's global
+				     click-outside popover-close $effect. -->
+				<!-- role="dialog" + aria-modal makes the portaled sheet its own
+				     a11y landmark (axe flags portaled-to-body fixed elements as
+				     "page content should be contained by landmarks" otherwise).
+				     aria-label is the dialog's accessible name. Desktop dropdown
+				     ALSO carries these attrs — harmless on a non-portaled popover
+				     and keeps the markup branchless. -->
+				<div
+					use:mobilePortal
 					data-popover
-					transition:scale={{ start: 0.94, duration: 220, easing: cubicOut, opacity: 0 }}
-					style="transform-origin: top right;"
-					class="fixed top-[calc(env(safe-area-inset-top,0px)+3.5rem)] right-2 left-2 z-50 mt-2 max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.08] bg-[#0e0e11]/85 py-1 shadow-2xl backdrop-blur-2xl min-[430px]:absolute min-[430px]:top-full min-[430px]:right-0 min-[430px]:left-auto min-[430px]:w-64 min-[430px]:max-w-[calc(100vw-1rem)]"
+					role="dialog"
+					aria-modal="true"
+					aria-label="Choose a model"
+					transition:sheetTransition
+					class="fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-b-0 border-white/[0.08] bg-[#0e0e11]/85 pt-2 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] shadow-2xl backdrop-blur-2xl lg:absolute lg:inset-x-auto lg:top-full lg:right-0 lg:bottom-auto lg:mt-2 lg:max-h-[calc(100dvh-6rem)] lg:w-64 lg:max-w-[calc(100vw-1rem)] lg:rounded-2xl lg:border-b lg:pt-1 lg:pb-1"
 				>
+					<!-- Drag-handle affordance — purely visual, communicates
+					     'this is a dismissable sheet'. The scrim tap / Escape
+					     / re-tap-chip paths actually do the dismissal; we are
+					     NOT wiring drag-to-dismiss gesture handling. -->
+					<div
+						class="mx-auto mt-1 mb-2 h-1.5 w-10 shrink-0 rounded-full bg-white/20 lg:hidden"
+						aria-hidden="true"
+					></div>
 					<div
 						class="px-3 pt-1.5 pb-0.5 font-sans text-[9px] tracking-wider text-zinc-600 uppercase select-none"
 					>
