@@ -26,7 +26,14 @@
 
 	import { base } from '$app/paths';
 	import type { SlashCmd } from '$lib/types/slash';
-	import type { Attachment, ComposerMode, ModelChoice, TalkbackPhase } from '$lib/types/chat-ui';
+	import type {
+		Attachment,
+		ComposerMode,
+		ModelChoice,
+		ProviderPref,
+		TalkbackPhase
+	} from '$lib/types/chat-ui';
+	import PickerIcon from './PickerIcon.svelte';
 	import {
 		Send,
 		Paperclip,
@@ -213,7 +220,7 @@
 		slashMatches,
 		selectedModelChoice,
 		MODEL_CHOICES,
-		tierEmoji,
+		pickerProvider,
 		lastModelUsed,
 		onsend,
 		onpaste,
@@ -244,7 +251,10 @@
 		slashMatches: SlashCmd[];
 		selectedModelChoice: ModelChoice;
 		MODEL_CHOICES: ModelChoice[];
-		tierEmoji: string;
+		// Provider for the chip's brand icon. In Auto mode this reflects whatever
+		// Auto last resolved to (so the chip's mark stays accurate to what Sully
+		// actually used) — null only if nothing has resolved yet.
+		pickerProvider: ProviderPref;
 		lastModelUsed: string;
 		onsend: () => void;
 		onpaste: (e: ClipboardEvent) => void;
@@ -456,7 +466,7 @@
 					aria-label={`${selectedModelChoice.id === 'auto' ? lastModelUsed || 'Auto' : selectedModelChoice.label} — Model picker`}
 					title="Pick a specific model or leave on Auto"
 				>
-					<span class="shrink-0">{tierEmoji}</span>
+					<PickerIcon provider={pickerProvider} size={14} />
 					<span class="min-w-0 truncate"
 						>{selectedModelChoice.id === 'auto'
 							? lastModelUsed || 'Auto'
@@ -513,10 +523,21 @@
 								class="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition-all hover:bg-white/[0.04] active:scale-[0.985] active:bg-white/[0.07]
 									{selectedModelChoice.id === choice.id ? 'font-medium text-[#ff7eb3]' : 'text-zinc-200'}"
 							>
-								<span class="flex min-w-0 flex-col leading-[1.15]">
-									<span class="truncate text-[13px]">{choice.label}</span>
-									<span class="truncate font-sans text-[10px] text-zinc-500">{choice.sublabel}</span
+								<span class="flex min-w-0 items-center gap-2.5">
+									<span
+										class="flex h-6 w-6 shrink-0 items-center justify-center {selectedModelChoice.id ===
+										choice.id
+											? 'text-[#ff7eb3]'
+											: 'text-zinc-400'}"
 									>
+										<PickerIcon provider={choice.provider} size={16} />
+									</span>
+									<span class="flex min-w-0 flex-col leading-[1.15]">
+										<span class="truncate text-[13px]">{choice.label}</span>
+										<span class="truncate font-sans text-[10px] text-zinc-500"
+											>{choice.sublabel}</span
+										>
+									</span>
 								</span>
 								{#if selectedModelChoice.id === choice.id}
 									<Check size={12} class="shrink-0" />

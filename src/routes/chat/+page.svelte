@@ -309,15 +309,17 @@
 	// Derived properties
 	// ─────────────────────────────────────────────────────────────────────
 	const selectedWorkspace = $derived(workspaces.find((w) => w.name === selectedRepo));
-	const tierEmoji = $derived(
-		currentTier === 'planning'
-			? '⚖️'
-			: currentTier === 'deep'
-				? '🧠'
-				: currentTier === 'local'
-					? '🔧'
-					: '🪶'
-	);
+
+	// Pattern-match a model id string back to its provider. Used when in Auto
+	// mode to surface the brand mark of whatever the server actually picked on
+	// the last turn — `lastModelUsed` carries that resolved id.
+	function inferProviderFromModelId(id: string): ProviderPref {
+		if (!id) return null;
+		if (/claude|opus|sonnet|haiku/i.test(id)) return 'anthropic';
+		if (/gemini/i.test(id)) return 'gemini';
+		if (/companion|qwen|llama|hermes|gpt-oss|local/i.test(id)) return 'local';
+		return null;
+	}
 
 	// Composer textarea auto-grow $effect moved into <Composer /> as part of
 	// Task #7 PR 4 — the effect's deps are local to the component (`textDraft`
@@ -369,6 +371,16 @@
 						c.provider === providerOverride &&
 						!c.model
 				) ?? MODEL_CHOICES[0])
+	);
+
+	// Provider the chip's brand icon should reflect:
+	//   - explicit picker choice → that choice's provider
+	//   - Auto → whatever Auto last resolved to (so the chip shows the actual
+	//     brand Sully just used). Null only before the first resolution.
+	const pickerProvider = $derived<ProviderPref>(
+		selectedModelChoice.id === 'auto'
+			? inferProviderFromModelId(lastModelUsed)
+			: selectedModelChoice.provider
 	);
 
 	async function openWorkspaceContextEditor() {
@@ -981,7 +993,7 @@
 			{slashMatches}
 			{selectedModelChoice}
 			{MODEL_CHOICES}
-			{tierEmoji}
+			{pickerProvider}
 			{lastModelUsed}
 			onsend={() => void sendMessage()}
 			onpaste={composerCtrl.handlePaste}
