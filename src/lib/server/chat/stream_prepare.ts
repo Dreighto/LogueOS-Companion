@@ -19,7 +19,7 @@ import { type UIMessage } from 'ai';
 import { getChatMessages } from '$lib/server/chat';
 import { type Tier } from '$lib/server/phase_classifier';
 import { type ThreadState } from '$lib/server/thread_state';
-import { runMode, appIdentity } from '$lib/server/config';
+import { runMode, appIdentity, serverConfig } from '$lib/server/config';
 import { persistUserTurn, classifyAndTouchThread } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
 import { resolveChatModel } from '$lib/server/model_catalog';
@@ -144,7 +144,13 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 	const tierImpliesLocal: Provider | null = currentTier === 'local' ? 'local' : null;
 	// Companion mode defaults to the LOCAL provider (companion-v1) instead of
 	// cloud Google — while keeping cloud models selectable via the picker.
-	const companionDefault: Provider | null = runMode.companion ? 'local' : null;
+	// COMPANION_LOCAL_DISABLED env flag (operator-controlled) suppresses the
+	// implicit local default so Auto never loads a GPU model. Used when the
+	// GPU is busy with QLoRA training or other workloads. The picker's
+	// explicit "Local (Ollama)" option still works because that path sets
+	// args.provider='local' which takes priority over this default.
+	const companionDefault: Provider | null =
+		runMode.companion && !serverConfig.companionLocalDisabled ? 'local' : null;
 	const provider: Provider =
 		args.provider ?? overrideFromState ?? tierImpliesLocal ?? companionDefault ?? 'google';
 

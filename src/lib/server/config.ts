@@ -49,6 +49,12 @@ export const serverConfig = {
 	mode: getEnv('LOGUEOS_APP_MODE', 'wired'),
 	// Default local model for companion mode (verified installed Ollama tag).
 	companionDefaultModel: getEnv('COMPANION_DEFAULT_MODEL', 'companion-v1:latest'),
+	// Cloud-only override for companion mode. When 'true' (operator flag),
+	// Auto routing never falls through to the local provider — keeps the GPU
+	// free for QLoRA training or other GPU workloads. The picker's explicit
+	// "Local (Ollama)" option still works (operator opt-in only). Flip back
+	// to 'false' once GPU is free again. Set via the companion .env.
+	companionLocalDisabled: getEnv('COMPANION_LOCAL_DISABLED', 'false') === 'true',
 	completionLogPath: getEnv(
 		'LOGUEOS_COMPLETION_LOG_PATH',
 		'/home/dreighto/dev/LogueOS-Orchestrator/data/cc_completion_log.jsonl'
