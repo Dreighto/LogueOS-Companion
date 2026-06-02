@@ -14,14 +14,14 @@
   "smallTargets": [
     {
       "tag": "BUTTON",
-      "className": "flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] text-zinc-500 transition-all hover:bg-white/[0.04] hover:text-zinc-300 active:scale-95",
-      "w": 99.703125,
+      "className": "flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] font-medium tracking-wide text-zinc-400 uppercase transition-all hover:bg-white/[0.04] hover:text-brand-soft active:scale-95",
+      "w": 120.859375,
       "h": 28
     },
     {
       "tag": "BUTTON",
-      "className": "flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] text-zinc-600 transition-all hover:bg-red-950/30 hover:text-red-400 active:scale-95",
-      "w": 68.875,
+      "className": "flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] font-medium tracking-wide text-zinc-400 uppercase transition-all hover:bg-red-500/10 hover:text-red-400 active:scale-95",
+      "w": 87.90625,
       "h": 28
     },
     {

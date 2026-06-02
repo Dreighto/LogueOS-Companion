@@ -109,7 +109,7 @@
 			<img
 				src="{base}/sully-mark.png"
 				alt="Sully"
-				class="h-7 w-7 shrink-0 drop-shadow-[0_0_8px_rgba(236,45,120,0.45)]"
+				class="h-8 w-8 shrink-0 drop-shadow-[0_0_10px_rgba(236,45,120,0.5)]"
 			/>
 			<span class="font-sans text-sm font-semibold tracking-tight text-zinc-100">Sully</span>
 		</div>
@@ -137,11 +137,13 @@
 	<!-- Threads Scroll Area -->
 	<div class="flex flex-1 flex-col overflow-y-auto p-2">
 		<!-- Toolbar — Show archived toggle + Clear All -->
-		<div class="mb-1 flex items-center justify-between px-2 py-1">
+		<div
+			class="mt-1 mb-2 flex items-center justify-between border-b border-white/[0.04] px-2 pt-1 pb-2"
+		>
 			<button
 				type="button"
 				onclick={() => (showArchived = !showArchived)}
-				class="flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] text-zinc-500 transition-all hover:bg-white/[0.04] hover:text-zinc-300 active:scale-95"
+				class="flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] font-medium tracking-wide text-zinc-400 uppercase transition-all hover:bg-white/[0.04] hover:text-brand-soft active:scale-95"
 				title={showArchived ? 'Hide archived sessions' : 'Show archived sessions'}
 			>
 				<Archive size={10} />
@@ -150,7 +152,7 @@
 			<button
 				type="button"
 				onclick={onclearAll}
-				class="flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] text-zinc-600 transition-all hover:bg-red-950/30 hover:text-red-400 active:scale-95"
+				class="flex h-7 items-center gap-1.5 rounded-lg px-2 font-sans text-[10px] font-medium tracking-wide text-zinc-400 uppercase transition-all hover:bg-red-500/10 hover:text-red-400 active:scale-95"
 				title="Archive and delete every thread"
 			>
 				<Eraser size={10} />
@@ -270,7 +272,7 @@
 						{#if threadMenuOpenFor === t.thread_id}
 							<div
 								data-popover
-								class="absolute top-full right-0 z-50 mt-1 min-w-40 overflow-hidden rounded-xl border border-zinc-800 bg-[#0e0e0e] py-1 shadow-2xl"
+								class="absolute top-full right-0 z-50 mt-1 min-w-40 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0e0e11]/85 py-1.5 shadow-2xl backdrop-blur-2xl"
 							>
 								<button
 									type="button"
@@ -304,7 +306,7 @@
 								<button
 									type="button"
 									onclick={() => ondeleteThread(t)}
-									class="flex w-full items-center gap-2 border-t border-zinc-800/50 px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"
+									class="flex w-full items-center gap-2 border-t border-white/[0.06] px-3 py-1.5 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-40"
 								>
 									<Trash2 size={11} />
 									<span>Delete</span>
