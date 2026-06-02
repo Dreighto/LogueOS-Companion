@@ -13,6 +13,7 @@
 // for a single-operator personal dashboard. No app-level auth layer needed.
 
 import type { Handle } from '@sveltejs/kit';
+import { base } from '$app/paths';
 import { startCompletionPoller } from '$lib/server/completion_poller';
 import { bootstrapCompanionDb } from '$lib/server/bootstrap';
 import { runMode } from '$lib/server/config';
@@ -28,6 +29,17 @@ if (runMode.completionPoller) {
 	startCompletionPoller();
 }
 
+// Vite emits hashed asset filenames under ${base}/_app/immutable/* — content-addressed,
+// so they're safe to cache for a year. adapter-node does NOT set this header by default;
+// without it, iOS PWA + Tailscale Funnel re-fetch every JS/CSS chunk on each cold load.
+// The startsWith check on event.url.pathname guarantees the header lands ONLY on hashed
+// asset responses — HTML page renders, /api/*, and any SSR'd content fall through untouched.
+const IMMUTABLE_PREFIX = `${base}/_app/immutable/`;
+
 export const handle: Handle = async ({ event, resolve }) => {
-	return resolve(event);
+	const response = await resolve(event);
+	if (event.url.pathname.startsWith(IMMUTABLE_PREFIX)) {
+		response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+	}
+	return response;
 };

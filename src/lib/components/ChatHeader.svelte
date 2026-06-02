@@ -14,11 +14,17 @@
 	// table is also owned by the parent and passed in — single source of
 	// truth.
 	//
-	// ARIA labels (`Toggle Sessions Sidebar`, `Sully — home`,
-	// `Model picker`), and the
+	// ARIA labels (`Toggle Sessions Sidebar`, `Sully — home`), and the
 	// `data-popover` / `data-popover-trigger` attributes are load-bearing —
 	// the chat e2e suite and the parent's global popover effect select on
 	// them. Do not change.
+	//
+	// The model-picker button's aria-label is dynamic and prefixes the
+	// visible text (e.g. `Auto — Model picker`, `Sonnet 4.6 — Model picker`)
+	// to satisfy WCAG 2.5.3 (Label in Name); axe / Lighthouse flagged the
+	// previous static `Model picker` label as a content-name mismatch.
+	// Selectors should target `[data-popover-trigger]` instead of the
+	// aria-label.
 
 	import { base, resolve } from '$app/paths';
 	import { Menu, ChevronDown, Check, Edit3 } from 'lucide-svelte';
@@ -94,7 +100,7 @@
 					showModelOverrideModal = next;
 				}}
 				class="flex h-9 max-w-[8.5rem] min-w-0 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.04] px-3 font-sans text-xs text-zinc-300 backdrop-blur-md transition-all hover:bg-white/[0.08] hover:text-white active:scale-95"
-				aria-label="Model picker"
+				aria-label={`${selectedModelChoice.id === 'auto' ? lastModelUsed || 'Auto' : selectedModelChoice.label} — Model picker`}
 				title="Pick a specific model or leave on Auto"
 			>
 				<span class="shrink-0">{tierEmoji}</span>

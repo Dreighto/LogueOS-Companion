@@ -152,7 +152,7 @@
 						<button
 							type="button"
 							onclick={() => oncopy(m)}
-							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95"
+							class="flex min-h-[44px] items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95 sm:min-h-0"
 							aria-label="Copy reply"
 							title={copiedIds.has(m.id) ? 'Copied' : 'Copy reply'}
 						>
@@ -168,8 +168,10 @@
 							type="button"
 							onclick={() => onregenerate(m)}
 							disabled={sending || regeneratingIds.has(m.id)}
-							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-							aria-label="Regenerate reply"
+							class="flex min-h-[44px] items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0"
+							aria-label={regeneratingIds.has(m.id)
+								? 'Regen… — Regenerate reply'
+								: 'Regen — Regenerate reply'}
 							title={regeneratingIds.has(m.id) ? 'Regenerating…' : 'Regenerate reply'}
 						>
 							<RefreshCw size={10} class={regeneratingIds.has(m.id) ? 'animate-spin' : ''} />
@@ -178,11 +180,15 @@
 						<button
 							type="button"
 							onclick={() => onspeak(m)}
-							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {speakingId ===
+							class="flex min-h-[44px] items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 sm:min-h-0 {speakingId ===
 							m.id
 								? 'text-brand-soft'
 								: 'text-zinc-500 hover:text-zinc-200'}"
-							aria-label="Read aloud"
+							aria-label={speakLoadingId === m.id
+								? '… — Read aloud (loading)'
+								: speakingId === m.id
+									? 'Stop — Read aloud'
+									: 'Play — Read aloud'}
 							title={speakingId === m.id
 								? 'Stop'
 								: speakLoadingId === m.id
@@ -208,7 +214,7 @@
 						<button
 							type="button"
 							onclick={() => onfeedback(m, m.quality_signal === 1 ? 0 : 1)}
-							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {m.quality_signal ===
+							class="flex min-h-[44px] items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 sm:min-h-0 {m.quality_signal ===
 							1
 								? 'text-emerald-400'
 								: 'text-zinc-500 hover:text-zinc-200'}"
@@ -222,7 +228,7 @@
 						<button
 							type="button"
 							onclick={() => onfeedback(m, m.quality_signal === -1 ? 0 : -1)}
-							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {m.quality_signal ===
+							class="flex min-h-[44px] items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 sm:min-h-0 {m.quality_signal ===
 							-1
 								? 'text-rose-400'
 								: 'text-zinc-500 hover:text-zinc-200'}"
