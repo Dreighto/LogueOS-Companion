@@ -176,9 +176,9 @@
     },
     {
       "tag": "TEXTAREA",
-      "className": "w-full resize-none bg-transparent px-1 py-1 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500",
-      "w": 380,
-      "h": 36
+      "className": "min-w-0 flex-1 resize-none self-center bg-transparent px-1 py-2 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500",
+      "w": 230,
+      "h": 38
     }
   ]
 }

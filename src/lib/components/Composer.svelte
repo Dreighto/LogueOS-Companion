@@ -312,6 +312,136 @@
 	class="relative z-10 shrink-0 px-4 pt-2 pb-4 select-none"
 	style="padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));"
 >
+	<!-- ─── Workspace-context chip + Model-picker chip ───────────────────
+	     Floats ABOVE the composer pill (NOT inside it) per the flagship
+	     pattern (ChatGPT / Gemini / Claude / Perplexity all keep their
+	     composer pills single-row; meta chrome lives outside). Mobile
+	     sheet anchors to viewport bottom; desktop dropdown blooms UPWARD
+	     from the chip via `lg:bottom-full lg:left-0` + transform-origin:
+	     bottom left. Both chips share every geometric token so they read
+	     as a coherent pair. Relocated 2026-06-02 from inside the pill
+	     after operator feedback ("the test window is big").
+	-->
+	<div class="flex shrink-0 items-center gap-1.5 pb-2">
+		<!-- Workspace context chip -->
+		<button
+			type="button"
+			onclick={() => {
+				oncloseAllPopovers();
+				onopenWorkspaceContext();
+			}}
+			class="flex min-h-[44px] min-w-0 items-center gap-1.5 rounded-full border px-3 font-sans text-xs backdrop-blur-md transition-all active:scale-95 sm:h-9 sm:min-h-0 {workspaceContextOpen
+				? 'border-[#ec2d78]/40 bg-[#ec2d78]/10 text-white shadow-[0_0_18px_rgba(236,45,120,0.15)]'
+				: 'border-white/[0.07] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'}"
+			aria-label="Sully's workspace context"
+			aria-haspopup="dialog"
+			aria-expanded={workspaceContextOpen}
+			title="Edit the notes Sully sees on every message"
+		>
+			<BookOpen
+				size={12}
+				class={workspaceContextOpen ? 'shrink-0 text-[#ff7eb3]' : 'shrink-0 text-zinc-500'}
+				aria-hidden="true"
+			/>
+			<span
+				class="font-sans text-[10px] tracking-wide {workspaceContextOpen
+					? 'text-zinc-100'
+					: 'text-zinc-400'}">Context</span
+			>
+		</button>
+
+		<!-- Model picker chip + sheet/dropdown popover -->
+		<div class="relative min-w-0">
+			<button
+				type="button"
+				data-popover-trigger
+				onclick={() => {
+					const next = !showModelOverrideModal;
+					oncloseAllPopovers();
+					showModelOverrideModal = next;
+				}}
+				class="flex min-h-[44px] max-w-[8.5rem] min-w-0 items-center gap-1.5 rounded-full border px-3 font-sans text-xs backdrop-blur-md transition-all active:scale-95 sm:h-9 sm:min-h-0 {showModelOverrideModal
+					? 'border-[#ec2d78]/40 bg-[#ec2d78]/10 text-white shadow-[0_0_18px_rgba(236,45,120,0.15)]'
+					: 'border-white/[0.07] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'}"
+				aria-label={`${selectedModelChoice.id === 'auto' ? lastModelUsed || 'Auto' : selectedModelChoice.label} — Model picker`}
+				title="Pick a specific model or leave on Auto"
+			>
+				<span class="shrink-0">{tierEmoji}</span>
+				<span
+					class="min-w-0 truncate font-sans text-[10px] tracking-wide {showModelOverrideModal
+						? 'text-zinc-100'
+						: 'text-zinc-400'}"
+					>{selectedModelChoice.id === 'auto'
+						? lastModelUsed || 'Auto'
+						: selectedModelChoice.label}</span
+				>
+				<ChevronUp
+					size={10}
+					class="shrink-0 transition-transform duration-200 {showModelOverrideModal
+						? 'rotate-180 text-[#ff7eb3]'
+						: 'text-zinc-500'}"
+				/>
+			</button>
+
+			{#if showModelOverrideModal}
+				<!-- Backdrop scrim — mobile-only visual dim under the sheet. -->
+				<div
+					use:mobilePortal
+					class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+					transition:fade={{ duration: 200, easing: cubicOut }}
+					aria-hidden="true"
+				></div>
+
+				<!-- Below lg: bottom-anchored sheet. lg+: dropdown opens
+				     UPWARD from chip's LEFT edge. -->
+				<div
+					use:mobilePortal
+					use:swipeToDismiss={{ onDismiss: () => (showModelOverrideModal = false) }}
+					data-popover
+					role="dialog"
+					aria-modal="true"
+					aria-label="Choose a model"
+					transition:sheetTransition
+					class="fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-b-0 border-white/[0.08] bg-[#0e0e11]/85 pt-2 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] shadow-2xl backdrop-blur-2xl lg:absolute lg:inset-x-auto lg:top-auto lg:bottom-full lg:left-0 lg:mb-2 lg:max-h-[calc(100dvh-6rem)] lg:w-64 lg:max-w-[calc(100vw-1rem)] lg:rounded-2xl lg:border-b lg:pt-1 lg:pb-1"
+				>
+					<!-- Drag-handle affordance — functional via swipeToDismiss. -->
+					<div
+						class="mx-auto mt-1 mb-2 h-1.5 w-10 shrink-0 rounded-full bg-white/20 lg:hidden"
+						aria-hidden="true"
+					></div>
+					<div class="flex items-center justify-between px-3 pt-1.5 pb-0.5 font-sans select-none">
+						<span class="text-[9px] tracking-wider text-zinc-600 uppercase">Model</span>
+						<button
+							type="button"
+							onclick={() => (showModelOverrideModal = false)}
+							class="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-90"
+							aria-label="Close model picker"
+							title="Close"
+						>
+							<X size={14} />
+						</button>
+					</div>
+					{#each MODEL_CHOICES as choice (choice.id)}
+						<button
+							type="button"
+							onclick={() => onsetModelChoice(choice)}
+							class="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition-all hover:bg-white/[0.04] active:scale-[0.985] active:bg-white/[0.07]
+								{selectedModelChoice.id === choice.id ? 'font-medium text-[#ff7eb3]' : 'text-zinc-200'}"
+						>
+							<span class="flex min-w-0 flex-col leading-[1.15]">
+								<span class="truncate text-[13px]">{choice.label}</span>
+								<span class="truncate font-sans text-[10px] text-zinc-500">{choice.sublabel}</span>
+							</span>
+							{#if selectedModelChoice.id === choice.id}
+								<Check size={12} class="shrink-0" />
+							{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+
 	<!-- Outer border shifting glow container -->
 	<div
 		class="relative flex flex-col gap-2 rounded-3xl border p-2 transition-all duration-300
@@ -438,289 +568,126 @@
 			</div>
 		{/if}
 
-		<!-- ─── Workspace-context chip + Model-picker chip ───────────────────
-		     Relocated 2026-06-02 from ChatHeader.svelte. Operator rationale:
-		     "the button should move where the text area is. since it is
-		     closer to the sheet." Mobile sheet anchors to viewport bottom;
-		     desktop dropdown blooms UPWARD from the chip via
-		     `lg:bottom-full lg:right-0` + transform-origin: bottom right.
-		     Both chips share every geometric token (border alpha, blur,
-		     rounded-full, h-9 / min-h-[44px]) so they read as a coherent
-		     pair. -->
-		<div class="flex shrink-0 items-center gap-1.5 px-1 pb-1">
-			<!-- Workspace context chip — persistent entry to the Edit Sully's
-			     context modal. Single-tap opens the editor. Active state
-			     mirrors the model-picker open recipe so both chips glow in
-			     the same idiom when their respective surfaces are open. -->
-			<button
-				type="button"
-				onclick={() => {
-					oncloseAllPopovers();
-					onopenWorkspaceContext();
-				}}
-				class="flex min-h-[44px] min-w-0 items-center gap-1.5 rounded-full border px-3 font-sans text-xs backdrop-blur-md transition-all active:scale-95 sm:h-9 sm:min-h-0 {workspaceContextOpen
-					? 'border-[#ec2d78]/40 bg-[#ec2d78]/10 text-white shadow-[0_0_18px_rgba(236,45,120,0.15)]'
-					: 'border-white/[0.07] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'}"
-				aria-label="Sully's workspace context"
-				aria-haspopup="dialog"
-				aria-expanded={workspaceContextOpen}
-				title="Edit the notes Sully sees on every message"
-			>
-				<BookOpen
-					size={12}
-					class={workspaceContextOpen ? 'shrink-0 text-[#ff7eb3]' : 'shrink-0 text-zinc-500'}
-					aria-hidden="true"
-				/>
-				<span
-					class="font-sans text-[10px] tracking-wide {workspaceContextOpen
-						? 'text-zinc-100'
-						: 'text-zinc-400'}">Context</span
-				>
-			</button>
-
-			<!-- Model picker chip + sheet/dropdown popover.
-			     ChevronUp (not Down) because the sheet/dropdown opens ABOVE
-			     this chip now; the icon's resting direction signals where
-			     tapping will reveal content. Rotates 180° on open to read
-			     as a close affordance. -->
-			<div class="relative min-w-0">
+		<!-- ─── Single-row composer: [+] textarea [♪] [send|voice] ──────────
+		     Flagship pattern (ChatGPT / Gemini / Claude / Perplexity all
+		     ship single-row composers). textarea is flex-1; buttons are
+		     items-end so they hold the bottom edge as the textarea
+		     auto-grows. btn-tactile dropped in favor of flat hover-only
+		     treatment; the brand mic/send button keeps its magenta circle
+		     as the visual hero. -->
+		<div class="flex items-end gap-1.5">
+			<!-- Left: + button. When actions are open, the + becomes Close
+			     and Attach/Image slide in next to it; the textarea stays
+			     in the same row but narrows. -->
+			{#if actionsOpen}
 				<button
 					type="button"
-					data-popover-trigger
-					onclick={() => {
-						const next = !showModelOverrideModal;
-						oncloseAllPopovers();
-						showModelOverrideModal = next;
-					}}
-					class="flex min-h-[44px] max-w-[8.5rem] min-w-0 items-center gap-1.5 rounded-full border px-3 font-sans text-xs backdrop-blur-md transition-all active:scale-95 sm:h-9 sm:min-h-0 {showModelOverrideModal
-						? 'border-[#ec2d78]/40 bg-[#ec2d78]/10 text-white shadow-[0_0_18px_rgba(236,45,120,0.15)]'
-						: 'border-white/[0.07] bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white'}"
-					aria-label={`${selectedModelChoice.id === 'auto' ? lastModelUsed || 'Auto' : selectedModelChoice.label} — Model picker`}
-					title="Pick a specific model or leave on Auto"
+					onclick={() => (actionsOpen = false)}
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-90 sm:h-9 sm:w-9"
+					aria-label="Close actions"
+					title="Close"
+					in:fly={{ x: -10, duration: 200 }}
 				>
-					<span class="shrink-0">{tierEmoji}</span>
-					<span
-						class="min-w-0 truncate font-sans text-[10px] tracking-wide {showModelOverrideModal
-							? 'text-zinc-100'
-							: 'text-zinc-400'}"
-						>{selectedModelChoice.id === 'auto'
-							? lastModelUsed || 'Auto'
-							: selectedModelChoice.label}</span
-					>
-					<ChevronUp
-						size={10}
-						class="shrink-0 transition-transform duration-200 {showModelOverrideModal
-							? 'rotate-180 text-[#ff7eb3]'
-							: 'text-zinc-500'}"
-					/>
+					<X size={16} />
 				</button>
-
-				{#if showModelOverrideModal}
-					<!-- Backdrop scrim — mobile-only visual dim under the sheet.
-					     The +page.svelte global popover-close $effect handles
-					     tap-to-dismiss because the scrim sits OUTSIDE
-					     [data-popover] / [data-popover-trigger]. -->
-					<div
-						use:mobilePortal
-						class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
-						transition:fade={{ duration: 200, easing: cubicOut }}
-						aria-hidden="true"
-					></div>
-
-					<!-- Below lg: bottom-anchored sheet flush with screen edge.
-					     At lg+: dropdown anchored to the chip's TOP-RIGHT and
-					     blooming UPWARD (chip is at the composer level so the
-					     dropdown opens above to stay on-screen).
-					     role=dialog + aria-modal makes the portaled sheet a
-					     proper a11y landmark (axe flags portaled-to-body fixed
-					     elements as "page content should be contained by
-					     landmarks" otherwise). -->
-					<div
-						use:mobilePortal
-						use:swipeToDismiss={{ onDismiss: () => (showModelOverrideModal = false) }}
-						data-popover
-						role="dialog"
-						aria-modal="true"
-						aria-label="Choose a model"
-						transition:sheetTransition
-						class="fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] overflow-y-auto overscroll-contain rounded-t-2xl border border-b-0 border-white/[0.08] bg-[#0e0e11]/85 pt-2 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] shadow-2xl backdrop-blur-2xl lg:absolute lg:inset-x-auto lg:top-auto lg:bottom-full lg:left-0 lg:mb-2 lg:max-h-[calc(100dvh-6rem)] lg:w-64 lg:max-w-[calc(100vw-1rem)] lg:rounded-2xl lg:border-b lg:pt-1 lg:pb-1"
-					>
-						<!-- Drag-handle affordance — now functionally wired via
-						     use:swipeToDismiss on the parent container. Pull down
-						     past 100px from scrollTop=0 to dismiss; below
-						     threshold springs back. The handle itself is a visual
-						     cue; the gesture works anywhere on the sheet so long
-						     as the list is scrolled to the top. -->
-						<div
-							class="mx-auto mt-1 mb-2 h-1.5 w-10 shrink-0 rounded-full bg-white/20 lg:hidden"
-							aria-hidden="true"
-						></div>
-						<div class="flex items-center justify-between px-3 pt-1.5 pb-0.5 font-sans select-none">
-							<span class="text-[9px] tracking-wider text-zinc-600 uppercase">Model</span>
-							<button
-								type="button"
-								onclick={() => (showModelOverrideModal = false)}
-								class="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-90"
-								aria-label="Close model picker"
-								title="Close"
-							>
-								<X size={14} />
-							</button>
-						</div>
-						{#each MODEL_CHOICES as choice (choice.id)}
-							<button
-								type="button"
-								onclick={() => onsetModelChoice(choice)}
-								class="flex min-h-[44px] w-full items-center justify-between gap-3 px-3 py-1.5 text-left transition-all hover:bg-white/[0.04] active:scale-[0.985] active:bg-white/[0.07]
-									{selectedModelChoice.id === choice.id ? 'font-medium text-[#ff7eb3]' : 'text-zinc-200'}"
-							>
-								<span class="flex min-w-0 flex-col leading-[1.15]">
-									<span class="truncate text-[13px]">{choice.label}</span>
-									<span class="truncate font-sans text-[10px] text-zinc-500">{choice.sublabel}</span
-									>
-								</span>
-								{#if selectedModelChoice.id === choice.id}
-									<Check size={12} class="shrink-0" />
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		</div>
-
-		<!-- Text input area + icons. items-end so buttons sit at the bottom
-		     as the textarea grows; min-h on the wrapper preserves the
-		     hero-pill height even when the textarea collapses to 1 row. -->
-		<div class="flex flex-col gap-2">
-			<!-- Row 1: Textarea only (full width) -->
-			<div class="w-full">
-				<textarea
-					bind:this={textareaEl}
-					bind:value={textDraft}
-					onkeypress={onkey}
-					{onpaste}
-					{onfocus}
-					{onblur}
-					rows="1"
-					placeholder={composerMode === 'talkback'
-						? 'Continuously monitoring stream… hands free.'
-						: imageMode
-							? 'Describe the image you want to generate…'
-							: 'Talk to Sully…'}
-					autocomplete="off"
-					autocapitalize="sentences"
-					spellcheck="false"
+				<button
+					type="button"
+					onclick={ontriggerUpload}
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-90 sm:h-9 sm:w-9"
+					aria-label="Attach File"
+					title="Attach image"
+					in:fly={{ x: -12, duration: 220, delay: 45 }}
+				>
+					<Paperclip size={15} />
+				</button>
+				<button
+					type="button"
+					onclick={() => (imageMode = !imageMode)}
 					disabled={composerMode === 'talkback'}
-					class="w-full resize-none bg-transparent px-1 py-1 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500"
-					style="min-height: 36px; max-height: 480px;"
-				></textarea>
-			</div>
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:opacity-40 sm:h-9 sm:w-9 {imageMode
+						? 'border border-cyan-500/50 bg-cyan-500/10 text-cyan-300 shadow-[0_0_18px_rgba(6,182,212,0.18)]'
+						: 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'}"
+					aria-label="Toggle Image Gen Mode"
+					title="Image Generation Mode"
+					in:fly={{ x: -12, duration: 240, delay: 90 }}
+				>
+					<Sparkles size={15} />
+				</button>
+			{:else}
+				<button
+					type="button"
+					onclick={() => (actionsOpen = true)}
+					class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-zinc-400 transition-all hover:bg-white/[0.06] hover:text-zinc-200 active:scale-90 sm:h-9 sm:w-9"
+					aria-label="More actions"
+					title="Attach · Image"
+				>
+					<Plus size={18} />
+				</button>
+			{/if}
 
-			<!-- Row 2: + reveals hidden actions (Attach · Image — dictation removed,
-			     covered by the voice-mode + talkback buttons). Talkback sits
-			     center-right; the magenta voice-mode button anchors the far end and
-			     morphs into Send when there's content (iOS AI-app convention). -->
-			<div class="flex items-center justify-between gap-2">
-				<div class="flex items-center gap-1.5">
-					{#if actionsOpen}
-						<button
-							type="button"
-							onclick={() => (actionsOpen = false)}
-							class="btn-tactile h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-							aria-label="Close actions"
-							title="Close"
-							in:fly={{ x: -10, duration: 200 }}
-						>
-							<X size={16} />
-						</button>
+			<!-- Middle: textarea, takes remaining width. -->
+			<textarea
+				bind:this={textareaEl}
+				bind:value={textDraft}
+				onkeypress={onkey}
+				{onpaste}
+				{onfocus}
+				{onblur}
+				rows="1"
+				placeholder={composerMode === 'talkback'
+					? 'Continuously monitoring stream… hands free.'
+					: imageMode
+						? 'Describe the image you want to generate…'
+						: 'Talk to Sully…'}
+				autocomplete="off"
+				autocapitalize="sentences"
+				spellcheck="false"
+				disabled={composerMode === 'talkback'}
+				class="min-w-0 flex-1 resize-none self-center bg-transparent px-1 py-2 font-sans text-[16px] leading-snug tracking-[-0.005em] text-white placeholder:text-zinc-600 focus:outline-none disabled:text-zinc-500"
+				style="min-height: 36px; max-height: 480px;"
+			></textarea>
 
-						<!-- Attach File -->
-						<button
-							type="button"
-							onclick={ontriggerUpload}
-							class="btn-tactile h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-							aria-label="Attach File"
-							title="Attach image"
-							in:fly={{ x: -12, duration: 220, delay: 45 }}
-						>
-							<Paperclip size={15} />
-						</button>
+			<!-- Right: talkback (hands-free) + brand send/voice button. -->
+			<button
+				type="button"
+				onclick={ontoggleTalkback}
+				class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all active:scale-90 disabled:opacity-40 sm:h-9 sm:w-9 {composerMode ===
+				'talkback'
+					? 'animate-pulse border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 shadow-[0_0_18px_rgba(16,185,129,0.18)]'
+					: 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'}"
+				aria-label="Hands-free continuous Talkback"
+				title="Talkback — stay in the chat"
+			>
+				{#if composerMode === 'talkback'}
+					<Square size={14} />
+				{:else}
+					<Headphones size={15} />
+				{/if}
+			</button>
 
-						<!-- Sparkles Image Toggle -->
-						<button
-							type="button"
-							onclick={() => (imageMode = !imageMode)}
-							disabled={composerMode === 'talkback'}
-							class="h-11 w-11 shrink-0 disabled:opacity-40 sm:h-9 sm:w-9 {imageMode
-								? 'flex items-center justify-center rounded-[0.8rem] border border-cyan-500/50 bg-cyan-950 text-cyan-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_3px_10px_-3px_rgba(0,0,0,0.55)] transition active:scale-95'
-								: 'btn-tactile'}"
-							aria-label="Toggle Image Gen Mode"
-							title="Image Generation Mode"
-							in:fly={{ x: -12, duration: 240, delay: 90 }}
-						>
-							<Sparkles size={15} />
-						</button>
-					{:else}
-						<!-- + opens the hidden actions -->
-						<button
-							type="button"
-							onclick={() => (actionsOpen = true)}
-							class="btn-tactile h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-							aria-label="More actions"
-							title="Attach · Image"
-						>
-							<Plus size={18} />
-						</button>
-					{/if}
-				</div>
-
-				<div class="flex items-center gap-1.5">
-					<!-- Talkback — hands-free voice while staying in the chat. -->
-					<button
-						type="button"
-						onclick={ontoggleTalkback}
-						class="h-11 w-11 shrink-0 disabled:opacity-40 sm:h-9 sm:w-9 {composerMode === 'talkback'
-							? 'flex animate-pulse items-center justify-center rounded-[0.8rem] border border-emerald-500/50 bg-emerald-950 text-emerald-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_3px_10px_-3px_rgba(0,0,0,0.55)] transition active:scale-95'
-							: 'btn-tactile'}"
-						aria-label="Hands-free continuous Talkback"
-						title="Talkback — stay in the chat"
-					>
-						{#if composerMode === 'talkback'}
-							<Square size={14} />
-						{:else}
-							<Headphones size={15} />
-						{/if}
-					</button>
-
-					<!-- Far end: Send when there's content, else the voice-mode button. -->
-					{#if textDraft.trim() || imageMode || attachments.length > 0}
-						<button
-							type="button"
-							onclick={onsend}
-							disabled={sending ||
-								composerMode === 'talkback' ||
-								attachments.some((a) => a.uploading)}
-							class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-							aria-label="Send Message"
-							title="Send (Enter)"
-						>
-							<Send size={14} />
-						</button>
-					{:else}
-						<button
-							type="button"
-							onclick={onvoiceMode}
-							disabled={composerMode === 'talkback'}
-							class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
-							aria-label="Voice mode"
-							title="Voice mode — talk out loud"
-						>
-							<AudioLines size={16} />
-						</button>
-					{/if}
-				</div>
-			</div>
+			{#if textDraft.trim() || imageMode || attachments.length > 0}
+				<button
+					type="button"
+					onclick={onsend}
+					disabled={sending || composerMode === 'talkback' || attachments.some((a) => a.uploading)}
+					class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
+					aria-label="Send Message"
+					title="Send (Enter)"
+				>
+					<Send size={14} />
+				</button>
+			{:else}
+				<button
+					type="button"
+					onclick={onvoiceMode}
+					disabled={composerMode === 'talkback'}
+					class="btn-tactile-brand h-11 w-11 shrink-0 sm:h-9 sm:w-9"
+					aria-label="Voice mode"
+					title="Voice mode — talk out loud"
+				>
+					<AudioLines size={16} />
+				</button>
+			{/if}
 		</div>
 	</div>
 </div>
