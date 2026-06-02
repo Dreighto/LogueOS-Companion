@@ -100,17 +100,17 @@ export const MODEL_REGISTRY: ModelChoice[] = [
 //
 // CANONICAL matrix (moved verbatim from model_catalog.ts's MODELS).
 //
-// 2026-06-02 — chat tier's `local` slot flipped to companion-v2:latest as the
-// soft-rollout step (per CC#2's wire-in handoff). Other `local:` slots stay on
-// qwen3:14b until v2 is confirmed in real conversation. NOTE: companion mode
-// usually bypasses this matrix entirely — COMPANION_DEFAULT_MODEL in .env is
-// the live driver. This change covers the fallback path.
+// 2026-06-02 — rolled chat.local back to qwen3:14b after companion-v2
+// shipped overfit (regurgitating training conversations verbatim). v2 will
+// be revisited per CC#2's blackwell-finetune-research brief — lower LR,
+// early stopping, native Qwen3 chat template. Until then base qwen3 + the
+// Sully system prompt from chat_prompt.ts gives us a working baseline.
 export const TIER_PROVIDER_MODELS: Record<Tier, Partial<Record<CatalogProvider, string>>> = {
 	chat: {
 		anthropic: 'claude-haiku-4-5-20251001',
 		google: 'gemini-2.5-flash-lite',
 		openai: 'gpt-4o-mini',
-		local: 'companion-v2:latest'
+		local: 'qwen3:14b'
 	},
 	planning: {
 		anthropic: 'claude-sonnet-4-6',
