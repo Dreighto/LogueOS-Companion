@@ -904,6 +904,7 @@
 				oncopy={(m) => void messageActions.copyMessage(m)}
 				onregenerate={(m) => void messageActions.regenerateReply(m)}
 				onspeak={(m) => void messageActions.speakMessage(m)}
+				onfeedback={(m, s) => void messageActions.feedbackMessage(m, s)}
 				{openCanvas}
 				{ensureDispatchStream}
 				{fmtTime}

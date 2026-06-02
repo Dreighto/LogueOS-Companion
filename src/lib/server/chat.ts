@@ -25,7 +25,11 @@ function parseRow(row: any): ChatMessage {
 		interactive_action,
 		status: row.status,
 		timestamp: row.timestamp,
-		thread_id: row.thread_id || 'default'
+		thread_id: row.thread_id || 'default',
+		quality_signal:
+			row.quality_signal === null || row.quality_signal === undefined
+				? null
+				: Number(row.quality_signal)
 	};
 }
 
@@ -235,6 +239,25 @@ export function deleteChatMessage(messageId: number): boolean {
 		return info.changes > 0;
 	} catch (e: unknown) {
 		console.error('deleteChatMessage error:', e);
+		return false;
+	} finally {
+		db.close();
+	}
+}
+
+// Operator's explicit feedback on an assistant reply. `+1` = thumbs-up,
+// `-1` = thumbs-down, `null` = clear any prior signal. Returns the row count
+// updated (0 = message_id not found). Only persists; the explicit-positive
+// fine-tune corpus is harvested out-of-band by scripts/finetune/.
+export function setMessageQualitySignal(messageId: number, signal: 1 | -1 | null): boolean {
+	const db = getDb();
+	try {
+		const info = db
+			.prepare('UPDATE chat_messages SET quality_signal = ? WHERE id = ?')
+			.run(signal, messageId);
+		return info.changes > 0;
+	} catch (e: unknown) {
+		console.error('setMessageQualitySignal error:', e);
 		return false;
 	} finally {
 		db.close();

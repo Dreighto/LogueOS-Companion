@@ -37,6 +37,8 @@ export interface MessageActionsController {
 	copyMessage: (m: ChatMessage) => Promise<void>;
 	regenerateReply: (m: ChatMessage) => Promise<void>;
 	speakMessage: (m: ChatMessage) => Promise<void>;
+	/** Operator's thumbs-up / thumbs-down on a reply. signal=0 clears it. */
+	feedbackMessage: (m: ChatMessage, signal: 1 | -1 | 0) => Promise<void>;
 	stopReadAloud: () => void;
 	/** onDestroy hook — stop any in-flight read-aloud. */
 	destroy: () => void;
@@ -161,6 +163,28 @@ export function createMessageActionsController(deps: MessageActionsDeps): Messag
 		}
 	}
 
+	async function feedbackMessage(m: ChatMessage, signal: 1 | -1 | 0) {
+		// Optimistic update — flip the icon immediately, roll back on error.
+		const stored = signal === 0 ? null : signal;
+		const prior = m.quality_signal ?? null;
+		const apply = (next: number | null) =>
+			deps.setMessages(
+				deps.getMessages().map((x) => (x.id === m.id ? { ...x, quality_signal: next } : x))
+			);
+		apply(stored);
+		try {
+			const resp = await fetch(resolve('/api/chat/feedback'), {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ message_id: m.id, signal })
+			});
+			if (!resp.ok) throw new Error(`feedback ${resp.status}`);
+		} catch {
+			apply(prior);
+			toasts.add('Feedback not saved — try again', 'error');
+		}
+	}
+
 	return {
 		get copiedIds() {
 			return copiedIds;
@@ -177,6 +201,7 @@ export function createMessageActionsController(deps: MessageActionsDeps): Messag
 		copyMessage,
 		regenerateReply,
 		speakMessage,
+		feedbackMessage,
 		stopReadAloud,
 		destroy: () => stopReadAloud()
 	};

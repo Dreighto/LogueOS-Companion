@@ -21,7 +21,17 @@
 	import SullyAvatar from '$lib/components/SullyAvatar.svelte';
 	import SullyNameTag from '$lib/components/SullyNameTag.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
-	import { Sparkles, Check, Copy, RefreshCw, Volume2, Square, Loader2 } from 'lucide-svelte';
+	import {
+		Sparkles,
+		Check,
+		Copy,
+		RefreshCw,
+		Volume2,
+		Square,
+		Loader2,
+		ThumbsUp,
+		ThumbsDown
+	} from 'lucide-svelte';
 	import type { ChatMessage } from '$lib/types/chat-ui';
 	import type { Chat } from '@ai-sdk/svelte';
 
@@ -43,6 +53,7 @@
 		oncopy,
 		onregenerate,
 		onspeak,
+		onfeedback,
 		openCanvas,
 		ensureDispatchStream,
 		fmtTime,
@@ -62,6 +73,7 @@
 		oncopy: (m: ChatMessage) => void;
 		onregenerate: (m: ChatMessage) => void;
 		onspeak: (m: ChatMessage) => void;
+		onfeedback: (m: ChatMessage, signal: 1 | -1 | 0) => void;
 		openCanvas: (code: string, language: string) => void;
 		ensureDispatchStream: (
 			traceId: string
@@ -187,6 +199,39 @@
 								<Volume2 size={10} />
 								<span>Play</span>
 							{/if}
+						</button>
+						<!-- Explicit feedback: thumbs-up / thumbs-down on assistant
+						     replies. Toggles on/off — clicking the active signal
+						     clears it (passes 0). Captured in chat_messages.quality_signal
+						     so the fine-tune extractor can harvest explicit
+						     positives alongside the implicit ones it already pulls. -->
+						<button
+							type="button"
+							onclick={() => onfeedback(m, m.quality_signal === 1 ? 0 : 1)}
+							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {m.quality_signal ===
+							1
+								? 'text-emerald-400'
+								: 'text-zinc-500 hover:text-zinc-200'}"
+							aria-label={m.quality_signal === 1 ? 'Remove thumbs-up' : 'Thumbs-up reply'}
+							aria-pressed={m.quality_signal === 1}
+							title={m.quality_signal === 1 ? 'Liked — click to undo' : 'Good reply'}
+							data-testid="feedback-up"
+						>
+							<ThumbsUp size={10} />
+						</button>
+						<button
+							type="button"
+							onclick={() => onfeedback(m, m.quality_signal === -1 ? 0 : -1)}
+							class="flex items-center gap-1 rounded-md px-2 py-1 font-sans text-[11px] font-medium transition-all hover:bg-white/[0.06] active:scale-95 {m.quality_signal ===
+							-1
+								? 'text-rose-400'
+								: 'text-zinc-500 hover:text-zinc-200'}"
+							aria-label={m.quality_signal === -1 ? 'Remove thumbs-down' : 'Thumbs-down reply'}
+							aria-pressed={m.quality_signal === -1}
+							title={m.quality_signal === -1 ? 'Disliked — click to undo' : 'Bad reply'}
+							data-testid="feedback-down"
+						>
+							<ThumbsDown size={10} />
 						</button>
 					{/if}
 					<div class="font-sans text-[10px] text-zinc-600 tabular-nums">

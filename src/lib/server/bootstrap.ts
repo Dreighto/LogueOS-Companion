@@ -46,7 +46,8 @@ export function bootstrapCompanionDb(): void {
 				interactive_action TEXT,
 				status TEXT DEFAULT 'sent',
 				timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-				thread_id TEXT NOT NULL DEFAULT 'default'
+				thread_id TEXT NOT NULL DEFAULT 'default',
+				quality_signal INTEGER
 			);
 			CREATE INDEX IF NOT EXISTS idx_chat_timestamp ON chat_messages(timestamp);
 			CREATE INDEX IF NOT EXISTS idx_chat_thread ON chat_messages(thread_id, timestamp);
@@ -75,6 +76,20 @@ export function bootstrapCompanionDb(): void {
 				embed_model TEXT NOT NULL
 			);
 		`);
+
+		// Lightweight in-place migrations for chat_messages — additive columns
+		// only. CREATE TABLE IF NOT EXISTS above won't add a column to an
+		// existing table, so we sniff schema with PRAGMA table_info and ALTER
+		// when needed. Safe in wired mode too: the kernel's logueos_memory.db
+		// gets the same additive treatment, which is what we want (the
+		// quality_signal column is shared signal across Console + companion).
+		const cols = db.pragma('table_info(chat_messages)') as { name: string }[];
+		const have = new Set(cols.map((c) => c.name));
+		// quality_signal: +1 thumbs-up, -1 thumbs-down, NULL no signal. Drives
+		// the explicit positive-feedback corpus for Sully fine-tunes.
+		if (!have.has('quality_signal')) {
+			db.exec('ALTER TABLE chat_messages ADD COLUMN quality_signal INTEGER');
+		}
 	} finally {
 		db.close();
 	}

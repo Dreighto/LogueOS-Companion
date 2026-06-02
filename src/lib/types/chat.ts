@@ -16,4 +16,6 @@ export interface ChatMessage {
 	status: 'sent' | 'pending_approval' | 'approved' | 'denied';
 	timestamp: string;
 	thread_id: string;
+	// +1 thumbs-up, -1 thumbs-down, null = no operator signal.
+	quality_signal: number | null;
 }
