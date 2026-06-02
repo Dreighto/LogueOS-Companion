@@ -6,10 +6,7 @@ const CACHE_NAME = `cache-${version}`;
 const APP_START_URL = '/companion/chat';
 
 // Combine build artifacts (JS, CSS, static files) for comprehensive pre-caching
-const ASSETS = [
-	...build,
-	...files
-];
+const ASSETS = [...build, ...files];
 
 self.addEventListener('install', (event: any) => {
 	async function preCache() {
@@ -32,9 +29,25 @@ self.addEventListener('activate', (event: any) => {
 			}
 		}
 	}
+	// Enable Navigation Preload (Chrome 59+, Safari 15.4+, FF 99+). Without
+	// this, the browser blocks the navigation request until the SW boots,
+	// then the SW calls fetch() — Lighthouse + real users see this as a
+	// multi-hop delay (the "Eliminate document.write / chained redirect"
+	// shape). With preload enabled, the network request fires in parallel
+	// with SW boot, so the response arrives ~as fast as a no-SW page.
+	async function enablePreload() {
+		const reg = (self as any).registration;
+		if (reg?.navigationPreload) {
+			try {
+				await reg.navigationPreload.enable();
+			} catch {
+				/* unsupported on this browser — fall through to plain fetch */
+			}
+		}
+	}
 	// Claim immediate control to enable offline shell booting on first visit
 	self.clients.claim();
-	event.waitUntil(deleteOldCaches());
+	event.waitUntil(Promise.all([deleteOldCaches(), enablePreload()]));
 });
 
 self.addEventListener('message', (event: any) => {
@@ -68,11 +81,7 @@ self.addEventListener('push', (event: any) => {
 
 self.addEventListener('notificationclick', (event: any) => {
 	event.notification.close();
-	event.waitUntil(
-		(self as any).clients.openWindow(
-			event.notification.data?.url || APP_START_URL
-		)
-	);
+	event.waitUntil((self as any).clients.openWindow(event.notification.data?.url || APP_START_URL));
 });
 
 self.addEventListener('fetch', (event: any) => {
@@ -104,37 +113,41 @@ self.addEventListener('fetch', (event: any) => {
 	const isAsset =
 		ASSETS.includes(url.pathname) || url.pathname.startsWith('/companion/_app/immutable/');
 	if (isAsset) {
-		event.respondWith(
-			caches.match(event.request).then((cached) => cached || fetch(event.request))
-		);
+		event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
 		return;
 	}
 
-	// Navigation (HTML document) requests: network-first, fall back to the cached
-	// app shell so the PWA still boots offline. NEVER return a plain-text error
-	// body for a navigation — that's what painted "Network connection
+	// Navigation (HTML document) requests: use the navigation preload response
+	// if available (parallelizes the network request with SW boot — no apparent
+	// redirect chain to Lighthouse), otherwise fetch network-first. Fall back to
+	// the cached app shell so the PWA still boots offline. NEVER return a plain-
+	// text error body for a navigation — that's what painted "Network connection
 	// unavailable." across the whole screen.
 	if (event.request.mode === 'navigate') {
 		event.respondWith(
-			fetch(event.request)
-				.then((response) => {
+			(async () => {
+				try {
+					// Preload response races with SW boot and arrives first when the
+					// browser supports navigation preload (Chrome 59+, Safari 15.4+,
+					// FF 99+). Falls through to a regular fetch on older browsers.
+					const preload: Response | undefined = await event.preloadResponse;
+					const response = preload || (await fetch(event.request));
 					if (response.status === 200) {
 						const clone = response.clone();
 						caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
 					}
 					return response;
-				})
-				.catch(async () => {
+				} catch {
 					const cached = await caches.match(event.request);
 					if (cached) return cached;
-					const shell =
-						(await caches.match(APP_START_URL)) || (await caches.match('/companion'));
+					const shell = (await caches.match(APP_START_URL)) || (await caches.match('/companion'));
 					if (shell) return shell;
 					return new Response(
 						'<!doctype html><meta charset="utf-8"><body style="background:#050505;color:#a1a1aa;font-family:system-ui;padding:2rem">Offline — reconnect to load Companion.</body>',
 						{ status: 503, headers: { 'Content-Type': 'text/html' } }
 					);
-				})
+				}
+			})()
 		);
 		return;
 	}
