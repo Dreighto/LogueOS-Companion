@@ -294,6 +294,29 @@ export function markSynthesized(traceId: string, synthesisMessageId: number): vo
 	});
 }
 
+/**
+ * Phase 0: record the L1 classifier's tier on the Task row. Status-guarded +
+ * idempotent: proposed→classified the first time; on a later call (or any
+ * already-advanced status) it just refreshes the tier columns without forcing
+ * an illegal FSM transition. Never throws into the turn pipeline.
+ */
+export function markClassified(traceId: string, tier: string, payload: string | null): void {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return;
+	const db = getDb();
+	try {
+		const row = db.prepare('SELECT status FROM pending_jobs WHERE trace_id = ?').get(traceId) as
+			| { status: JobStatus }
+			| undefined;
+		if (!row) return;
+		const nextStatus = row.status === 'proposed' ? 'classified' : row.status;
+		db.prepare(
+			'UPDATE pending_jobs SET status = ?, classification_tier = ?, classification_payload = ? WHERE trace_id = ?'
+		).run(nextStatus, tier, payload, traceId);
+	} finally {
+		db.close();
+	}
+}
+
 /** All Task rows for a thread, newest first. Reader-API support (turn_replay). */
 export function getJobsForThread(threadId: string, limit = 50): PendingJob[] {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return [];
