@@ -126,11 +126,19 @@ export async function runVoiceToolLoop(args: {
 	signal?: AbortSignal;
 	taskId?: string;
 	maxSteps?: number;
+	/**
+	 * Fired the first time the loop is about to execute a tool, BEFORE the
+	 * (slow) tool + follow-up inference run. The voice route uses this to speak
+	 * a "let me look that up" filler so the operator isn't sitting in silence
+	 * during the round-trip. `toolName` is the first tool being called.
+	 */
+	onToolStart?: (toolName: string) => void;
 }): Promise<ToolLoopResult> {
 	const messages = [...args.messages];
 	const toolsUsed: string[] = [];
 	const maxSteps = args.maxSteps ?? 3;
 	const toolsEnabled = !!OLLAMA_API_KEY;
+	let firedToolStart = false;
 
 	for (let step = 0; step <= maxSteps; step++) {
 		const body: Record<string, unknown> = {
@@ -168,6 +176,17 @@ export async function runVoiceToolLoop(args: {
 		}
 		if (calls.length === 0) {
 			return { content: assistantContent.trim(), toolsUsed };
+		}
+
+		// Speak the "let me look that up" filler before the first tool runs —
+		// covers the multi-second search + follow-up-inference round-trip.
+		if (!firedToolStart) {
+			firedToolStart = true;
+			try {
+				args.onToolStart?.(calls[0]?.function?.name ?? 'tool');
+			} catch {
+				/* filler is best-effort */
+			}
 		}
 
 		// Execute each requested tool, append the assistant tool-call turn + the

@@ -93,14 +93,25 @@ export const POST: RequestHandler = async ({ request }) => {
 				// the final spoken answer below. For a normal no-tool turn this is a
 				// single inference and returns immediately. Tools auto-disable if
 				// OLLAMA_API_KEY is absent.
+				// Spoken filler when a tool (web search/fetch) is about to run, so
+				// the multi-second round-trip doesn't feel like a hang. Emitted to
+				// the TTS stream immediately; NOT persisted as part of the reply.
+				let spokeFiller = false;
 				const { content } = await runVoiceToolLoop({
 					model: VOICE_MODEL,
 					messages: chatMessages,
 					keepAlive: VOICE_KEEP_ALIVE,
 					numCtx: 8192,
 					signal: request.signal,
-					taskId
+					taskId,
+					onToolStart: (toolName) => {
+						const filler =
+							toolName === 'web_fetch' ? 'Let me pull that up. ' : 'Let me look that up. ';
+						controller.enqueue(enc.encode(filler));
+						spokeFiller = true;
+					}
 				});
+				void spokeFiller; // (the flag documents intent; filler already streamed)
 				full = content;
 				// Emit the final answer sentence-by-sentence so the client transcript
 				// + per-sentence TTS still get incremental input.

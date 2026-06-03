@@ -98,7 +98,7 @@ export async function maybeAutonomousDispatch(args: AutonomousDispatchArgs): Pro
 		addChatMessage(
 			'system',
 			res.ok
-				? `Sully sent this to **${worker === 'claude-code' ? 'CC' : 'AGY'}** on **${targetRepo}** — watching it now.`
+				? `On it — this one needs some real digging, so give me a few minutes. I'll drop the answer right here the moment it's ready.`
 				: `⚠️ Dispatch held: ${res.reason}.`,
 			res.ok ? taskId : null,
 			null,
