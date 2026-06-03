@@ -1,71 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	getActivityForTrace,
-	getRecentActivity,
-	writeActivity,
-	logTaskEvent
-} from '$lib/server/chatActivity';
-import { runMode, appIdentity } from '$lib/server/config';
-import {
-	markWorking,
-	markDone,
-	markFailed,
-	markSynthesized,
-	getJob
-} from '$lib/server/dispatchJobs';
+import { getActivityForTrace, getRecentActivity, writeActivity } from '$lib/server/chatActivity';
+import { runMode } from '$lib/server/config';
+import { markWorking, markDone, markFailed, getJob } from '$lib/server/dispatchJobs';
 import { captureActualTokens, type ResultMarker } from '$lib/server/dispatchUsage';
-import { addChatMessage } from '$lib/server/chat';
-import { sendPushToAll } from '$lib/server/web_push';
-import { sendApnsToAll } from '$lib/server/apns';
-
-/**
- * On a Task reaching a terminal state, close the loop for the operator:
- *   1. Post a Sully-voiced chat message with the worker's result (so the
- *      "I'll drop the answer right here" promise made at dispatch is real —
- *      previously markDone only touched the DB and nothing posted).
- *   2. Fire a push notification ("ping me when done"). sendPushToAll
- *      self-gates on ENABLE_WEB_PUSH, so this is a safe no-op until push is
- *      turned on + a device has subscribed.
- *   3. Link the synthesis message to the Task + advance it to 'synthesized'.
- * All best-effort — never throw back into the worker's callback.
- */
-function closeOutTask(traceId: string, outcome: 'done' | 'failed', resultText: string): void {
-	const job = getJob(traceId);
-	const threadId = job?.thread_id ?? 'default';
-	const text = resultText.trim();
-	const msg =
-		outcome === 'done'
-			? text
-				? `Done. Here's what came back:\n\n${text}`
-				: `That's finished — the task completed cleanly.`
-			: text
-				? `That one hit a snag: ${text}`
-				: `That one didn't complete — I'll need another look.`;
-	try {
-		const row = addChatMessage('local', msg, traceId, null, null, 'sent', threadId, {
-			taskId: traceId
-		});
-		logTaskEvent(traceId, 'synthesis_completed', { outcome, via: 'worker-result' });
-		try {
-			markSynthesized(traceId, row.id);
-		} catch {
-			/* FSM may not allow done→synthesized from a failed state; non-fatal */
-		}
-	} catch (e) {
-		console.error('[activity] closeOutTask message failed', e);
-	}
-	const pushPayload = {
-		title: outcome === 'done' ? 'Sully — task done' : 'Sully — task needs you',
-		body: outcome === 'done' ? 'Your task finished. Tap to see the result.' : 'A task hit a snag.',
-		url: appIdentity.pushDefaultUrl
-	};
-	// Two delivery legs, both self-gated: Web Push for a Safari home-screen PWA,
-	// APNs for the native Capacitor/TestFlight app (its SW is inert). Each is a
-	// no-op until its credentials + a registered device exist.
-	void sendPushToAll(pushPayload).catch((e) => console.error('[activity] web push failed', e));
-	void sendApnsToAll(pushPayload).catch((e) => console.error('[activity] apns push failed', e));
-}
+import { closeOutTask } from '$lib/server/completionClose';
 
 export const GET: RequestHandler = async ({ url }) => {
 	// Worker-activity feed is available when EITHER the kernel is wired OR the
@@ -124,11 +63,21 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		if (action === 'completed') {
 			if (body.marker) captureActualTokens(trace_id, body.marker);
-			markDone(trace_id, body.result_ref ?? null);
-			// Post the result into chat + ping the operator (self-gated push).
+			// Decoupled: a 'completed' callback that lands after the job already
+			// went terminal (e.g. aborted) throws an illegal transition — but the
+			// result must STILL reach the operator, so close out regardless.
+			try {
+				markDone(trace_id, body.result_ref ?? null);
+			} catch (e) {
+				console.warn('activity markDone transition skipped:', e);
+			}
 			closeOutTask(trace_id, 'done', body.result_ref ?? '');
 		} else if (action === 'failed') {
-			markFailed(trace_id, body.target ?? null);
+			try {
+				markFailed(trace_id, body.target ?? null);
+			} catch (e) {
+				console.warn('activity markFailed transition skipped:', e);
+			}
 			closeOutTask(trace_id, 'failed', body.target ?? '');
 		} else {
 			markWorking(trace_id, body.target ? `${action} ${body.target}` : action);
