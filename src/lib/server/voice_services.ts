@@ -17,6 +17,19 @@ const STT_UNIT = 'logueos-companion-stt.service';
 const TTS_UNIT = 'logueos-companion-tts.service';
 const STT_PORT = Number(process.env.COMPANION_STT_PORT || 18770);
 const TTS_URL = (process.env.COMPANION_TTS_URL || 'http://127.0.0.1:18771').replace(/\/+$/, '');
+
+// When TTS_URL points to a remote host (e.g. Kokoro on Jetson), skip all
+// systemctl TTS lifecycle ops — the remote service runs persistently and is
+// managed by the remote host, not by this machine's systemd. We still probe the
+// health endpoint so a downed Jetson surfaces as a readiness failure.
+const ttsUrlHost = (() => {
+	try {
+		return new URL(TTS_URL).hostname;
+	} catch {
+		return '127.0.0.1';
+	}
+})();
+const TTS_REMOTE = ttsUrlHost !== '127.0.0.1' && ttsUrlHost !== 'localhost';
 const START_TIMEOUT_MS = 40000;
 const PROBE_TIMEOUT_MS = 1500;
 const POLL_INTERVAL_MS = 1000;
@@ -88,11 +101,14 @@ function errorMessage(e: unknown): string {
 }
 
 export async function getVoiceServiceStatus(): Promise<VoiceServiceStatus> {
-	const [stt, tts] = await Promise.all([
+	const [stt, ttsSystemd, healthy] = await Promise.all([
 		systemctl('is-active', STT_UNIT),
-		systemctl('is-active', TTS_UNIT)
+		TTS_REMOTE ? Promise.resolve('') : systemctl('is-active', TTS_UNIT),
+		ttsHealthy()
 	]);
-	const bothReady = stt === 'active' && tts === 'active' && (await ttsHealthy());
+	// Remote TTS: derive status from health probe since there's no local unit.
+	const tts: VoiceUnitStatus = TTS_REMOTE ? (healthy ? 'active' : 'inactive') : ttsSystemd;
+	const bothReady = stt === 'active' && tts === 'active' && healthy;
 	return { stt, tts, bothReady };
 }
 
@@ -101,10 +117,13 @@ export async function startVoiceServices(
 	opts?: { skipTts?: boolean }
 ): Promise<VoiceServiceStartResult> {
 	const skipTts = opts?.skipTts ?? false;
+	// Remote TTS (Jetson) is always-on — never start it via systemctl.
+	// We still probe its health so a downed Jetson shows as a readiness failure.
+	const skipTtsStart = skipTts || TTS_REMOTE;
 	const errors: string[] = [];
 	try {
 		const starts: Promise<string>[] = [systemctl('start', STT_UNIT)];
-		if (!skipTts) starts.push(systemctl('start', TTS_UNIT));
+		if (!skipTtsStart) starts.push(systemctl('start', TTS_UNIT));
 		await Promise.all(starts);
 	} catch (e) {
 		errors.push(`failed to start speech services: ${errorMessage(e)}`);
@@ -112,8 +131,9 @@ export async function startVoiceServices(
 	}
 
 	// Wait for models to load + ports to bind (cold start ~10-20s on the GPU).
-	// When skipTts is true (ElevenLabs is primary) we only gate on STT readiness —
+	// When skipTts is true (ElevenLabs is primary) we skip the TTS health probe —
 	// Chatterbox wasn't started and shouldn't block the voice session.
+	// Remote TTS is probed (skipTts=false path) so Jetson reachability is confirmed.
 	const deadline = Date.now() + maxWaitMs;
 	while (Date.now() < deadline) {
 		const remaining = Math.max(1, deadline - Date.now());
@@ -131,7 +151,9 @@ export async function startVoiceServices(
 }
 
 export async function stopVoiceServices(): Promise<VoiceServiceStopResult> {
-	await Promise.all([systemctl('stop', STT_UNIT), systemctl('stop', TTS_UNIT)]);
+	const stops: Promise<string>[] = [systemctl('stop', STT_UNIT)];
+	if (!TTS_REMOTE) stops.push(systemctl('stop', TTS_UNIT));
+	await Promise.all(stops);
 	return { stopped: true };
 }
 
@@ -147,6 +169,11 @@ export async function stopVoiceServices(): Promise<VoiceServiceStopResult> {
  * sudoers allowlist (stop + start are permitted; restart is not).
  */
 export async function restartTtsService(maxWaitMs = START_TIMEOUT_MS): Promise<boolean> {
+	if (TTS_REMOTE) {
+		// Can't restart a remote service via systemctl — just probe its health.
+		// If Kokoro on the Jetson is healthy, we're good; it manages its own process.
+		return ttsHealthy(maxWaitMs);
+	}
 	try {
 		await systemctl('stop', TTS_UNIT);
 	} catch {

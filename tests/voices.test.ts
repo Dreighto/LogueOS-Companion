@@ -68,9 +68,16 @@ describe('voice catalog', () => {
 		expect(m.routingFor(m.getVoice('emma')).ttsPath).toBe('/api/chat/speak-local');
 	});
 
-	it('localRefFor: local voice uses its own ref; cloud voice uses its clone fallback', async () => {
+	it('localRefFor: cloud voice uses its Chatterbox clone fallback; Kokoro voice returns undefined', async () => {
 		const m = await load();
-		expect(m.localRefFor(m.getVoice('goodman-sully'))).toMatch(/sully_goodman\.wav$/);
+		// goodman-sully is now a Kokoro voice — no Chatterbox ref
+		expect(m.localRefFor(m.getVoice('goodman-sully'))).toBeUndefined();
 		expect(m.localRefFor(m.getVoice('emma'))).toMatch(/emma\.mp3$/);
+	});
+
+	it('kokoroVoiceFor: Kokoro voice uses its own id; cloud voice uses its Kokoro fallback id', async () => {
+		const m = await load();
+		expect(m.kokoroVoiceFor(m.getVoice('goodman-sully'))).toBe('am_adam');
+		expect(m.kokoroVoiceFor(m.getVoice('emma'))).toBe('bf_emma');
 	});
 });

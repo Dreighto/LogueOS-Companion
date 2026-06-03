@@ -155,3 +155,114 @@ describe('voice_services', () => {
 		expect(fetch).not.toHaveBeenCalled();
 	});
 });
+
+describe('remote TTS (Jetson/Kokoro)', () => {
+	// When COMPANION_TTS_URL is a non-localhost address, TTS is managed by a
+	// remote host (e.g. Kokoro on Jetson). All systemctl TTS ops are skipped;
+	// readiness is determined by the health probe instead.
+
+	const REMOTE_URL = 'http://10.10.10.2:18771';
+
+	it('getVoiceServiceStatus: TTS state comes from health probe, not systemctl', async () => {
+		mockSystemctl({ 'is-active:logueos-companion-stt.service': 'active' });
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
+
+		const { getVoiceServiceStatus } = await loadVoiceServices(9, REMOTE_URL);
+		const status = await getVoiceServiceStatus();
+
+		expect(status.tts).toBe('active');
+		expect(status.bothReady).toBe(true); // stt active + tts health ok
+		expect(execFileMock).not.toHaveBeenCalledWith(
+			'sudo',
+			['-n', '/usr/bin/systemctl', 'is-active', 'logueos-companion-tts.service'],
+			expect.anything(),
+			expect.any(Function)
+		);
+		expect(fetch).toHaveBeenCalledWith(`${REMOTE_URL}/health`, {
+			signal: expect.any(AbortSignal)
+		});
+	});
+
+	it('getVoiceServiceStatus: TTS inactive when health probe fails', async () => {
+		mockSystemctl({ 'is-active:logueos-companion-stt.service': 'active' });
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }));
+
+		const { getVoiceServiceStatus } = await loadVoiceServices(9, REMOTE_URL);
+		const status = await getVoiceServiceStatus();
+
+		expect(status.tts).toBe('inactive');
+		expect(status.bothReady).toBe(false);
+	});
+
+	it('startVoiceServices: skips TTS systemctl start, probes Jetson health for readiness', async () => {
+		const sttServer = createServer((socket) => socket.end());
+		const sttPort = await listenOnRandomPort(sttServer);
+		mockSystemctl({ 'start:logueos-companion-stt.service': 'ok' });
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
+
+		try {
+			const { startVoiceServices } = await loadVoiceServices(sttPort, REMOTE_URL);
+			await expect(startVoiceServices(200)).resolves.toEqual({ ready: true, errors: [] });
+			expect(execFileMock).not.toHaveBeenCalledWith(
+				'sudo',
+				['-n', '/usr/bin/systemctl', 'start', 'logueos-companion-tts.service'],
+				expect.anything(),
+				expect.any(Function)
+			);
+			expect(fetch).toHaveBeenCalledWith(`${REMOTE_URL}/health`, {
+				signal: expect.any(AbortSignal)
+			});
+		} finally {
+			await promisify(sttServer.close.bind(sttServer))();
+		}
+	});
+
+	it('startVoiceServices: times out when Jetson health probe fails', async () => {
+		mockSystemctl({ 'start:logueos-companion-stt.service': 'ok' });
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }));
+
+		const { startVoiceServices } = await loadVoiceServices(9, REMOTE_URL);
+		await expect(startVoiceServices(5)).resolves.toEqual({
+			ready: false,
+			errors: ['speech services did not become ready in time']
+		});
+		expect(execFileMock).not.toHaveBeenCalledWith(
+			'sudo',
+			['-n', '/usr/bin/systemctl', 'start', 'logueos-companion-tts.service'],
+			expect.anything(),
+			expect.any(Function)
+		);
+	});
+
+	it('stopVoiceServices: only stops STT unit, leaves remote TTS alone', async () => {
+		mockSystemctl({ 'stop:logueos-companion-stt.service': 'ok' });
+
+		const { stopVoiceServices } = await loadVoiceServices(9, REMOTE_URL);
+		await expect(stopVoiceServices()).resolves.toEqual({ stopped: true });
+		expect(execFileMock).not.toHaveBeenCalledWith(
+			'sudo',
+			['-n', '/usr/bin/systemctl', 'stop', 'logueos-companion-tts.service'],
+			expect.anything(),
+			expect.any(Function)
+		);
+	});
+
+	it('restartTtsService: returns health probe result without touching systemctl', async () => {
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 200 }));
+
+		const { restartTtsService } = await loadVoiceServices(9, REMOTE_URL);
+		await expect(restartTtsService(200)).resolves.toBe(true);
+		expect(execFileMock).not.toHaveBeenCalled();
+		expect(fetch).toHaveBeenCalledWith(`${REMOTE_URL}/health`, {
+			signal: expect.any(AbortSignal)
+		});
+	});
+
+	it('restartTtsService: returns false when remote health probe fails', async () => {
+		vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }));
+
+		const { restartTtsService } = await loadVoiceServices(9, REMOTE_URL);
+		await expect(restartTtsService(200)).resolves.toBe(false);
+		expect(execFileMock).not.toHaveBeenCalled();
+	});
+});

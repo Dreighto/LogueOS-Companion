@@ -8,7 +8,7 @@
 // (client aborts) cancels the in-flight synthesis.
 
 import type { RequestHandler } from './$types';
-import { getVoice, localRefFor } from '$lib/server/voices';
+import { getVoice, localRefFor, kokoroVoiceFor } from '$lib/server/voices';
 import { speakableText } from '$lib/server/tts_normalize';
 import { restartTtsService } from '$lib/server/voice_services';
 
@@ -30,11 +30,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	// service falls back to its own TTS_VOICE_REF default.
 	const voice = body.voice ? getVoice(body.voice) : null;
 	const ref = (voice ? localRefFor(voice) : undefined) || body.voice_ref;
+	const kokoroVoice = voice ? kokoroVoiceFor(voice) : undefined;
 
 	const synthPayload = JSON.stringify({
 		text,
+		// Kokoro param — used by Kokoro server, ignored by Chatterbox.
+		voice: kokoroVoice,
+		// Chatterbox params — used by Chatterbox server, ignored by Kokoro.
 		voice_ref: ref,
-		// Per-voice synthesis tuning (omitted ⇒ Chatterbox keeps its defaults).
 		cfg_weight: voice?.cfgWeight,
 		exaggeration: voice?.exaggeration,
 		temperature: voice?.temperature

@@ -3,18 +3,19 @@
 // filesystem paths and ElevenLabs voice ids never reach the browser.
 //
 // Two voices today:
-//   • emma         — ElevenLabs Flash (cloud, instant, crispest). Its local
-//                    Chatterbox clone (emma.mp3) is the fall-forward voice when
-//                    the cloud is capped/offline.
-//   • goodman-sully — local Chatterbox clone of John Goodman's Sulley (private
-//                    personal use). Local-only — ElevenLabs won't clone it.
+//   • emma         — ElevenLabs Flash (cloud, instant, crispest). Falls back to
+//                    Kokoro (bf_emma) when cloud is capped/offline.
+//   • goodman-sully — Kokoro local voice on the Jetson. Operator picks the
+//                    Kokoro voice id via TTS_VOICE env on the Jetson, or set
+//                    kokoroVoice here. Testing in progress.
 //
-// Add a voice by dropping a clean ~6-12s reference clip in COMPANION_VOICES_DIR
-// and adding an entry here.
+// Add a voice by adding an entry with engine='kokoro' and a kokoroVoice id.
+// Available Kokoro voices: af_heart, af_sky, af_bella, af_nicole, af_sarah,
+//   am_adam, am_michael, am_echo, am_liam, bf_emma, bf_alice, bm_george, bm_lewis
 
 import { env } from '$env/dynamic/private';
 
-export type VoiceEngine = 'elevenlabs' | 'chatterbox';
+export type VoiceEngine = 'elevenlabs' | 'chatterbox' | 'kokoro';
 
 export interface VoiceDef {
 	id: string;
@@ -29,15 +30,16 @@ export interface VoiceDef {
 	voiceRef?: string;
 	/** Chatterbox reference used when a CLOUD voice degrades to local synthesis. */
 	fallbackVoiceRef?: string;
-	/**
-	 * Optional Chatterbox synthesis knobs. cfg_weight 0.5 (default) follows the
-	 * reference's pacing rigidly — drop to ~0.3 for natural cadence when the ref
-	 * is short or stitched; 0.7 to lock voice character harder. exaggeration 0.5
-	 * neutral; bump for more expressive delivery. temperature 0.8 default.
-	 */
+	/** Chatterbox synthesis knobs (see tts_server.py for defaults). */
 	cfgWeight?: number;
 	exaggeration?: number;
 	temperature?: number;
+	/** Kokoro voice id (engine='kokoro', e.g. 'af_heart', 'bf_emma'). */
+	kokoroVoice?: string;
+	/** Kokoro voice used when a CLOUD voice falls back to local Kokoro synthesis. */
+	kokoroFallbackVoice?: string;
+	/** Kokoro playback speed multiplier (default 1.0). */
+	kokoroSpeed?: number;
 }
 
 /** Client-safe view of a voice — no filesystem paths, no provider ids. */
@@ -66,18 +68,19 @@ export const VOICES: VoiceDef[] = [
 		engine: 'elevenlabs',
 		voiceId: '56bWURjYFHyYyVf490Dp',
 		model: 'eleven_flash_v2_5',
+		// Kokoro fallback when ElevenLabs is unavailable (bf_emma = British female Emma)
+		kokoroFallbackVoice: 'bf_emma',
+		// Chatterbox fallback kept for compatibility during Jetson transition
 		fallbackVoiceRef: `${VOICES_DIR}/emma.mp3`
 	},
 	{
 		id: 'goodman-sully',
 		label: 'Sulley',
-		blurb: 'Big & gravelly (Goodman) — local',
-		engine: 'chatterbox',
-		voiceRef: `${VOICES_DIR}/sully_goodman.wav`,
-		// Natural cadence (0.5 default makes it follow the ref pacing too rigidly
-		// → "slow and weird"); slight expressiveness bump to keep Goodman's warmth.
-		cfgWeight: 0.3,
-		exaggeration: 0.6
+		blurb: 'Big & gravelly — local (Jetson)',
+		engine: 'kokoro',
+		// Operator testing voices — swap kokoroVoice to try others.
+		// Options: am_adam, am_michael, am_echo, am_liam, bm_george, bm_lewis
+		kokoroVoice: 'am_adam'
 	}
 ];
 
@@ -106,16 +109,24 @@ export function localRefFor(v: VoiceDef): string | undefined {
 	return v.voiceRef ?? v.fallbackVoiceRef;
 }
 
+// The Kokoro voice id to use when synthesizing locally via the Kokoro server:
+// a Kokoro voice uses its own id; a cloud voice uses its Kokoro fallback id.
+export function kokoroVoiceFor(v: VoiceDef): string | undefined {
+	return v.kokoroVoice ?? v.kokoroFallbackVoice;
+}
+
 // Routing the client uses to reach the right TTS engine for a voice. A cloud
 // voice routes to /api/chat/speak (with a local fall-forward); a local voice
 // (or a cloud voice when cloud is unavailable) routes straight to speak-local.
 export function routingFor(v: VoiceDef): VoiceRouting {
 	if (v.engine === 'elevenlabs' && cloudAvailable()) {
+		const hasLocalFallback = !!(v.kokoroFallbackVoice || v.fallbackVoiceRef);
 		return {
 			ttsPath: '/api/chat/speak',
 			ttsModel: v.model,
-			ttsFallbackPath: v.fallbackVoiceRef ? '/api/chat/speak-local' : undefined
+			ttsFallbackPath: hasLocalFallback ? '/api/chat/speak-local' : undefined
 		};
 	}
+	// 'chatterbox' and 'kokoro' engines both route through speak-local
 	return { ttsPath: '/api/chat/speak-local', ttsModel: undefined, ttsFallbackPath: undefined };
 }
