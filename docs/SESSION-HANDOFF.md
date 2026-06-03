@@ -1,6 +1,6 @@
 # LogueOS-Companion (Sully) — Session Handoff
 
-**Last updated:** 2026-06-03 (CC) · **HEAD `f62fd3a` on `main`.** Read this first.
+**Last updated:** 2026-06-03 (CC) · **HEAD `c5a5909` on `main`.** Read this first.
 
 **To resume:** this file → `docs/CURRENT-STATE.md` / `docs/DOING-NOW.md` / `docs/PLAN.md` → full audit `data/peer_reviews/2026-06-02_companion-audit_findings.md`. `~/.claude/CLAUDE.md` + Orchestrator `AGENTS.md` auto-load. Key memories: `project_companion_repos`, `reference_companion_chat_module_map`, `reference_companion_chat_context_architecture`, `project_sully_apns_push`, `reference_codemagic_sully_signing`, `project_companion_voice_mode`, and ⚠️ `feedback_check_before_asserting`.
 
@@ -33,6 +33,7 @@ The iOS shell loads the **remote** tailnet URL, so frontend changes reach the ph
 
 ## What shipped this session (2026-06-02 → 06-03)
 
+- **Routing scorecard + close-the-loops** (`c5a5909`, PR #2, **live-QA'd end-to-end**) — gap audit of the whole "Sully Workspace Vision" (`data/peer_reviews/2026-06-03_sully-vision-gap-audit.md`) → built Phase 0 + Phase 1 of the routing-test plan (`docs/superpowers/plans/2026-06-03-...md`). **Phase 0:** classifier tier now persisted on the Task row (`markClassified`); completion close-out routes to the live thread + is idempotent + survives a late terminal callback (`completionClose.ts`); self-handled turns reach `synthesized` (`markSelfHandled`); stale-job reaper on the polled activity GET. **Phase 1:** one pure `decide()` (Talk/Ask/Dispatch) that the scorecard grades AND production calls (`src/lib/server/routing/`); labeled corpus `tests/fixtures/routing-cases.jsonl`; **hard CI gate** `tests/routing-scorecard.test.ts` (`npm run routing:score`); two scorecard-validated safe fixes (suppress dispatch in planning/deep; tighten `valueGate` soft-imperative + brainstorm-deny) → **accuracy 79.5%→95.6%**; injection guard now precedes `@cc` (pasted content can't auto-fire). Also fixed a **pre-existing CI-only red** (web*search dropped results when the spend-DB write threw — default `memoryDbPath` points at the Orchestrator path, absent in CI; spend recording is now best-effort). Live QA: a real `@cc` dispatch returned to its originating thread, status `synthesized`, one completion message. *(Note: the "ask before dispatch" BEHAVIOR is still Phase 2 — `decide()` returns `Ask`, caller maps it to do-not-fire for now.)\_
 - **Native iOS push (APNs)** live on **TestFlight build 15**, verified end-to-end (test push hit the lock screen). Root cause was Capacitor 8 dropping the AppDelegate token-forwarding (fixed in `scripts/ci-ios-patch.sh`) + a signing saga (stable key + cert reset). _(This closes the old handoff's "iOS Build 2 = push" item.)_
 - **Read-aloud/Talkback fixed** (shared-element playback + trailing-silence pad + local-TTS self-heal) and **cloud Emma made primary** (`VOICE_TTS_PROVIDER=elevenlabs`; local Chatterbox is fall-forward).
 - **Task-first Phase 1** (`c8f6bc1`) — Task object + forensic journal + `turn_replay.ts`.
@@ -41,7 +42,7 @@ The iOS shell loads the **remote** tailnet URL, so frontend changes reach the ph
 
 ## Open threads + decisions waiting on the operator
 
-- **Decision: gate authority** — should Sully's own judgment drive dispatch instead of being vetoed by the keyword regex? Behavior change; each spawn burns Max quota. (Refactor step #12 / task-first Phase 2.)
+- **Gate authority / dispatch routing** — PARTLY ADDRESSED by the routing scorecard ship (`c5a5909`): the gate is now measured (95.6% on a labeled corpus, hard CI gate) and tightened (no brainstorm/planning auto-fire; soft-imperative demotion). STILL PENDING = the **"ask before dispatch" BEHAVIOR** (Phase 2): `decide()` already returns `Ask` for borderline turns, but the caller maps it to do-not-fire — wiring a real confirmation prompt + dispatch-on-yes is the next step. Also pending: scoring the `SULLY_GATE` model-vote layer offline (capture is wired, env-gated `ROUTING_CAPTURE_GATES=1`).
 - **Decision: retire the legacy in-composer Talkback?** (realtime voice is primary now.)
 - **Today's Ops dashboard** — the first task-first test project, **not yet built**. The dir Sully "claimed" to create doesn't exist (she narrated it in `local` tier without dispatching). Design: `data/peer_reviews/2026-06-02_todays-ops-data-sources_design.md`.
 - **Post-audit refactor** — quick wins done; M/L items (legacy `/api/chat` migration, shared `db.ts`, voice consolidation) queued behind CI + the two decisions. See `docs/PLAN.md`.
