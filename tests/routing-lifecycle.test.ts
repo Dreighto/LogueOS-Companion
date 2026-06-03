@@ -45,3 +45,43 @@ describe('markClassified', () => {
 		expect(j.getJob('sully-c2')?.classification_tier).toBe('deep');
 	});
 });
+
+describe('markSelfHandled', () => {
+	it('links the latest reply + synthesizes a proposed/classified self-handled turn', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		const { bootstrapCompanionDb } = await import('$lib/server/bootstrap');
+		const { addChatMessage } = await import('$lib/server/chat');
+		bootstrapCompanionDb();
+		j.proposeTask({
+			taskId: 'sully-s1',
+			threadId: 't1',
+			source: 'chat',
+			category: 'general',
+			brief: 'hey'
+		});
+		j.markClassified('sully-s1', 'chat', null);
+		const reply = addChatMessage('local', 'hi there', 'sully-s1', null, null, 'sent', 't1', {
+			taskId: 'sully-s1'
+		});
+		j.markSelfHandled('sully-s1');
+		const row = j.getJob('sully-s1');
+		expect(row?.status).toBe('synthesized');
+		expect(row?.synthesis_message_id).toBe(reply.id);
+	});
+
+	it('leaves an already-dispatched job alone (no clobber)', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-s2',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'f',
+			predictedTokens: 0,
+			threadId: 't1'
+		});
+		j.markDispatched('sully-s2');
+		j.markSelfHandled('sully-s2'); // must be a no-op — status is 'dispatched'
+		expect(j.getJob('sully-s2')?.status).toBe('dispatched');
+	});
+});

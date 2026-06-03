@@ -317,6 +317,37 @@ export function markClassified(traceId: string, tier: string, payload: string | 
 	}
 }
 
+/**
+ * Phase 0: close the arc for a SELF-HANDLED turn (no worker dispatched). Links
+ * Sully's own reply as the synthesis message and transitions to 'synthesized'.
+ * Status-guarded to proposed/classified so it can NEVER clobber a turn that
+ * went on to dispatch (those close out via the worker-completion path instead).
+ * Direct UPDATE (not transition()) since proposed/classified→synthesized are
+ * both legal sinks and we don't want to throw on a benign re-entry.
+ */
+export function markSelfHandled(traceId: string): void {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return;
+	const db = getDb();
+	try {
+		const row = db.prepare('SELECT status FROM pending_jobs WHERE trace_id = ?').get(traceId) as
+			| { status: JobStatus }
+			| undefined;
+		if (!row || (row.status !== 'proposed' && row.status !== 'classified')) return;
+		const reply = db
+			.prepare(
+				`SELECT id FROM chat_messages
+				 WHERE task_id = ? AND sender IN ('local','cc','agy','companion')
+				 ORDER BY id DESC LIMIT 1`
+			)
+			.get(traceId) as { id: number } | undefined;
+		db.prepare(
+			"UPDATE pending_jobs SET status = 'synthesized', synthesis_message_id = ?, ended_at = ? WHERE trace_id = ?"
+		).run(reply?.id ?? null, new Date().toISOString(), traceId);
+	} finally {
+		db.close();
+	}
+}
+
 /** All Task rows for a thread, newest first. Reader-API support (turn_replay). */
 export function getJobsForThread(threadId: string, limit = 50): PendingJob[] {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return [];
