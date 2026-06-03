@@ -51,6 +51,17 @@ const config: CapacitorConfig = {
 		allowNavigation: ['room.taila28611.ts.net']
 	},
 
+	plugins: {
+		// BUILD 2 — native APNs push. presentationOptions controls what iOS shows
+		// when a push arrives while the app is FOREGROUND (background pushes hit
+		// the system tray automatically). The aps-environment entitlement +
+		// CODE_SIGN_ENTITLEMENTS wiring are added by scripts/ci-ios-patch.sh on
+		// every Codemagic build (ios/ is regenerated fresh + uncommitted).
+		PushNotifications: {
+			presentationOptions: ['badge', 'sound', 'alert']
+		}
+	},
+
 	ios: {
 		// 'never': the web app owns safe areas via env(safe-area-inset-*) + viewport-fit=cover.
 		// 'always' made Capacitor ALSO inset the content -> double-handled -> composer cut off the bottom.

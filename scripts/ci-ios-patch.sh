@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
 # ci-ios-patch.sh — re-apply native iOS config after `npx cap add ios`.
 #
-# BUILD 1 SCOPE: microphone + export-compliance + iOS-15 deployment floor only.
-# Push (aps-environment entitlement + CODE_SIGN_ENTITLEMENTS wiring) is
-# intentionally NOT done here yet — it lands in Build 2 alongside the push
-# plugin and the remote-app register code. Keeping this patch minimal removes
-# the fragile pbxproj string-edits and the entitlement/profile-mismatch risk
-# from the first build.
+# BUILD 2 SCOPE: microphone + export-compliance + iOS-15 floor (Build 1) PLUS
+# the APNs push entitlement (aps-environment + CODE_SIGN_ENTITLEMENTS wiring).
 #
 # Runs on the Codemagic Mac mini (BSD userland). ios/ is generated fresh every
 # build and NOT committed, so these settings must be re-applied on EVERY build.
@@ -15,6 +11,9 @@ set -euo pipefail
 
 PLIST="ios/App/App/Info.plist"
 PODFILE="ios/App/Podfile"
+ENTITLEMENTS="ios/App/App/App.entitlements"
+PBXPROJ="ios/App/App.xcodeproj/project.pbxproj"
+BUNDLE_ID="com.dreighto.sully"
 
 if [ ! -f "$PLIST" ]; then
   echo "ERROR: $PLIST not found — did 'npx cap add ios --packagemanager CocoaPods' run first?" >&2
@@ -44,7 +43,43 @@ if [ -f "$PODFILE" ]; then
   echo "Podfile platform line:"; grep "platform :ios" "$PODFILE" || true
 fi
 
+# --- APNs push entitlement (Build 2) -----------------------------------------
+# 1) Write the entitlements file. aps-environment=production — TestFlight + App
+#    Store builds use the PRODUCTION APNs gateway (api.push.apple.com). A
+#    development value here against a TestFlight build = silent BadDeviceToken.
+cat > "$ENTITLEMENTS" <<'PLISTEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>
+PLISTEOF
+echo "wrote $ENTITLEMENTS"
+
+# 2) Wire CODE_SIGN_ENTITLEMENTS into every App-target build config. Anchor on
+#    the PRODUCT_BUNDLE_IDENTIFIER line (present once per build config for the
+#    App target) and insert the entitlements path right after it — but only if
+#    not already present (idempotent across re-runs). Capacitor's generated
+#    pbxproj uses tabs + "KEY = VALUE;" lines; we match that shape.
+if [ -f "$PBXPROJ" ]; then
+  if grep -q "CODE_SIGN_ENTITLEMENTS = App/App.entitlements;" "$PBXPROJ"; then
+    echo "CODE_SIGN_ENTITLEMENTS already wired — skipping"
+  else
+    perl -0pi -e \
+      's/(PRODUCT_BUNDLE_IDENTIFIER = \Q'"$BUNDLE_ID"'\E;)/$1\n\t\t\t\tCODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/g' \
+      "$PBXPROJ"
+    echo "wired CODE_SIGN_ENTITLEMENTS into $(grep -c 'CODE_SIGN_ENTITLEMENTS = App/App.entitlements;' "$PBXPROJ") build config(s)"
+  fi
+else
+  echo "WARNING: $PBXPROJ not found — entitlement not wired" >&2
+fi
+
 # --- Verify (printed in the build log) ---------------------------------------
 echo 'iOS patch complete:'
 /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$PLIST"
 /usr/libexec/PlistBuddy -c 'Print :ITSAppUsesNonExemptEncryption' "$PLIST"
+echo "aps-environment:"; /usr/libexec/PlistBuddy -c 'Print :aps-environment' "$ENTITLEMENTS" 2>/dev/null || echo '(entitlements file missing)'
+echo "CODE_SIGN_ENTITLEMENTS lines:"; grep -c 'CODE_SIGN_ENTITLEMENTS = App/App.entitlements;' "$PBXPROJ" 2>/dev/null || echo 0

@@ -1,11 +1,19 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onNavigate } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import PwaUpdatePrompt from '$lib/components/PwaUpdatePrompt.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
+	import { initNativePush } from '$lib/native/push';
 	import '../app.css';
 
 	let { children } = $props();
+
+	// Register for native iOS push on app start. No-op on web / PWA — the module
+	// guards on Capacitor.isNativePlatform() internally. Best-effort; never blocks.
+	onMount(() => {
+		void initNativePush();
+	});
 
 	// Smooth cross-page view transitions (progressive enhancement; no-op where unsupported).
 	onNavigate((navigation) => {
