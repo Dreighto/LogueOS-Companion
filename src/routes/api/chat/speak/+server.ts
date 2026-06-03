@@ -11,6 +11,7 @@ import { getTodayTtsUsage, addTtsUsage } from '$lib/server/voice_usage';
 import { getVoice, cloudAvailable, localRefFor, DEFAULT_VOICE_ID } from '$lib/server/voices';
 import { startVoiceServices } from '$lib/server/voice_services';
 import { speakableText } from '$lib/server/tts_normalize';
+import { padWavTrailingSilence } from '$lib/server/wav_pad';
 
 const EMMA_VOICE_ID = '56bWURjYFHyYyVf490Dp';
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1';
@@ -53,7 +54,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (!upstream || !upstream.ok || !upstream.body) {
 			throw error(502, { message: 'local TTS unavailable' });
 		}
-		return new Response(upstream.body, {
+		// Buffer + pad ~700ms trailing silence so iOS/WebKit's end-of-WAV clip
+		// drops silence instead of Sully's last word (talkback only; the client
+		// fully buffers this blob anyway, so streaming bought nothing here).
+		const raw = Buffer.from(await upstream.arrayBuffer());
+		const padded = padWavTrailingSilence(raw, 700);
+		return new Response(padded, {
 			status: 200,
 			headers: { 'content-type': 'audio/wav', 'cache-control': 'no-store' }
 		});
