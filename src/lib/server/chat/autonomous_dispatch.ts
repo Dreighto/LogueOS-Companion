@@ -163,20 +163,12 @@ export async function maybeAutonomousDispatch(
 			dispatched: res.ok,
 			held_reason: res.ok ? null : res.reason
 		});
-		addChatMessage(
-			'system',
-			res.ok
-				? `On it — this one needs some real digging, so give me a few minutes. I'll drop the answer right here the moment it's ready.`
-				: `⚠️ Dispatch held: ${res.reason}.`,
-			res.ok ? taskId : null,
-			null,
-			null,
-			'sent',
-			threadId,
-			{ taskId }
-		);
+		const msg = res.ok
+			? `On it — this one needs some real digging, so give me a few minutes. I'll drop the answer right here the moment it's ready.`
+			: `⚠️ Dispatch held: ${res.reason}.`;
+		addChatMessage('system', msg, res.ok ? taskId : null, null, null, 'sent', threadId, { taskId });
 		if (!res.ok) markSelfHandled(taskId);
-		return {};
+		return { spokenSuffix: msg };
 	}
 
 	if (d.action === 'Ask') {
