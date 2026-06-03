@@ -115,25 +115,22 @@ workflows:
             openssl genrsa -out /tmp/sign_key.pem 2048 2>>"$DBG"
             echo "WARNING: no CERTIFICATE_PRIVATE_KEY injected — minting a one-off key" | tee -a "$DBG"
           fi
-          # Free a distribution-cert slot for our stable key. Apple caps
-          # distribution certs (~2); dead certs from earlier failed builds (their
-          # private keys are gone) can fill every slot, making --create return
-          # 409. Delete any distribution cert that does NOT match our stable key,
-          # leaving at most our own (reused forever). Idempotent: once our cert
-          # exists, nothing else is deleted. Non-fatal — a hiccup here must never
-          # break an otherwise-working build. Issuer/key auth comes from the ASC
-          # integration env vars the CLI reads automatically.
-          # Certs may be type DISTRIBUTION (Apple Distribution) or IOS_DISTRIBUTION
-          # (legacy) — fetch-signing-files matches both, so we must too. KEEP =
-          # cert(s) matching our stable key (any type); delete the rest.
-          KEEP=$(app-store-connect certificates list --certificate-key @file:/tmp/sign_key.pem --json 2>/dev/null | python3 -c 'import sys,json; print(" ".join(c.get("id","") for c in json.load(sys.stdin)))' 2>/dev/null || true)
-          echo "cert(s) matching our stable key (keep): ${KEEP:-<none yet>}" | tee -a "$DBG"
-          for CID in $(app-store-connect certificates list --json 2>/dev/null | python3 -c 'import sys,json; print("\n".join(c.get("id","") for c in json.load(sys.stdin) if (c.get("attributes") or {}).get("certificateType","") in ("DISTRIBUTION","IOS_DISTRIBUTION")))' 2>/dev/null || true); do
-            case " $KEEP " in
-              *" $CID "*) echo "keeping cert $CID" | tee -a "$DBG" ;;
-              *) echo "revoking dead distribution cert $CID" | tee -a "$DBG"; app-store-connect certificates delete "$CID" --ignore-not-found 2>&1 | tee -a "$DBG" || true ;;
-            esac
-          done
+          # One-time distribution-cert reset. Apple caps distribution certs (~2);
+          # dead certs from earlier failed builds (private keys gone) can fill
+          # every slot, making --create return 409. When the build is triggered
+          # with REVOKE_ALL_DIST_CERTS=1, delete ALL distribution certs (both the
+          # DISTRIBUTION and legacy IOS_DISTRIBUTION types fetch-signing-files
+          # matches) so the stable key can create a fresh one. AFTERWARDS run
+          # WITHOUT the flag: fetch-signing-files reuses our cert by key match, so
+          # nothing is ever deleted and our good cert is safe. Non-fatal. Issuer/
+          # key auth comes from the ASC integration env vars the CLI reads.
+          if [ "${REVOKE_ALL_DIST_CERTS:-}" = "1" ]; then
+            echo "REVOKE_ALL_DIST_CERTS=1 — clearing all distribution certs" | tee -a "$DBG"
+            for CID in $(app-store-connect certificates list --json 2>/dev/null | python3 -c 'import sys,json; print("\n".join(c.get("id","") for c in json.load(sys.stdin) if (c.get("attributes") or {}).get("certificateType","") in ("DISTRIBUTION","IOS_DISTRIBUTION")))' 2>/dev/null || true); do
+              echo "revoking distribution cert $CID" | tee -a "$DBG"
+              app-store-connect certificates delete "$CID" --ignore-not-found 2>&1 | tee -a "$DBG" || true
+            done
+          fi
           # --create registers a distribution cert matching our key (creating one
           # the first time, reusing it after) + the App Store profile WITH the
           # push capability. --delete-stale-profiles clears the old non-push one.

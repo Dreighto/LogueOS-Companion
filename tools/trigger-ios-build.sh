@@ -20,16 +20,24 @@ TOKEN=$(grep '^CODEMAGIC_API_TOKEN=' "$REPO_ROOT/.env" | cut -d= -f2-)
 [ -z "$TOKEN" ] && { echo "CODEMAGIC_API_TOKEN not in .env" >&2; exit 1; }
 [ -f "$KEY_FILE" ] || { echo "signing key not found: $KEY_FILE" >&2; exit 1; }
 
+# Set REVOKE_DIST_CERTS=1 in the environment to clear ALL distribution certs in
+# this build (one-time reset when Apple's cert cap is full). Leave unset for
+# normal builds — the cert is then reused, never deleted.
+REVOKE="${REVOKE_DIST_CERTS:-0}"
+
 # Build the JSON payload with python so the multi-line PEM key is escaped safely.
-BODY=$(python3 - "$APP_ID" "$WORKFLOW" "$BRANCH" "$KEY_FILE" <<'PY'
-import json, sys
+BODY=$(REVOKE="$REVOKE" python3 - "$APP_ID" "$WORKFLOW" "$BRANCH" "$KEY_FILE" <<'PY'
+import json, os, sys
 app_id, workflow, branch, key_file = sys.argv[1:5]
 key = open(key_file).read()
+vars = {"CERTIFICATE_PRIVATE_KEY": key}
+if os.environ.get("REVOKE") == "1":
+    vars["REVOKE_ALL_DIST_CERTS"] = "1"
 print(json.dumps({
     "appId": app_id,
     "workflowId": workflow,
     "branch": branch,
-    "environment": {"variables": {"CERTIFICATE_PRIVATE_KEY": key}}
+    "environment": {"variables": vars}
 }))
 PY
 )
