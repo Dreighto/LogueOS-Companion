@@ -145,6 +145,50 @@ describe('ask-before-dispatch', () => {
 		expect(fetchCalls).toBe(0); // never dispatched
 	});
 
+	it('a non-affirmation turn expires the proposal at turn-start, so a LATER yes cannot fire it', async () => {
+		const m = await setup();
+		const { classifyAndTouchThread } = await import('$lib/server/chat_turn');
+		m.proposeTask({
+			taskId: 'sully-skip1',
+			threadId: 'tSkip',
+			source: 'chat',
+			category: 'general',
+			brief: 'x'
+		});
+		await m.maybeAutonomousDispatch({
+			userText: 'add a settings page to the console',
+			targetRepo: 'companion',
+			threadId: 'tSkip',
+			taskId: 'sully-skip1',
+			tier: 'planning'
+		});
+		expect(m.getJob('sully-skip1')?.status).toBe('gated');
+		// A non-affirmation turn arrives — turn-start classify runs unconditionally
+		// (even if that turn's reply later errors/empties) and expires the proposal.
+		classifyAndTouchThread({
+			threadId: 'tSkip',
+			userText: 'actually, what time is it?',
+			taskId: 'sully-skip2'
+		});
+		expect(m.getJob('sully-skip1')?.status).toBe('aborted');
+		// A subsequent "yes" must NOT resurrect the expired proposal.
+		m.proposeTask({
+			taskId: 'sully-skip3',
+			threadId: 'tSkip',
+			source: 'chat',
+			category: 'general',
+			brief: 'yes'
+		});
+		await m.maybeAutonomousDispatch({
+			userText: 'yes',
+			targetRepo: 'companion',
+			threadId: 'tSkip',
+			taskId: 'sully-skip3',
+			tier: 'chat'
+		});
+		expect(fetchCalls).toBe(0);
+	});
+
 	it('explicit @cc still dispatches immediately (no ask)', async () => {
 		const m = await setup();
 		m.proposeTask({

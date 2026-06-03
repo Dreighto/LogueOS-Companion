@@ -19,6 +19,8 @@ describe('isAffirmation', () => {
 			'go for it',
 			'please do',
 			'yes please',
+			"let's do it",
+			'yes go ahead',
 			'sounds good',
 			'confirmed',
 			'absolutely',
@@ -28,8 +30,18 @@ describe('isAffirmation', () => {
 		}
 	});
 
-	it('rejects negatives and non-confirmations', () => {
-		for (const t of ['no', 'nope', 'not yet', 'wait', 'stop', 'hold on', 'cancel', "don't"]) {
+	it('rejects negatives, bare politeness, and non-confirmations', () => {
+		for (const t of [
+			'no',
+			'nope',
+			'not yet',
+			'wait',
+			'stop',
+			'hold on',
+			'cancel',
+			"don't",
+			'please'
+		]) {
 			expect(isAffirmation(t), `should reject "${t}"`).toBe(false);
 		}
 	});

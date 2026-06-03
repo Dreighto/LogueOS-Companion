@@ -389,7 +389,29 @@ export function markGatedProposal(traceId: string, proposal: ProposalPayload): v
  * null. The confirm flow consumes-or-expires it every turn, so at most one is
  * ever live (one-turn lifetime).
  */
-export function getPendingProposal(threadId: string, maxAgeMinutes = 30): PendingProposal | null {
+/**
+ * Expire (abort) ALL pending 'gated' proposals on a thread. Called UNCONDITIONALLY
+ * at the start of every non-affirmation turn so a proposal can't outlive the
+ * operator's immediate next reply — even on a turn that errors or yields an empty
+ * reply (where maybeAutonomousDispatch is skipped). Also clears any stacked/
+ * abandoned proposals so gated rows never leak. Returns how many it expired.
+ */
+export function expireProposalsForThread(threadId: string): number {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return 0;
+	const db = getDb();
+	try {
+		const info = db
+			.prepare(
+				"UPDATE pending_jobs SET status = 'aborted', current_activity = 'proposal expired (operator moved on)', ended_at = ? WHERE thread_id = ? AND status = 'gated'"
+			)
+			.run(new Date().toISOString(), threadId);
+		return info.changes;
+	} finally {
+		db.close();
+	}
+}
+
+export function getPendingProposal(threadId: string, maxAgeMinutes = 10): PendingProposal | null {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return null;
 	const db = getDb();
 	try {

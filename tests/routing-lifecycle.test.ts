@@ -147,6 +147,29 @@ describe('gated proposals (ask-before-dispatch)', () => {
 		expect(j.getPendingProposal('tStale')).toBeNull();
 		expect(j.getPendingProposal('tStale', 30)).toBeNull();
 	});
+	it('expireProposalsForThread aborts ALL gated proposals on the thread', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.proposeTask({
+			taskId: 'sully-e1',
+			threadId: 'tExp',
+			source: 'chat',
+			category: 'general',
+			brief: 'x'
+		});
+		j.markGatedProposal('sully-e1', proposal);
+		j.proposeTask({
+			taskId: 'sully-e2',
+			threadId: 'tExp',
+			source: 'chat',
+			category: 'general',
+			brief: 'x'
+		});
+		j.markGatedProposal('sully-e2', proposal);
+		expect(j.expireProposalsForThread('tExp')).toBe(2);
+		expect(j.getJob('sully-e1')?.status).toBe('aborted');
+		expect(j.getJob('sully-e2')?.status).toBe('aborted');
+		expect(j.getPendingProposal('tExp')).toBeNull();
+	});
 	it('markGatedProposal leaves a dispatched job untouched (no clobber)', async () => {
 		const j = await import('$lib/server/dispatchJobs');
 		j.createJob({

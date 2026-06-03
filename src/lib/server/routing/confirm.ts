@@ -20,10 +20,10 @@ const AFFIRMATIONS = new Set([
 	'send it',
 	'ship it',
 	'go for it',
-	'please',
 	'please do',
 	'yes please',
 	'yes go',
+	'yes go ahead',
 	'sounds good',
 	'lets do it',
 	'let us do it',
@@ -40,6 +40,7 @@ const AFFIRMATIONS = new Set([
 export function isAffirmation(text: string): boolean {
 	const t = (text || '')
 		.toLowerCase()
+		.replace(/['’]/g, '') // "let's do it" → "lets do it"
 		.replace(/[.!?,]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
