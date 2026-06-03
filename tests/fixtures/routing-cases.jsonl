@@ -16,9 +16,9 @@
 {"text":"remove the dead code in Canvas.svelte","fromTool":false,"tier":"chat","expected":"Dispatch","note":"file path"}
 {"text":"hey how are you today","fromTool":false,"tier":"chat","expected":"Talk","locked":true,"note":"chatter"}
 {"text":"the main focus right now was the companion app in which I'm speaking to you now. so we're trying to get that wired up, and i've also got a bit of model learning going on.","fromTool":false,"tier":"planning","expected":"Talk","locked":true,"note":"the real journal brainstorm false-positive; no imperative"}
-{"text":"wire up the companion app","fromTool":false,"tier":"chat","expected":"Talk","note":"soft imperative + bare repo — Task 12 demotes this"}
-{"text":"update the kernel news section","fromTool":false,"tier":"chat","expected":"Talk","note":"soft imperative + bare repo — Task 12"}
-{"text":"build a relationship with the console team","fromTool":false,"tier":"chat","expected":"Talk","note":"soft imperative + repo word, not a work order — Task 12"}
+{"text":"wire up the companion app","fromTool":false,"tier":"chat","expected":"Talk","locked":true,"note":"soft imperative + bare repo — Task 12 demotes this"}
+{"text":"update the kernel news section","fromTool":false,"tier":"chat","expected":"Talk","locked":true,"note":"soft imperative + bare repo — Task 12"}
+{"text":"build a relationship with the console team","fromTool":false,"tier":"chat","expected":"Talk","locked":true,"note":"soft imperative + repo word, not a work order — Task 12"}
 {"text":"thanks, that's perfect","fromTool":false,"tier":"chat","expected":"Talk","note":"acknowledgement"}
 {"text":"let's design the new dashboard layout together","fromTool":false,"tier":"planning","expected":"Talk","note":"brainstorming, design is not a work-keyword"}
 {"text":"i'm thinking about how the voice mode should feel","fromTool":false,"tier":"planning","expected":"Talk","note":"thinking about — brainstorm"}
