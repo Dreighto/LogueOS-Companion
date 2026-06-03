@@ -380,8 +380,8 @@ export function listInFlight(): PendingJob[] {
  * Phase 0: mark jobs FAILED when they have been in-flight (dispatched/working)
  * longer than timeoutMs with no terminal callback — a dropped worker. Returns
  * the rows it reaped so the caller can surface a "that task stalled" message.
- * Default 15 min. started_at is the anchor (the only monotonic timestamp we
- * reliably set at dispatch).
+ * Default 15 min. started_at is the anchor — set at row INSERT (proposeTask/
+ * createJob), which for an in-flight job is at most moments before dispatch.
  */
 export function reapStaleJobs(timeoutMs = 15 * 60 * 1000): PendingJob[] {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return [];

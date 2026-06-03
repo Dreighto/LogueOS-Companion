@@ -5,7 +5,7 @@
 // post must happen even when the FSM rejects done→synthesized (e.g. a
 // completed callback that lands after an abort) — synthesis is best-effort.
 import { addChatMessage } from './chat';
-import { logTaskEvent } from './chatActivity';
+import { logTaskEvent, getActivityForTrace } from './chatActivity';
 import { getJob, markSynthesized } from './dispatchJobs';
 import { appIdentity } from './config';
 import { sendPushToAll } from './web_push';
@@ -22,6 +22,18 @@ export function closeOutTask(
 	resultText: string
 ): void {
 	const job = getJob(traceId);
+	// Idempotency guard: a retried/duplicate terminal callback (network hiccup,
+	// at-least-once delivery) must NOT post a second message or fire a second
+	// push. We've already closed this Task out if it reached 'synthesized' OR a
+	// 'synthesis_completed' event was journaled — the latter covers the aborted/
+	// failed path where markSynthesized can't flip the row, so the status check
+	// alone would miss it.
+	if (job?.status === 'synthesized') return;
+	try {
+		if (getActivityForTrace(traceId).some((e) => e.action === 'synthesis_completed')) return;
+	} catch {
+		/* best-effort — if the lookup fails, fall through and post */
+	}
 	const threadId = resolveCompletionThread(job?.thread_id);
 	const text = resultText.trim();
 	const msg =
