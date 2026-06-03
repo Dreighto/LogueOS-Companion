@@ -86,6 +86,65 @@ describe('markSelfHandled', () => {
 	});
 });
 
+describe('gated proposals (ask-before-dispatch)', () => {
+	const proposal = {
+		worker: 'claude-code' as const,
+		category: 'code',
+		brief: 'fix the orb crash',
+		targetRepo: 'companion',
+		task: 'fix the thing that crashes when I tap the orb'
+	};
+	it('markGatedProposal moves proposed→gated and stores the dispatch payload', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.proposeTask({
+			taskId: 'sully-g1',
+			threadId: 't1',
+			source: 'chat',
+			category: 'general',
+			brief: 'x'
+		});
+		j.markGatedProposal('sully-g1', proposal);
+		const row = j.getJob('sully-g1');
+		expect(row?.status).toBe('gated');
+		expect(row?.worker).toBe('claude-code');
+	});
+	it('getPendingProposal returns the parsed proposal for the thread', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.proposeTask({
+			taskId: 'sully-g2',
+			threadId: 'tA',
+			source: 'chat',
+			category: 'general',
+			brief: 'x'
+		});
+		j.markGatedProposal('sully-g2', proposal);
+		const p = j.getPendingProposal('tA');
+		expect(p?.taskId).toBe('sully-g2');
+		expect(p?.worker).toBe('claude-code');
+		expect(p?.targetRepo).toBe('companion');
+		expect(p?.task).toBe('fix the thing that crashes when I tap the orb');
+	});
+	it('getPendingProposal returns null when there is no gated proposal', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		expect(j.getPendingProposal('empty-thread')).toBeNull();
+	});
+	it('markGatedProposal leaves a dispatched job untouched (no clobber)', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-g3',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'f',
+			predictedTokens: 0,
+			threadId: 't1'
+		});
+		j.markDispatched('sully-g3');
+		j.markGatedProposal('sully-g3', proposal);
+		expect(j.getJob('sully-g3')?.status).toBe('dispatched');
+	});
+});
+
 describe('reapStaleJobs', () => {
 	it('fails a job stuck in dispatched/working past the timeout and returns it', async () => {
 		const j = await import('$lib/server/dispatchJobs');
