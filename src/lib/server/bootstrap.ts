@@ -91,7 +91,7 @@ export function bootstrapCompanionDb(): void {
 				target TEXT,
 				timestamp TEXT DEFAULT CURRENT_TIMESTAMP
 			);
-			CREATE INDEX IF NOT EXISTS idx_chat_activity_trace ON chat_activity(trace_id);
+			CREATE INDEX IF NOT EXISTS idx_chat_activity_trace ON chat_activity(trace_id, timestamp);
 		`);
 
 		// Lightweight in-place migrations for chat_messages — additive columns

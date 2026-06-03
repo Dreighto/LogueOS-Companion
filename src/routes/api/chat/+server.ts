@@ -13,7 +13,8 @@ import { buildMultimodalContent } from '$lib/server/multimodal';
 import {
 	persistUserTurn,
 	classifyAndTouchThread,
-	persistAssistantTurn
+	persistAssistantTurn,
+	mintTaskId
 } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
 import { dispatchToWorker } from '$lib/server/companionDispatch';
@@ -205,7 +206,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		// the worker streams activity back into companion.db. The KERNEL gateway
 		// path below (runMode.dispatchEnabled) stays OFF in companion mode.
 		if (shouldTrigger && !runMode.dispatchEnabled && runMode.companionDispatchEnabled) {
-			const traceId = `sully-${Date.now()}`;
+			const traceId = mintTaskId();
 			// `worker` was resolved above to 'claude-code' | 'agy' | 'auto'.
 			// Spec §4.3: emit 'gemini' (the listener-accepted frontend name).
 			const dispatchWorker = worker === 'claude-code' ? 'claude-code' : 'gemini';
@@ -402,7 +403,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			// recent "--- NEW CONVERSATION ---" system marker so operator-initiated
 			// resets actually clear worker context (instead of leaking older
 			// threads into the new one).
-			const allHistory = getChatMessages(30);
+			const allHistory = getChatMessages(30, threadId);
 			const lastResetIdx = (() => {
 				for (let i = allHistory.length - 1; i >= 0; i--) {
 					if (

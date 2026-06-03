@@ -28,6 +28,7 @@ import { runMode } from '$lib/server/config';
 import { ruleGate, valueGate, validateGate } from '$lib/server/decisionGate';
 import { dispatchToWorker } from '$lib/server/companionDispatch';
 import { logTaskEvent } from '$lib/server/chatActivity';
+import { mintTaskId } from '$lib/server/chat_turn';
 
 export interface AutonomousDispatchArgs {
 	/** The latest user message text (space-joined, trimmed). */
@@ -68,7 +69,7 @@ export async function maybeAutonomousDispatch(args: AutonomousDispatchArgs): Pro
 	// Reuse the turn's Task id so the dispatch promotes the existing 'proposed'
 	// row rather than creating an orphan. Fall back to a minted id for legacy
 	// callers that don't pass one.
-	const taskId = args.taskId ?? `sully-${Date.now()}`;
+	const taskId = args.taskId ?? mintTaskId();
 
 	const forced = ruleGate(userText);
 	const vg = valueGate({ text: userText, fromTool: false });

@@ -1,0 +1,27 @@
+# Lightweight quality gate — type-check + unit tests on every push/PR.
+# This is the cheap guardrail: it turns the existing 134 vitest tests + the
+# svelte-check type pass into an actual gate before code can reach TestFlight.
+# Heavy browser jobs (Playwright e2e / Lighthouse) are INTENTIONALLY excluded
+# here pending the GH-Actions-vs-Codemagic CI-cost decision — keep this job fast
+# and free-tier-friendly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type-check (svelte-check)
+        run: npm run check
+      - name: Unit tests (vitest)
+        run: npm test

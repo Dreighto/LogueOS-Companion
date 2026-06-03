@@ -636,7 +636,7 @@
 			<textarea
 				bind:this={textareaEl}
 				bind:value={textDraft}
-				onkeypress={onkey}
+				onkeydown={onkey}
 				{onpaste}
 				{onfocus}
 				{onblur}

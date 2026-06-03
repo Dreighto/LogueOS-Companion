@@ -660,7 +660,9 @@
 	}
 
 	function handleKey(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey) {
+		// onkeydown (not onkeypress) fires during IME composition too, so guard
+		// on isComposing — otherwise Enter-to-confirm a composition would send.
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 			e.preventDefault();
 			void sendMessage();
 		}

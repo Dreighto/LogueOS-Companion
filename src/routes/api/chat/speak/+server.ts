@@ -62,7 +62,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		// fully buffers this blob anyway, so streaming bought nothing here).
 		const raw = Buffer.from(await upstream.arrayBuffer());
 		const padded = padWavTrailingSilence(raw, 700);
-		return new Response(padded, {
+		// Wrap the Node Buffer in a plain Uint8Array — Buffer isn't assignable to
+		// the web BodyInit type even though adapter-node accepts it at runtime.
+		return new Response(new Uint8Array(padded), {
 			status: 200,
 			headers: { 'content-type': 'audio/wav', 'cache-control': 'no-store' }
 		});

@@ -96,15 +96,17 @@ function base64url(buf: Buffer): string {
 // APNs provider JWT (ES256). APNs rejects tokens older than 1h, so cache + reuse
 // for ~50 min. Signing a fresh token per request would trip APNs's new-token
 // rate limit.
-let _jwtCache: { token: string; mintedAt: number } | null = null;
+let _jwtCache: { token: string; mintedAt: number; keyId: string } | null = null;
 const JWT_TTL_MS = 50 * 60 * 1000;
 
 function buildProviderJwt(): string {
-	if (_jwtCache && Date.now() - _jwtCache.mintedAt < JWT_TTL_MS) return _jwtCache.token;
+	const keyId = serverConfig.apnsKeyId;
+	// Cache is keyed on keyId so a key rotation invalidates it immediately
+	// instead of serving a stale-kid token for up to ~50 min.
+	if (_jwtCache && _jwtCache.keyId === keyId && Date.now() - _jwtCache.mintedAt < JWT_TTL_MS)
+		return _jwtCache.token;
 	const key = fs.readFileSync(serverConfig.apnsKeyPath, 'utf8');
-	const header = base64url(
-		Buffer.from(JSON.stringify({ alg: 'ES256', kid: serverConfig.apnsKeyId }))
-	);
+	const header = base64url(Buffer.from(JSON.stringify({ alg: 'ES256', kid: keyId })));
 	const claims = base64url(
 		Buffer.from(
 			JSON.stringify({ iss: serverConfig.apnsTeamId, iat: Math.floor(Date.now() / 1000) })
@@ -117,7 +119,7 @@ function buildProviderJwt(): string {
 		dsaEncoding: 'ieee-p1363'
 	});
 	const token = `${signingInput}.${base64url(der)}`;
-	_jwtCache = { token, mintedAt: Date.now() };
+	_jwtCache = { token, mintedAt: Date.now(), keyId };
 	return token;
 }
 
