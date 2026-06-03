@@ -27,6 +27,7 @@ import { addChatMessage } from '$lib/server/chat';
 import { runMode } from '$lib/server/config';
 import { ruleGate, valueGate, validateGate } from '$lib/server/decisionGate';
 import { dispatchToWorker } from '$lib/server/companionDispatch';
+import { logTaskEvent } from '$lib/server/chatActivity';
 
 export interface AutonomousDispatchArgs {
 	/** The latest user message text (space-joined, trimmed). */
@@ -40,6 +41,15 @@ export interface AutonomousDispatchArgs {
 	 * local path), the deterministic gates alone decide.
 	 */
 	gateBlock?: string | null;
+	/**
+	 * The Task id minted in prepareStream for this turn. When present, the
+	 * dispatched job + the system "sent to worker" message reuse it (instead of
+	 * minting a fresh sully-* id), so the whole turn — operator row, reply,
+	 * dispatch, journal — shares one handle. The 'proposed' Task row created at
+	 * turn start gets promoted to 'decided' by the dispatch. Falls back to a
+	 * minted id if absent (legacy callers).
+	 */
+	taskId?: string;
 }
 
 /**
@@ -55,9 +65,49 @@ export async function maybeAutonomousDispatch(args: AutonomousDispatchArgs): Pro
 
 	const { userText, targetRepo, threadId } = args;
 	const hasGate = args.gateBlock !== undefined;
+	// Reuse the turn's Task id so the dispatch promotes the existing 'proposed'
+	// row rather than creating an orphan. Fall back to a minted id for legacy
+	// callers that don't pass one.
+	const taskId = args.taskId ?? `sully-${Date.now()}`;
 
 	const forced = ruleGate(userText);
 	const vg = valueGate({ text: userText, fromTool: false });
+
+	// Shared dispatch + system-message + journal write, so the CLI and direct
+	// paths can't drift. taskId is the trace_id — dispatchToWorker → createJob
+	// upserts the 'proposed' row to 'decided'.
+	const fire = async (worker: 'claude-code' | 'gemini', category: string, brief: string) => {
+		const res = await dispatchToWorker({
+			traceId: taskId,
+			worker,
+			category,
+			brief,
+			targetRepo,
+			task: userText,
+			threadId
+		});
+		logTaskEvent(taskId, 'gate_evaluated', {
+			forced: forced.forced,
+			qualifies: vg.qualifies,
+			force_ask: vg.forceAsk,
+			worker,
+			category,
+			dispatched: res.ok,
+			held_reason: res.ok ? null : res.reason
+		});
+		addChatMessage(
+			'system',
+			res.ok
+				? `Sully sent this to **${worker === 'claude-code' ? 'CC' : 'AGY'}** on **${targetRepo}** — watching it now.`
+				: `⚠️ Dispatch held: ${res.reason}.`,
+			res.ok ? taskId : null,
+			null,
+			null,
+			'sent',
+			threadId,
+			{ taskId }
+		);
+	};
 
 	if (hasGate) {
 		// CLI-bridge path — gate-block-aware escalate decision.
@@ -68,27 +118,17 @@ export async function maybeAutonomousDispatch(args: AutonomousDispatchArgs): Pro
 				forced.forced && forced.worker ? forced.worker : gate.ok ? gate.gate.worker : 'claude-code';
 			const brief = gate.ok ? gate.gate.brief : userText.slice(0, 200);
 			const category = gate.ok ? gate.gate.category : 'code';
-			const traceId = `sully-${Date.now()}`;
-			const res = await dispatchToWorker({
-				traceId,
-				worker,
-				category,
-				brief,
-				targetRepo,
-				task: userText,
-				threadId
+			await fire(worker, category, brief);
+		} else {
+			// Journal the no-dispatch decision too — this is a routing pair
+			// (turn → classified DIRECT_ANSWER → no worker) for v3 training.
+			logTaskEvent(taskId, 'gate_evaluated', {
+				forced: false,
+				qualifies: vg.qualifies,
+				force_ask: vg.forceAsk,
+				dispatched: false,
+				path: 'cli'
 			});
-			addChatMessage(
-				'system',
-				res.ok
-					? `Sully sent this to **${worker === 'claude-code' ? 'CC' : 'AGY'}** on **${targetRepo}** — watching it now.`
-					: `⚠️ Dispatch held: ${res.reason}.`,
-				res.ok ? traceId : null,
-				null,
-				null,
-				'sent',
-				threadId
-			);
 		}
 		return;
 	}
@@ -96,26 +136,14 @@ export async function maybeAutonomousDispatch(args: AutonomousDispatchArgs): Pro
 	// Direct/local path — deterministic gates only, no gate block to strip.
 	if (forced.forced || (vg.qualifies && !vg.forceAsk)) {
 		const worker = forced.forced && forced.worker ? forced.worker : 'claude-code';
-		const traceId = `sully-${Date.now()}`;
-		const res = await dispatchToWorker({
-			traceId,
-			worker,
-			category: 'code',
-			brief: userText.slice(0, 200),
-			targetRepo,
-			task: userText,
-			threadId
+		await fire(worker, 'code', userText.slice(0, 200));
+	} else {
+		logTaskEvent(taskId, 'gate_evaluated', {
+			forced: false,
+			qualifies: vg.qualifies,
+			force_ask: vg.forceAsk,
+			dispatched: false,
+			path: 'direct'
 		});
-		addChatMessage(
-			'system',
-			res.ok
-				? `Sully sent this to **${worker === 'claude-code' ? 'CC' : 'AGY'}** on **${targetRepo}** — watching it now.`
-				: `⚠️ Dispatch held: ${res.reason}.`,
-			res.ok ? traceId : null,
-			null,
-			null,
-			'sent',
-			threadId
-		);
 	}
 }

@@ -2,11 +2,23 @@ import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import { serverConfig } from './config';
 
+// Task lifecycle states (Phase 1, task-first architecture). The original
+// dispatch states (decided→…→done) are now the MIDDLE of a larger arc that
+// begins at 'proposed' (a Task minted for every turn, before any routing
+// decision) and ends at 'synthesized' (Sully posted her final answer). A
+// pure-chat turn that never dispatches stays at 'proposed' in Phase 1 —
+// advancing it through synthesis is Phase 3 work.
 export type JobStatus =
-	| 'decided'
+	| 'proposed' // task created for this turn; no routing decision yet
+	| 'classified' // tier/intent classified
+	| 'gated' // gate fired — dispatch warranted
+	| 'held' // brakes / cap / dedupe held the dispatch
+	| 'decided' // committed to dispatch a worker
 	| 'dispatched'
 	| 'working'
-	| 'done'
+	| 'done' // worker terminal (from the listener's perspective)
+	| 'verified' // PR-merge / CI confirmed (Phase 4)
+	| 'synthesized' // Sully posted her final answer (Phase 3) — terminal
 	| 'failed'
 	| 'retry'
 	| 'aborted';
@@ -30,18 +42,49 @@ export interface PendingJob {
 	result_ref: string | null;
 	brief: string;
 	fingerprint: string;
+	// Phase 1 Task-lifecycle columns (nullable; added via bootstrap migration).
+	thread_id: string | null;
+	source: string | null;
+	classification_tier: string | null;
+	classification_payload: string | null;
+	verification_state: string | null;
+	verification_ref: string | null;
+	synthesis_message_id: number | null;
+	ticket_id: string | null;
 }
 
-// Allowed forward transitions. decided -> dispatched -> working -> terminal;
-// retry loops back to dispatched. Terminal states accept no further moves.
+// Allowed forward transitions across the full Task arc. proposed is the entry;
+// synthesized/failed/aborted are sinks. The pre-dispatch states (classified/
+// gated/held) can short-circuit straight to decided. done can fan to verified
+// or synthesized. retry loops back to dispatched.
 const TRANSITIONS: Record<JobStatus, JobStatus[]> = {
+	proposed: ['classified', 'gated', 'held', 'decided', 'synthesized', 'aborted', 'failed'],
+	classified: ['gated', 'held', 'decided', 'synthesized', 'aborted', 'failed'],
+	gated: ['decided', 'held', 'aborted', 'failed'],
+	held: ['decided', 'aborted', 'failed'],
 	decided: ['dispatched', 'aborted', 'failed'],
 	dispatched: ['working', 'done', 'failed', 'retry', 'aborted'],
 	working: ['done', 'failed', 'retry', 'aborted'],
 	retry: ['dispatched', 'aborted', 'failed'],
-	done: [],
+	done: ['verified', 'synthesized', 'failed'],
+	verified: ['synthesized', 'failed'],
+	synthesized: [],
 	failed: [],
 	aborted: []
+};
+
+// The Task-lifecycle columns added in Phase 1. Kept here (not only in
+// bootstrap.ts) so dispatchJobs is self-sufficient — a test or a code path that
+// touches jobs before bootstrap runs still gets the full schema.
+const TASK_COLUMNS: Record<string, string> = {
+	thread_id: 'TEXT',
+	source: 'TEXT',
+	classification_tier: 'TEXT',
+	classification_payload: 'TEXT',
+	verification_state: 'TEXT',
+	verification_ref: 'TEXT',
+	synthesis_message_id: 'INTEGER',
+	ticket_id: 'TEXT'
 };
 
 let _ensured = false;
@@ -67,16 +110,78 @@ function getDb(): Database.Database {
 				actual_total          INTEGER,
 				result_ref            TEXT,
 				brief                 TEXT NOT NULL DEFAULT '',
-				fingerprint           TEXT NOT NULL DEFAULT ''
+				fingerprint           TEXT NOT NULL DEFAULT '',
+				thread_id             TEXT,
+				source                TEXT,
+				classification_tier   TEXT,
+				classification_payload TEXT,
+				verification_state    TEXT,
+				verification_ref      TEXT,
+				synthesis_message_id  INTEGER,
+				ticket_id             TEXT
 			);
 			CREATE INDEX IF NOT EXISTS idx_pending_jobs_status ON pending_jobs(status);
 			CREATE INDEX IF NOT EXISTS idx_pending_jobs_fp ON pending_jobs(fingerprint);
+			CREATE INDEX IF NOT EXISTS idx_pending_jobs_thread ON pending_jobs(thread_id);
 		`);
+		// Additive migration for a table that pre-existed without the Task columns.
+		const have = new Set(
+			(db.pragma('table_info(pending_jobs)') as { name: string }[]).map((c) => c.name)
+		);
+		for (const [col, type] of Object.entries(TASK_COLUMNS)) {
+			if (!have.has(col)) db.exec(`ALTER TABLE pending_jobs ADD COLUMN ${col} ${type}`);
+		}
 		_ensured = true;
 	}
 	return db;
 }
 
+/**
+ * Mint a 'proposed' Task row for a turn, before any routing decision. Called
+ * for EVERY turn (text or voice, dispatched or not) so the Task is the unit of
+ * work and the journal has a canonical row per turn. worker='sully' is the
+ * sentinel for "self-handled, no external worker yet". INSERT OR IGNORE so a
+ * re-entrant call (e.g. retry of the same task_id) is a no-op rather than a
+ * UNIQUE violation.
+ */
+export function proposeTask(opts: {
+	taskId: string;
+	threadId: string;
+	source: string;
+	category: string;
+	brief: string;
+	classificationTier?: string | null;
+	classificationPayload?: string | null;
+}): void {
+	const db = getDb();
+	try {
+		db.prepare(
+			`INSERT OR IGNORE INTO pending_jobs
+			 (trace_id, worker, status, category, brief, fingerprint, predicted_tokens,
+			  thread_id, source, classification_tier, classification_payload)
+			 VALUES (?, 'sully', 'proposed', ?, ?, '', 0, ?, ?, ?, ?)`
+		).run(
+			opts.taskId,
+			opts.category,
+			opts.brief,
+			opts.threadId,
+			opts.source,
+			opts.classificationTier ?? null,
+			opts.classificationPayload ?? null
+		);
+	} finally {
+		db.close();
+	}
+}
+
+/**
+ * Commit a worker dispatch. Upsert-aware: when a 'proposed' Task row already
+ * exists for this task_id (the normal Phase 1 path), PROMOTE it to 'decided'
+ * and fill in the worker + fingerprint + predicted tokens, preserving the
+ * thread_id/source/classification set by proposeTask. When no row exists
+ * (defensive — e.g. a legacy caller), INSERT a fresh 'decided' row. trace_id
+ * IS the task_id.
+ */
 export function createJob(opts: {
 	traceId: string;
 	worker: string;
@@ -84,19 +189,40 @@ export function createJob(opts: {
 	brief: string;
 	fingerprint: string;
 	predictedTokens: number;
+	threadId?: string | null;
+	source?: string | null;
+	classificationTier?: string | null;
+	classificationPayload?: string | null;
 }): void {
 	const db = getDb();
 	try {
 		db.prepare(
-			`INSERT INTO pending_jobs (trace_id, worker, status, category, brief, fingerprint, predicted_tokens)
-			 VALUES (?, ?, 'decided', ?, ?, ?, ?)`
+			`INSERT INTO pending_jobs
+			 (trace_id, worker, status, category, brief, fingerprint, predicted_tokens,
+			  thread_id, source, classification_tier, classification_payload)
+			 VALUES (?, ?, 'decided', ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(trace_id) DO UPDATE SET
+			   worker = excluded.worker,
+			   status = 'decided',
+			   category = excluded.category,
+			   brief = excluded.brief,
+			   fingerprint = excluded.fingerprint,
+			   predicted_tokens = excluded.predicted_tokens,
+			   thread_id = COALESCE(pending_jobs.thread_id, excluded.thread_id),
+			   source = COALESCE(pending_jobs.source, excluded.source),
+			   classification_tier = COALESCE(pending_jobs.classification_tier, excluded.classification_tier),
+			   classification_payload = COALESCE(pending_jobs.classification_payload, excluded.classification_payload)`
 		).run(
 			opts.traceId,
 			opts.worker,
 			opts.category,
 			opts.brief,
 			opts.fingerprint,
-			opts.predictedTokens
+			opts.predictedTokens,
+			opts.threadId ?? null,
+			opts.source ?? null,
+			opts.classificationTier ?? null,
+			opts.classificationPayload ?? null
 		);
 	} finally {
 		db.close();
@@ -155,6 +281,30 @@ export function markRetry(traceId: string): void {
 }
 export function markAborted(traceId: string): void {
 	transition(traceId, 'aborted', { ended_at: new Date().toISOString() });
+}
+/** Phase 4: PR-merge / CI confirmed the dispatched work landed. */
+export function markVerified(traceId: string, state: string, ref: string | null): void {
+	transition(traceId, 'verified', { verification_state: state, verification_ref: ref });
+}
+/** Phase 3: Sully posted her synthesized final answer; link it + close the arc. */
+export function markSynthesized(traceId: string, synthesisMessageId: number): void {
+	transition(traceId, 'synthesized', {
+		synthesis_message_id: synthesisMessageId,
+		ended_at: new Date().toISOString()
+	});
+}
+
+/** All Task rows for a thread, newest first. Reader-API support (turn_replay). */
+export function getJobsForThread(threadId: string, limit = 50): PendingJob[] {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return [];
+	const db = getDb();
+	try {
+		return db
+			.prepare('SELECT * FROM pending_jobs WHERE thread_id = ? ORDER BY started_at DESC LIMIT ?')
+			.all(threadId, limit) as PendingJob[];
+	} finally {
+		db.close();
+	}
 }
 
 /** In-flight jobs the kill switch must cancel. */

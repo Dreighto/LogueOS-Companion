@@ -18,11 +18,40 @@ function ensureActivityTable(db: Database.Database): void {
 	_activityEnsured = true;
 }
 
+// The Task-journal event vocabulary (Phase 1). The original worker-progress
+// actions (reading|edited|ran|thinking|completed|failed) stay valid — workers
+// still emit them. These NEW actions are emitted by Sully's own turn pipeline
+// so the journal records every turn, not just dispatched ones. Kept as a const
+// list (not a hard enum on the column) so an unexpected worker action still
+// lands; unknown actions are logged, not dropped.
+export const TASK_EVENT_ACTIONS = [
+	// worker-progress (legacy, still emitted by workers)
+	'reading',
+	'edited',
+	'ran',
+	'thinking',
+	'completed',
+	'failed',
+	// Sully's own turn pipeline (Phase 1+)
+	'task_proposed',
+	'classifier_ran',
+	'gate_evaluated',
+	'brakes_evaluated',
+	'provider_attempted',
+	'provider_fell_through',
+	'tool_invoked',
+	'tool_result',
+	'guardrail_triggered',
+	'reply_persisted',
+	'synthesis_started',
+	'synthesis_completed'
+] as const;
+
 /**
  * Write a single activity row into companion.db. The dispatched worker can't
  * reach the DB directly, so it HTTP-calls POST /api/chat/activity which calls
  * this. (The kernel emit_chat_activity.py writes logueos_memory.db, the wrong DB
- * for the companion.) action ∈ {reading,edited,ran,thinking,completed,failed}.
+ * for the companion.) action ∈ TASK_EVENT_ACTIONS (open — unknown still lands).
  */
 export function writeActivity(traceId: string, action: string, target: string | null): void {
 	if (!traceId || !action) return;
@@ -36,6 +65,30 @@ export function writeActivity(traceId: string, action: string, target: string | 
 		);
 	} finally {
 		db.close();
+	}
+}
+
+/**
+ * Convenience wrapper for emitting a Task-journal event from Sully's own
+ * pipeline. `detail` is serialized to the `target` column (JSON or plain
+ * string). Never throws — journal writes must not break a turn. An action
+ * outside TASK_EVENT_ACTIONS is still written but console-warned so we notice
+ * vocabulary drift.
+ */
+export function logTaskEvent(
+	taskId: string,
+	action: string,
+	detail?: Record<string, unknown> | string | null
+): void {
+	try {
+		if (!(TASK_EVENT_ACTIONS as readonly string[]).includes(action)) {
+			console.warn(`[task-journal] unknown action "${action}" for ${taskId}`);
+		}
+		const target =
+			detail == null ? null : typeof detail === 'string' ? detail : JSON.stringify(detail);
+		writeActivity(taskId, action, target);
+	} catch (e) {
+		console.error('logTaskEvent error:', e);
 	}
 }
 

@@ -75,6 +75,23 @@ export function bootstrapCompanionDb(): void {
 				embedding TEXT NOT NULL,
 				embed_model TEXT NOT NULL
 			);
+
+			-- Per-task event journal (Phase 1 of the task-first architecture).
+			-- Previously self-created lazily in chatActivity.ts, which could miss
+			-- on a cold DB. Hoisted here so it always exists before the first turn.
+			-- Keyed by trace_id (== task_id). action vocabulary is open but
+			-- validated on the write path (chatActivity.ts). One row per
+			-- significant event in a task's life: classifier_ran, gate_evaluated,
+			-- brakes_evaluated, provider_attempted, tool_invoked, worker steps
+			-- (reading|edited|ran|thinking|completed|failed), synthesis_*, etc.
+			CREATE TABLE IF NOT EXISTS chat_activity (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				trace_id TEXT NOT NULL,
+				action TEXT NOT NULL,
+				target TEXT,
+				timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+			);
+			CREATE INDEX IF NOT EXISTS idx_chat_activity_trace ON chat_activity(trace_id);
 		`);
 
 		// Lightweight in-place migrations for chat_messages — additive columns
@@ -89,6 +106,81 @@ export function bootstrapCompanionDb(): void {
 		// the explicit positive-feedback corpus for Sully fine-tunes.
 		if (!have.has('quality_signal')) {
 			db.exec('ALTER TABLE chat_messages ADD COLUMN quality_signal INTEGER');
+		}
+		// Phase 1 forensic columns. task_id links every row of a turn (operator,
+		// assistant, system) to its Task. model/provider/tokens/latency make each
+		// assistant turn auditable: "what did turn 638 cost and how long did it
+		// take?" was previously unanswerable from the DB. error stamps a short
+		// failure string when a model attempt threw. All additive + nullable so
+		// pre-migration rows are unaffected and backfill isn't required.
+		const messageMigrations: Record<string, string> = {
+			task_id: 'TEXT',
+			model: 'TEXT',
+			provider: 'TEXT',
+			prompt_tokens: 'INTEGER',
+			completion_tokens: 'INTEGER',
+			latency_ms: 'INTEGER',
+			error: 'TEXT'
+		};
+		for (const [col, type] of Object.entries(messageMigrations)) {
+			if (!have.has(col)) {
+				db.exec(`ALTER TABLE chat_messages ADD COLUMN ${col} ${type}`);
+			}
+		}
+		if (!have.has('task_id')) {
+			db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_task ON chat_messages(task_id)');
+		}
+
+		// Phase 1: extend pending_jobs into the unified Task object. The table is
+		// created (with the base columns) in dispatchJobs.ts; here we add the
+		// Task-lifecycle columns idempotently so a turn can mint a 'proposed' row
+		// before any dispatch decision, carry its classification trail, and link
+		// to its synthesis message + verification outcome. Guarded by table
+		// existence — dispatchJobs.ts's getDb() also creates it, but bootstrap
+		// runs first on a cold DB so we create the base shape here too.
+		db.exec(`
+			CREATE TABLE IF NOT EXISTS pending_jobs (
+				id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+				trace_id              TEXT UNIQUE NOT NULL,
+				worker                TEXT NOT NULL,
+				status                TEXT NOT NULL DEFAULT 'decided',
+				category              TEXT NOT NULL DEFAULT 'general',
+				current_activity      TEXT,
+				seq_cursor            INTEGER NOT NULL DEFAULT 0,
+				started_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+				ended_at              TEXT,
+				predicted_tokens      INTEGER NOT NULL DEFAULT 0,
+				actual_prompt         INTEGER,
+				actual_completion     INTEGER,
+				actual_cache_read     INTEGER,
+				actual_cache_creation INTEGER,
+				actual_total          INTEGER,
+				result_ref            TEXT,
+				brief                 TEXT NOT NULL DEFAULT '',
+				fingerprint           TEXT NOT NULL DEFAULT ''
+			);
+			CREATE INDEX IF NOT EXISTS idx_pending_jobs_status ON pending_jobs(status);
+			CREATE INDEX IF NOT EXISTS idx_pending_jobs_fp ON pending_jobs(fingerprint);
+		`);
+		const jobCols = db.pragma('table_info(pending_jobs)') as { name: string }[];
+		const haveJob = new Set(jobCols.map((c) => c.name));
+		const jobMigrations: Record<string, string> = {
+			thread_id: 'TEXT',
+			source: 'TEXT',
+			classification_tier: 'TEXT',
+			classification_payload: 'TEXT',
+			verification_state: 'TEXT',
+			verification_ref: 'TEXT',
+			synthesis_message_id: 'INTEGER',
+			ticket_id: 'TEXT'
+		};
+		for (const [col, type] of Object.entries(jobMigrations)) {
+			if (!haveJob.has(col)) {
+				db.exec(`ALTER TABLE pending_jobs ADD COLUMN ${col} ${type}`);
+			}
+		}
+		if (!haveJob.has('thread_id')) {
+			db.exec('CREATE INDEX IF NOT EXISTS idx_pending_jobs_thread ON pending_jobs(thread_id)');
 		}
 	} finally {
 		db.close();

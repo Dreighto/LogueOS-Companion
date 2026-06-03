@@ -63,13 +63,19 @@ export async function dispatchToWorker(input: DispatchInput): Promise<DispatchRe
 	if (!checkFingerprint(fp).allowed) return { ok: false, reason: 'duplicate dispatch fingerprint' };
 	if (!dispatchBucket.take()) return { ok: false, reason: 'rate limited' };
 
+	// Promotes the turn's 'proposed' Task row to 'decided' (upsert on trace_id),
+	// or inserts a fresh decided row for a legacy caller with no proposed row.
+	// thread_id/source preserved via COALESCE when the proposed row already set
+	// them; passed here so the legacy-insert path still links to the thread.
 	jobs.createJob({
 		traceId: input.traceId,
 		worker: input.worker,
 		category: input.category,
 		brief: input.brief,
 		fingerprint: fp,
-		predictedTokens: 0
+		predictedTokens: 0,
+		threadId: input.threadId,
+		source: 'dispatch'
 	});
 
 	const secret = serverConfig.dispatchListenerHmacSecret;

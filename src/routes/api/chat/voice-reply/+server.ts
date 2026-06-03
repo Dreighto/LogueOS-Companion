@@ -10,10 +10,18 @@
 // generation server-side too.
 
 import type { RequestHandler } from './$types';
-import { addChatMessage, getChatMessages } from '$lib/server/chat';
+import { getChatMessages } from '$lib/server/chat';
 import { resolveVoiceModel } from '$lib/server/model_catalog';
 import { VOICE_KEEP_ALIVE } from '$lib/server/voice_runtime';
 import { buildVoiceSystemPrompt } from '$lib/server/chat_prompt';
+import {
+	persistUserTurn,
+	classifyAndTouchThread,
+	persistAssistantTurn,
+	mintTaskId
+} from '$lib/server/chat_turn';
+import { detectTargetRepo } from '$lib/server/chat/stream_prepare';
+import { maybeAutonomousDispatch } from '$lib/server/chat/autonomous_dispatch';
 
 const OLLAMA = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
 // Voice model id resolved via the shared catalog so a "change the default voice
@@ -33,8 +41,20 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	if (!text) return new Response('empty text', { status: 400 });
 
-	// Persist the operator's spoken message first (so it's in the feed + history).
-	addChatMessage('operator', text, null, null, null, 'sent', threadId);
+	// ── Same Task lifecycle as text (operator's first-class-voice rule). ──────
+	// Voice is just spoken input: it mints a Task, classifies the turn, persists
+	// the operator turn, and (below) persists the reply + runs autonomous
+	// dispatch through the SAME primitives the text path uses. The ONLY
+	// difference is the streaming output format — plain text tokens for
+	// low-latency per-sentence TTS instead of the SDK data-stream protocol.
+	const taskId = mintTaskId();
+	// persistUserTurn mints the 'proposed' Task row, journals task_proposed, and
+	// writes the operator chat row carrying task_id (source='voice').
+	persistUserTurn({ text, threadId, taskId, source: 'voice' });
+	const { currentTier } = classifyAndTouchThread({ threadId, userText: text, taskId });
+	const targetRepo = detectTargetRepo(text);
+	// Latency stamp for the reply's forensics.
+	const turnStartedAt = Date.now();
 
 	// Build the message list from recent thread history (drop system markers).
 	const recent = getChatMessages(HISTORY, threadId) as Array<{ sender: string; message: string }>;
@@ -115,7 +135,31 @@ export const POST: RequestHandler = async ({ request }) => {
 				/* upstream aborted (barge-in) or dropped — fall through to persist what we have */
 			} finally {
 				reader.releaseLock();
-				if (full.trim()) addChatMessage('local', full.trim(), null, null, null, 'sent', threadId);
+				if (full.trim()) {
+					// Persist the spoken reply through the shared turn service so it
+					// carries task_id + forensics (model/provider/latency) exactly
+					// like a text reply. sender='local' (the voice model).
+					persistAssistantTurn({
+						text: full.trim(),
+						sender: 'local',
+						threadId,
+						model: VOICE_MODEL,
+						tier: currentTier,
+						taskId,
+						provider: 'local',
+						latencyMs: Date.now() - turnStartedAt
+					});
+					// Voice can dispatch workers too — same gates as text. Fire-and-
+					// forget so it never blocks closing the audio stream.
+					void maybeAutonomousDispatch({
+						userText: text,
+						targetRepo,
+						threadId,
+						taskId
+					}).catch((e) => {
+						console.error('[voice-reply] autonomous-dispatch failed', e);
+					});
+				}
 				try {
 					controller.close();
 				} catch {

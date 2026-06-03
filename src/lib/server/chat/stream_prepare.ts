@@ -20,7 +20,7 @@ import { getChatMessages } from '$lib/server/chat';
 import { type Tier } from '$lib/server/phase_classifier';
 import { type ThreadState } from '$lib/server/thread_state';
 import { runMode, appIdentity, serverConfig } from '$lib/server/config';
-import { persistUserTurn, classifyAndTouchThread } from '$lib/server/chat_turn';
+import { persistUserTurn, classifyAndTouchThread, mintTaskId } from '$lib/server/chat_turn';
 import { buildSystemPrompt } from '$lib/server/chat_prompt';
 import { resolveChatModel } from '$lib/server/model_catalog';
 import { providerPrefToApi } from '$lib/chat/model-registry';
@@ -28,8 +28,9 @@ import { providerPrefToApi } from '$lib/chat/model-registry';
 export type Provider = 'anthropic' | 'google' | 'local';
 
 // Repo selection from message text — same keyword-scan heuristic as the
-// legacy endpoint. Client may also pass an explicit `target_repo`.
-function detectTargetRepo(message: string, hint?: string): string {
+// legacy endpoint. Client may also pass an explicit `target_repo`. Exported so
+// the voice pipeline derives the dispatch target the same way text does.
+export function detectTargetRepo(message: string, hint?: string): string {
 	if (hint) return hint;
 	const text = message.toLowerCase();
 	if (text.includes('miru')) return 'project-miru';
@@ -60,11 +61,25 @@ export interface PrepareArgs {
 	targetRepoHint?: string;
 	/** Request headers — funnel detection + tools-key unlock. */
 	headers: Headers;
+	/**
+	 * Where this turn entered from — 'chat' (typed) or 'voice' (spoken). Both
+	 * go through this same prepare path; the source is recorded on the Task so
+	 * the journal can distinguish voice-driven from text-driven work without
+	 * the two pipelines diverging. Defaults to 'chat'.
+	 */
+	source?: string;
 }
 
 export interface PreparedStreamContext {
 	messages: UIMessage[];
 	threadId: string;
+	/**
+	 * The Task id for this turn. Minted up-front (before any DB write) so the
+	 * operator row, assistant row, journal events, and any dispatched job all
+	 * carry the same handle. Starts with 'sully-'. This is the key the reader
+	 * API (turn_replay) queries.
+	 */
+	taskId: string;
 	/**
 	 * The latest user message text both paths feed to autonomous dispatch +
 	 * the system prompt. This is the SPACE-JOINED, trimmed form (the original
@@ -93,12 +108,19 @@ export interface PreparedStreamContext {
 export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamContext> {
 	const { messages, threadId, userText } = args;
 
+	// Mint the Task id BEFORE any DB write so every row of this turn (operator,
+	// assistant, system, journal events, dispatched job) shares one handle.
+	const taskId = mintTaskId();
+	const source = args.source ?? 'chat';
+
 	// Persist the operator's message + classify the conversation tier via the
 	// shared chat_turn service (PR C). Mirrors the legacy /api/chat behaviour.
-	persistUserTurn({ text: userText, threadId });
+	// persistUserTurn also mints the 'proposed' Task row + journals task_proposed.
+	persistUserTurn({ text: userText, threadId, taskId, source });
 	const { currentTier, threadState } = classifyAndTouchThread({
 		threadId,
-		userText
+		userText,
+		taskId
 	});
 
 	// ── Hot window ──────────────────────────────────────────────────────────
@@ -204,6 +226,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 	return {
 		messages,
 		threadId,
+		taskId,
 		userText: userMessageText,
 		currentTier,
 		threadState,

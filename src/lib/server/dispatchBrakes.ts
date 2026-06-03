@@ -26,8 +26,16 @@ export function checkDailyCap(): { allowed: boolean; used: number; cap: number }
 		const cutoff = new Date(
 			Date.now() - serverConfig.companionDispatchWindowMin * 60 * 1000
 		).toISOString();
+		// Count only REAL dispatches — exclude the pre-dispatch Task states
+		// (proposed/classified/gated/held) that now exist for every turn under
+		// the task-first architecture. Without this filter the daily cap would
+		// count pure-chat turns and trip far too early.
 		const row = db
-			.prepare('SELECT COUNT(*) AS n FROM pending_jobs WHERE started_at >= ?')
+			.prepare(
+				`SELECT COUNT(*) AS n FROM pending_jobs
+				 WHERE started_at >= ?
+				   AND status NOT IN ('proposed','classified','gated','held')`
+			)
 			.get(cutoff) as { n: number };
 		return { allowed: row.n < cap, used: row.n, cap };
 	} catch {
@@ -88,8 +96,15 @@ export function checkFingerprint(fp: string): { allowed: boolean } {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return { allowed: true };
 	const db = new Database(serverConfig.memoryDbPath, { readonly: true });
 	try {
+		// Proposed/self-handled rows carry fingerprint='' so a real (non-empty)
+		// fingerprint never matches them; the status filter is belt-and-braces
+		// in case a future caller sets a fingerprint pre-dispatch.
 		const row = db
-			.prepare('SELECT COUNT(*) AS n FROM pending_jobs WHERE fingerprint = ?')
+			.prepare(
+				`SELECT COUNT(*) AS n FROM pending_jobs
+				 WHERE fingerprint = ?
+				   AND status NOT IN ('proposed','classified','gated','held')`
+			)
 			.get(fp) as { n: number };
 		return { allowed: row.n <= FINGERPRINT_CAP - 1 };
 	} catch {

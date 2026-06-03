@@ -198,6 +198,23 @@ export function listChatThreads(): {
 	}
 }
 
+/**
+ * Phase 1 forensic metadata for an assistant turn. All optional — passed only
+ * by the assistant-reply persistence path (chat_turn.persistAssistantTurn).
+ * task_id links the row to its Task; the rest make the turn auditable from the
+ * DB alone (turn_replay reads these columns directly). Nullable + additive, so
+ * the 30-odd positional callers of addChatMessage need no change.
+ */
+export interface MessageForensics {
+	taskId?: string | null;
+	model?: string | null;
+	provider?: string | null;
+	promptTokens?: number | null;
+	completionTokens?: number | null;
+	latencyMs?: number | null;
+	error?: string | null;
+}
+
 export function addChatMessage(
 	sender: string,
 	message: string,
@@ -205,17 +222,35 @@ export function addChatMessage(
 	ticketId: string | null = null,
 	interactiveAction: InteractiveAction | null = null,
 	status = 'sent',
-	threadId = 'default'
+	threadId = 'default',
+	forensics: MessageForensics = {}
 ): ChatMessage {
 	const db = getDb();
 	try {
 		const actionStr = interactiveAction ? JSON.stringify(interactiveAction) : null;
 		const info = db
 			.prepare(
-				`INSERT INTO chat_messages (sender, message, trace_id, ticket_id, interactive_action, status, thread_id)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`
+				`INSERT INTO chat_messages
+				 (sender, message, trace_id, ticket_id, interactive_action, status, thread_id,
+				  task_id, model, provider, prompt_tokens, completion_tokens, latency_ms, error)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			)
-			.run(sender, message, traceId, ticketId, actionStr, status, threadId);
+			.run(
+				sender,
+				message,
+				traceId,
+				ticketId,
+				actionStr,
+				status,
+				threadId,
+				forensics.taskId ?? null,
+				forensics.model ?? null,
+				forensics.provider ?? null,
+				forensics.promptTokens ?? null,
+				forensics.completionTokens ?? null,
+				forensics.latencyMs ?? null,
+				forensics.error ?? null
+			);
 
 		const insertedId = info.lastInsertRowid;
 		const row = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(insertedId) as any;

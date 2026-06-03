@@ -202,6 +202,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		headers: request.headers
 	});
 	const {
+		taskId,
 		currentTier,
 		targetRepo,
 		provider,
@@ -296,7 +297,9 @@ export const POST: RequestHandler = async ({ request }) => {
 						sender: senderLabel,
 						threadId,
 						model: resolvedModelId,
-						tier: currentTier
+						tier: currentTier,
+						taskId,
+						provider
 					});
 				} else if (!errored) {
 					upsertThreadTier(threadId, currentTier, resolvedModelId);
@@ -312,7 +315,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						userText: userMessageText,
 						targetRepo,
 						threadId,
-						gateBlock: block
+						gateBlock: block,
+						taskId
 					});
 				}
 			},
@@ -339,6 +343,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	// only on the operator's own devices; public Funnel requests get baseTools only.
 	const tools = allowSensitive ? { ...baseTools, ...getSensitiveTools() } : baseTools;
 
+	// Turn start — used to stamp latency_ms on the assistant row's forensics.
+	const turnStartedAt = Date.now();
 	const result = streamText({
 		model: modelHandle.model,
 		system: systemPrompt,
@@ -447,12 +453,29 @@ export const POST: RequestHandler = async ({ request }) => {
 			if (finalText) {
 				const senderLabel: 'cc' | 'agy' | 'local' =
 					provider === 'anthropic' ? 'cc' : provider === 'local' ? 'local' : 'agy';
+				// Best-effort token capture — result.usage is resolved by onFinish.
+				// Never block or throw on it; forensic columns are nullable.
+				let promptTokens: number | null = null;
+				let completionTokens: number | null = null;
+				try {
+					const usage = await result.usage;
+					promptTokens = usage?.inputTokens ?? null;
+					completionTokens = usage?.outputTokens ?? null;
+				} catch {
+					/* usage unavailable — leave null */
+				}
 				persistAssistantTurn({
 					text: finalText,
 					sender: senderLabel,
 					threadId,
 					model: modelHandle.modelId,
-					tier: currentTier
+					tier: currentTier,
+					taskId,
+					provider,
+					promptTokens,
+					completionTokens,
+					latencyMs: Date.now() - turnStartedAt,
+					error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
 				});
 			} else {
 				// No reply text but the SDK call still finished — advance state so
@@ -479,7 +502,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			void maybeAutonomousDispatch({
 				userText: userMessageText,
 				targetRepo,
-				threadId
+				threadId,
+				taskId
 			}).catch((e) => {
 				console.error('[sdk-stream] autonomous-dispatch failed', e);
 			});
