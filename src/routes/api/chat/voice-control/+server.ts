@@ -5,6 +5,7 @@ import {
 	startVoiceServices,
 	stopVoiceServices
 } from '$lib/server/voice_services';
+import { cloudAvailable } from '$lib/server/voices';
 
 export const POST: RequestHandler = async ({ request }) => {
 	let action: string;
@@ -16,7 +17,11 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (action === 'status') {
 		const status = await getVoiceServiceStatus();
-		return json({ ...status, ready: status.bothReady });
+		// When ElevenLabs is primary, Chatterbox was intentionally skipped on start —
+		// gate readiness on STT only so the voice session isn't blocked on a service
+		// that was never launched.
+		const ready = cloudAvailable() ? status.stt === 'active' : status.bothReady;
+		return json({ ...status, ready });
 	}
 
 	if (action === 'stop') {
@@ -24,7 +29,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	if (action === 'start') {
-		const result = await startVoiceServices();
+		// Skip Chatterbox startup when ElevenLabs is the active TTS provider — it
+		// saves 3.2 GB of VRAM and the 21-second GPU cold-start. If ElevenLabs caps
+		// out mid-session, speak-local cold-starts Chatterbox on demand.
+		const result = await startVoiceServices(undefined, { skipTts: cloudAvailable() });
 		if (result.ready) return json({ ready: true });
 		const error = result.errors[0] || 'failed to start speech services';
 		const status = error.startsWith('failed to start speech services') ? 500 : 504;

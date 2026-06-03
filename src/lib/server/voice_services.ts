@@ -97,22 +97,30 @@ export async function getVoiceServiceStatus(): Promise<VoiceServiceStatus> {
 }
 
 export async function startVoiceServices(
-	maxWaitMs = START_TIMEOUT_MS
+	maxWaitMs = START_TIMEOUT_MS,
+	opts?: { skipTts?: boolean }
 ): Promise<VoiceServiceStartResult> {
+	const skipTts = opts?.skipTts ?? false;
 	const errors: string[] = [];
 	try {
-		await Promise.all([systemctl('start', STT_UNIT), systemctl('start', TTS_UNIT)]);
+		const starts: Promise<string>[] = [systemctl('start', STT_UNIT)];
+		if (!skipTts) starts.push(systemctl('start', TTS_UNIT));
+		await Promise.all(starts);
 	} catch (e) {
 		errors.push(`failed to start speech services: ${errorMessage(e)}`);
 		return { ready: false, errors };
 	}
 
 	// Wait for models to load + ports to bind (cold start ~10-20s on the GPU).
+	// When skipTts is true (ElevenLabs is primary) we only gate on STT readiness —
+	// Chatterbox wasn't started and shouldn't block the voice session.
 	const deadline = Date.now() + maxWaitMs;
 	while (Date.now() < deadline) {
 		const remaining = Math.max(1, deadline - Date.now());
 		const probeTimeout = Math.min(PROBE_TIMEOUT_MS, remaining);
-		if ((await portOpen(STT_PORT, '127.0.0.1', probeTimeout)) && (await ttsHealthy(probeTimeout))) {
+		const sttOk = await portOpen(STT_PORT, '127.0.0.1', probeTimeout);
+		const ttsOk = skipTts || (await ttsHealthy(probeTimeout));
+		if (sttOk && ttsOk) {
 			return { ready: true, errors };
 		}
 		await sleep(Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));

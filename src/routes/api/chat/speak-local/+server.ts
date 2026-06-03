@@ -10,6 +10,7 @@
 import type { RequestHandler } from './$types';
 import { getVoice, localRefFor } from '$lib/server/voices';
 import { speakableText } from '$lib/server/tts_normalize';
+import { restartTtsService } from '$lib/server/voice_services';
 
 const TTS_URL = (process.env.COMPANION_TTS_URL || 'http://127.0.0.1:18771').replace(/\/+$/, '');
 
@@ -30,21 +31,36 @@ export const POST: RequestHandler = async ({ request }) => {
 	const voice = body.voice ? getVoice(body.voice) : null;
 	const ref = (voice ? localRefFor(voice) : undefined) || body.voice_ref;
 
-	try {
-		const upstream = await fetch(`${TTS_URL}/tts`, {
+	const synthPayload = JSON.stringify({
+		text,
+		voice_ref: ref,
+		// Per-voice synthesis tuning (omitted ⇒ Chatterbox keeps its defaults).
+		cfg_weight: voice?.cfgWeight,
+		exaggeration: voice?.exaggeration,
+		temperature: voice?.temperature
+	});
+
+	// Attempt synthesis; on connection failure (not barge-in) cold-start Chatterbox
+	// and retry once. Chatterbox may not be running when ElevenLabs is primary and
+	// the daily cap is first hit mid-session — this is the on-demand start path.
+	const synth = () =>
+		fetch(`${TTS_URL}/tts`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				text,
-				voice_ref: ref,
-				// Per-voice synthesis tuning (omitted ⇒ Chatterbox keeps its defaults).
-				cfg_weight: voice?.cfgWeight,
-				exaggeration: voice?.exaggeration,
-				temperature: voice?.temperature
-			}),
-			signal: request.signal // barge-in: client abort cancels upstream synthesis
+			body: synthPayload,
+			signal: request.signal
+		}).catch((e: unknown) => {
+			if (e instanceof Error && e.name === 'AbortError') throw e;
+			return null; // connection refused / other error → trigger restart below
 		});
-		if (!upstream.ok || !upstream.body) {
+
+	try {
+		let upstream = await synth();
+		if (!upstream || !upstream.ok) {
+			await restartTtsService().catch(() => null);
+			upstream = await synth();
+		}
+		if (!upstream || !upstream.ok || !upstream.body) {
 			return new Response('tts unavailable', { status: 502 });
 		}
 		// Stream the WAV straight through.

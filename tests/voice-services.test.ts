@@ -107,4 +107,51 @@ describe('voice_services', () => {
 			errors: ['speech services did not become ready in time']
 		});
 	});
+
+	it('skipTts:true only starts STT — TTS unit never started and health never probed', async () => {
+		const sttServer = createServer((socket) => socket.end());
+		const sttPort = await listenOnRandomPort(sttServer);
+		mockSystemctl({ 'start:logueos-companion-stt.service': 'ok' });
+		// fetch should never be called — if it is, the test will fail because it is not mocked
+
+		try {
+			const { startVoiceServices } = await loadVoiceServices(sttPort, 'http://tts.test');
+			await expect(startVoiceServices(100, { skipTts: true })).resolves.toEqual({
+				ready: true,
+				errors: []
+			});
+			expect(execFileMock).toHaveBeenCalledWith(
+				'sudo',
+				['-n', '/usr/bin/systemctl', 'start', 'logueos-companion-stt.service'],
+				{ timeout: 15000 },
+				expect.any(Function)
+			);
+			expect(execFileMock).not.toHaveBeenCalledWith(
+				'sudo',
+				['-n', '/usr/bin/systemctl', 'start', 'logueos-companion-tts.service'],
+				expect.anything(),
+				expect.any(Function)
+			);
+			expect(fetch).not.toHaveBeenCalled();
+		} finally {
+			await promisify(sttServer.close.bind(sttServer))();
+		}
+	});
+
+	it('skipTts:true times out when STT port never opens — TTS never touched', async () => {
+		mockSystemctl({ 'start:logueos-companion-stt.service': 'ok' });
+
+		const { startVoiceServices } = await loadVoiceServices(9, 'http://tts.test');
+		await expect(startVoiceServices(5, { skipTts: true })).resolves.toEqual({
+			ready: false,
+			errors: ['speech services did not become ready in time']
+		});
+		expect(execFileMock).not.toHaveBeenCalledWith(
+			'sudo',
+			['-n', '/usr/bin/systemctl', 'start', 'logueos-companion-tts.service'],
+			expect.anything(),
+			expect.any(Function)
+		);
+		expect(fetch).not.toHaveBeenCalled();
+	});
 });
