@@ -43,12 +43,12 @@ describe('voice-config', () => {
 		expect(cfg.ttsFallbackPath).toBe('/api/chat/speak-local');
 	});
 
-	it('exposes the switchable voice list (Emma + Goodman-Sulley), no leaked paths', async () => {
+	it('exposes the switchable voice list (Emma + Goodman-Sulley + Lewis), no leaked paths', async () => {
 		ENV.ELEVENLABS_API_KEY = 'xi-test-key';
 		const cfg = await getConfig();
 		const voices = cfg.voices as Array<{ id: string }>;
 		const ids = voices.map((v) => v.id).sort();
-		expect(ids).toEqual(['emma', 'goodman-sully']);
+		expect(ids).toEqual(['emma', 'goodman-sully', 'lewis']);
 		expect(JSON.stringify(voices)).not.toMatch(/\//);
 	});
 

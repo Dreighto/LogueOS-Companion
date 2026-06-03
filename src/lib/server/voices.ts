@@ -10,8 +10,7 @@
 //                    kokoroVoice here. Testing in progress.
 //
 // Add a voice by adding an entry with engine='kokoro' and a kokoroVoice id.
-// Available Kokoro voices: af_heart, af_sky, af_bella, af_nicole, af_sarah,
-//   am_adam, am_michael, am_echo, am_liam, bf_emma, bf_alice, bm_george, bm_lewis
+// Active voices: am_fenrir (Sulley), bf_isabella (Emma fallback), bm_lewis (Lewis)
 
 import { env } from '$env/dynamic/private';
 
@@ -68,9 +67,7 @@ export const VOICES: VoiceDef[] = [
 		engine: 'elevenlabs',
 		voiceId: '56bWURjYFHyYyVf490Dp',
 		model: 'eleven_flash_v2_5',
-		// Kokoro fallback when ElevenLabs is unavailable (bf_emma = British female Emma)
-		kokoroFallbackVoice: 'bf_emma',
-		// Chatterbox fallback kept for compatibility during Jetson transition
+		kokoroFallbackVoice: 'bf_isabella',
 		fallbackVoiceRef: `${VOICES_DIR}/emma.mp3`
 	},
 	{
@@ -78,9 +75,14 @@ export const VOICES: VoiceDef[] = [
 		label: 'Sulley',
 		blurb: 'Big & gravelly — local (Jetson)',
 		engine: 'kokoro',
-		// Operator testing voices — swap kokoroVoice to try others.
-		// Options: am_adam, am_michael, am_echo, am_liam, bm_george, bm_lewis
-		kokoroVoice: 'am_adam'
+		kokoroVoice: 'am_fenrir'
+	},
+	{
+		id: 'lewis',
+		label: 'Lewis',
+		blurb: 'British — local (Jetson)',
+		engine: 'kokoro',
+		kokoroVoice: 'bm_lewis'
 	}
 ];
 
