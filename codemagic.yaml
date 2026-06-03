@@ -115,6 +115,22 @@ workflows:
             openssl genrsa -out /tmp/sign_key.pem 2048 2>>"$DBG"
             echo "WARNING: no CERTIFICATE_PRIVATE_KEY injected — minting a one-off key" | tee -a "$DBG"
           fi
+          # Free a distribution-cert slot for our stable key. Apple caps
+          # distribution certs (~2); dead certs from earlier failed builds (their
+          # private keys are gone) can fill every slot, making --create return
+          # 409. Delete any distribution cert that does NOT match our stable key,
+          # leaving at most our own (reused forever). Idempotent: once our cert
+          # exists, nothing else is deleted. Non-fatal — a hiccup here must never
+          # break an otherwise-working build. Issuer/key auth comes from the ASC
+          # integration env vars the CLI reads automatically.
+          KEEP=$(app-store-connect certificates list --type IOS_DISTRIBUTION --certificate-key @file:/tmp/sign_key.pem --json 2>/dev/null | python3 -c 'import sys,json; print(" ".join(c.get("id","") for c in json.load(sys.stdin)))' 2>/dev/null || true)
+          echo "dist cert(s) matching our stable key (keep): ${KEEP:-<none yet>}" | tee -a "$DBG"
+          for CID in $(app-store-connect certificates list --type IOS_DISTRIBUTION --json 2>/dev/null | python3 -c 'import sys,json; print("\n".join(c.get("id","") for c in json.load(sys.stdin)))' 2>/dev/null || true); do
+            case " $KEEP " in
+              *" $CID "*) echo "keeping dist cert $CID" | tee -a "$DBG" ;;
+              *) echo "revoking dead dist cert $CID" | tee -a "$DBG"; app-store-connect certificates delete "$CID" --ignore-not-found 2>&1 | tee -a "$DBG" || true ;;
+            esac
+          done
           # --create registers a distribution cert matching our key (creating one
           # the first time, reusing it after) + the App Store profile WITH the
           # push capability. --delete-stale-profiles clears the old non-push one.
