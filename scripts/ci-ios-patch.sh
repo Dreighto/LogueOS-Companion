@@ -77,9 +77,43 @@ else
   echo "WARNING: $PBXPROJ not found — entitlement not wired" >&2
 fi
 
+# --- APNs token forwarding in AppDelegate (Capacitor 8 omits it) --------------
+# Capacitor 8's generated AppDelegate.swift does NOT forward the APNs device
+# token to the bridge, so @capacitor/push-notifications never fires its
+# 'registration' event (its plugin only observes .capacitorDidRegisterForRemote
+# Notifications, which must be posted from the AppDelegate). Without this, the
+# app gets a token from iOS and silently drops it — push never works. Inject the
+# two forwarding methods, idempotently, before the class-closing brace.
+APPDELEGATE="ios/App/App/AppDelegate.swift"
+if [ -f "$APPDELEGATE" ]; then
+  if grep -q 'capacitorDidRegisterForRemoteNotifications' "$APPDELEGATE"; then
+    echo "AppDelegate APNs forwarding already present — skipping"
+  else
+    cat > /tmp/apns_methods.swift <<'SWIFTEOF'
+
+    // APNs token forwarding — Capacitor 8's default AppDelegate omits these, so
+    // @capacitor/push-notifications never receives the device token (its
+    // 'registration' event never fires) without them. Re-injected every build
+    // because ios/ is regenerated fresh.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+    }
+SWIFTEOF
+    perl -0777 -pi -e 'BEGIN{local $/; open(F,"<","/tmp/apns_methods.swift") or die "no methods file"; $m=<F>; close F;} s/\}\s*\z/$m\n}\n/' "$APPDELEGATE"
+    echo "injected APNs forwarding into AppDelegate ($(grep -c 'didRegisterForRemoteNotificationsWithDeviceToken' "$APPDELEGATE") method)"
+  fi
+else
+  echo "WARNING: $APPDELEGATE not found — APNs token forwarding not injected" >&2
+fi
+
 # --- Verify (printed in the build log) ---------------------------------------
 echo 'iOS patch complete:'
 /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$PLIST"
 /usr/libexec/PlistBuddy -c 'Print :ITSAppUsesNonExemptEncryption' "$PLIST"
 echo "aps-environment:"; /usr/libexec/PlistBuddy -c 'Print :aps-environment' "$ENTITLEMENTS" 2>/dev/null || echo '(entitlements file missing)'
 echo "CODE_SIGN_ENTITLEMENTS lines:"; grep -c 'CODE_SIGN_ENTITLEMENTS = App/App.entitlements;' "$PBXPROJ" 2>/dev/null || echo 0
+echo "AppDelegate APNs forwarding:"; grep -c 'capacitorDidRegisterForRemoteNotifications' "${APPDELEGATE:-/dev/null}" 2>/dev/null || echo 0
