@@ -2,9 +2,37 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getActivityForTrace, getRecentActivity, writeActivity } from '$lib/server/chatActivity';
 import { runMode } from '$lib/server/config';
-import { markWorking, markDone, markFailed, getJob } from '$lib/server/dispatchJobs';
+import { markWorking, markDone, markFailed, getJob, reapStaleJobs } from '$lib/server/dispatchJobs';
 import { captureActualTokens, type ResultMarker } from '$lib/server/dispatchUsage';
-import { closeOutTask } from '$lib/server/completionClose';
+import { closeOutTask, resolveCompletionThread } from '$lib/server/completionClose';
+import { addChatMessage } from '$lib/server/chat';
+
+// The client polls this GET every ~3s; piggyback a throttled stale-job sweep on
+// it so a dropped worker is surfaced without a separate timer. Throttle to once
+// per 60s to keep the poll cheap.
+let _lastReapMs = 0;
+function maybeReap(): void {
+	const now = Date.now();
+	if (now - _lastReapMs < 60_000) return;
+	_lastReapMs = now;
+	try {
+		for (const job of reapStaleJobs()) {
+			const threadId = resolveCompletionThread(job.thread_id);
+			addChatMessage(
+				'local',
+				`That task stalled — the worker never reported back. Want me to retry it?`,
+				job.trace_id,
+				null,
+				null,
+				'sent',
+				threadId,
+				{ taskId: job.trace_id }
+			);
+		}
+	} catch (e) {
+		console.warn('[activity] reap sweep skipped:', e);
+	}
+}
 
 export const GET: RequestHandler = async ({ url }) => {
 	// Worker-activity feed is available when EITHER the kernel is wired OR the
@@ -13,6 +41,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		return json({ activity: [] });
 	}
 	try {
+		maybeReap();
 		const traceId = url.searchParams.get('trace_id');
 		const limitParam = url.searchParams.get('limit');
 		const limit = limitParam ? Math.max(1, Math.min(500, Number.parseInt(limitParam, 10))) : 200;

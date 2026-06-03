@@ -85,3 +85,44 @@ describe('markSelfHandled', () => {
 		expect(j.getJob('sully-s2')?.status).toBe('dispatched');
 	});
 });
+
+describe('reapStaleJobs', () => {
+	it('fails a job stuck in dispatched/working past the timeout and returns it', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-old',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'f',
+			predictedTokens: 0,
+			threadId: 't1'
+		});
+		j.markDispatched('sully-old');
+		// Backdate started_at to long ago so it trips the timeout.
+		const db = new Database(DB);
+		db.prepare("UPDATE pending_jobs SET started_at = ? WHERE trace_id = 'sully-old'").run(
+			'2000-01-01T00:00:00.000Z'
+		);
+		db.close();
+		const reaped = j.reapStaleJobs(60_000);
+		expect(reaped.map((r) => r.trace_id)).toContain('sully-old');
+		expect(j.getJob('sully-old')?.status).toBe('failed');
+	});
+
+	it('leaves a fresh in-flight job alone', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		j.createJob({
+			traceId: 'sully-fresh',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'x',
+			fingerprint: 'g',
+			predictedTokens: 0,
+			threadId: 't1'
+		});
+		j.markDispatched('sully-fresh');
+		expect(j.reapStaleJobs(60_000).map((r) => r.trace_id)).not.toContain('sully-fresh');
+		expect(j.getJob('sully-fresh')?.status).toBe('dispatched');
+	});
+});

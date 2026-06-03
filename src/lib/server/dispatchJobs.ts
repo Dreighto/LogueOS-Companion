@@ -375,3 +375,37 @@ export function listInFlight(): PendingJob[] {
 		db.close();
 	}
 }
+
+/**
+ * Phase 0: mark jobs FAILED when they have been in-flight (dispatched/working)
+ * longer than timeoutMs with no terminal callback — a dropped worker. Returns
+ * the rows it reaped so the caller can surface a "that task stalled" message.
+ * Default 15 min. started_at is the anchor (the only monotonic timestamp we
+ * reliably set at dispatch).
+ */
+export function reapStaleJobs(timeoutMs = 15 * 60 * 1000): PendingJob[] {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return [];
+	const db = getDb();
+	try {
+		// Normalize BOTH sides through SQLite's datetime() so a space-separated
+		// CURRENT_TIMESTAMP and an ISO 'T…Z' string compare by real instant, not
+		// lexically (' ' < 'T' would otherwise reap every fresh job).
+		const modifier = `-${Math.floor(timeoutMs / 1000)} seconds`;
+		const stale = db
+			.prepare(
+				`SELECT * FROM pending_jobs
+				 WHERE status IN ('dispatched','working')
+				   AND datetime(started_at) < datetime('now', ?)`
+			)
+			.all(modifier) as PendingJob[];
+		const now = new Date().toISOString();
+		for (const s of stale) {
+			db.prepare(
+				"UPDATE pending_jobs SET status = 'failed', current_activity = 'stalled: no worker callback within timeout', ended_at = ? WHERE trace_id = ?"
+			).run(now, s.trace_id);
+		}
+		return stale;
+	} finally {
+		db.close();
+	}
+}
