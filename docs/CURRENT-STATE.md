@@ -1,6 +1,6 @@
 # Sully (LogueOS-Companion) — Current State
 
-> _Last updated: 2026-06-03 · branch `main` @ `11f466e` · all services live · 134/134 tests pass · type-check clean (0 errors)_
+> _Last updated: 2026-06-04 · branch `main` @ `2510436` · all services live · 214/214 tests pass · type-check clean (0 errors)_
 >
 > This is the "what Sully actually is right now" doc, grounded in the 2026-06-02 audit + verified live state — not memory. See also [DOING-NOW.md](DOING-NOW.md) and [PLAN.md](PLAN.md).
 
@@ -20,7 +20,7 @@ Sully is **dreighto's personal local-model chat companion** — a SvelteKit (ada
 
 - **Chat** — cloud models (Gemini, GPT-OSS via Ollama Cloud) + local models; per-thread, with a model/tier picker. Replies stream via the Vercel AI SDK.
 - **Task-first journal (Phase 1)** — every turn becomes a Task with a forensic journal (`task_proposed → classifier_ran → reply_persisted → gate_evaluated`) + per-message forensics (model/provider/tokens/latency). Readable via `turn_replay.ts`.
-- **Dispatch to workers** — Sully can hand work to a hidden CC/AGY worker (proven: real `claude-code` jobs ran hardware checks, 14 jobs in the record). Triggers: `@cc`/`@agy` in your message (forced) or the auto-gate on strong work-signals.
+- **Dispatch to workers — propose → confirm → seamless Task card → synthesized result.** Sully PROPOSES work (no `@cc`/`@agy` needed) and dispatches only on confirm: tap **Run it / Not now** (brand fuchsia pills) or say "yes". `@cc`/`@agy` still force it. The hand-off renders as ONE morphing card (calm working pulse → `✓ CC handled this · Ns` strip above the answer) — no stuck timer, no raw events leaking. The finished worker result comes back as a **plain-English summary in Sully's voice** (Phase 3 synthesis, Haiku). Proven live end-to-end (operator-run repo audit). Routing decided by a pure `decide()` graded by a **hard CI scorecard gate**.
 - **Voice Mode (realtime)** — local-GPU STT (faster-whisper) → reply → TTS, immersive UI, hands-free/PTT, barge-in, on-demand GPU.
 - **Read-aloud / Talkback** — per-message TTS in chat. Now uses **cloud Emma** (ElevenLabs Flash, ~0.6 s) as primary with local Chatterbox fall-forward.
 - **Push notifications (APNs)** — native iOS push; task-completion pings the lock screen. Verified end-to-end (test push received).
@@ -50,8 +50,9 @@ Sully is **dreighto's personal local-model chat companion** — a SvelteKit (ada
 
 ## Health & known debt
 
-- ✅ **Quality gate now live** — `.github/workflows/ci.yml` runs type-check + 134 tests on every push (added 2026-06-03).
-- 🟡 **Known structural debt** (full detail + file:line in `data/peer_reviews/2026-06-02_companion-audit_findings.md`): the half-migrated legacy `/api/chat` handler; ~23 per-call DB connections (no shared pool/busy_timeout); Sully's dispatch judgment vetoed by a keyword regex; two voice subsystems with duplicated playback; usage counters that only count cloud.
+- ✅ **Quality gate now live** — `.github/workflows/ci.yml` runs type-check + 214 tests on every push; a **routing scorecard** is a hard gate (`npm run routing:score`).
+- ✅ **Resolved (this session):** Sully's dispatch judgment is no longer silently vetoed by a keyword regex — routing is now a pure `decide()` (Talk/Ask/Dispatch) and she proposes-then-confirms. Completion routing/idempotency, the stuck-card timer, and the raw-event leak are fixed.
+- 🟡 **Known structural debt** (full detail + file:line in `data/peer_reviews/2026-06-02_companion-audit_findings.md`): the half-migrated legacy `/api/chat` handler; ~23 per-call DB connections (no shared pool/busy_timeout); two voice subsystems with duplicated playback; usage counters that only count cloud; **no verification stage** (worker "done" trusted blindly — Phase 4); **no workspace/write-tool** (blocks "Today's Ops").
 - 🟢 The quick-win batch (`11f466e`) already cleared: a latent index bug, a type error, a wrong-thread history bug, trace-ID collisions, the APNs key-cache, the Enter-to-send hotkey, and ~4 dead modules.
 
 ## Pointers

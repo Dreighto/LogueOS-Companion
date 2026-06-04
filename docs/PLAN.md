@@ -1,15 +1,14 @@
 # Sully — Plan / What's Next
 
-> _Last updated: 2026-06-03 · state: [CURRENT-STATE.md](CURRENT-STATE.md) · in flight: [DOING-NOW.md](DOING-NOW.md)_
+> _Last updated: 2026-06-04 · state: [CURRENT-STATE.md](CURRENT-STATE.md) · in flight: [DOING-NOW.md](DOING-NOW.md)_
 >
 > The forward plan. Sourced from the 2026-06-02 audit synthesis + the task-first roadmap. Nothing here is started unless noted.
 
-## Two decisions needed first
+## Decisions
 
-These gate the higher-value work — they are product calls, not just code:
-
-1. **Make Sully's dispatch judgment authoritative?** Today, even when Sully decides "this needs a worker," a keyword regex can veto it. Making her call carry weight is what makes "the model routes" real — but she'd start dispatching on phrasing currently blocked (each spawn burns Max quota). _Refactor step #12._
-2. **Retire the legacy in-composer Talkback?** Realtime voice is now primary; the old path duplicates playback/usage logic. Decide before consolidating the voice stack. _Refactor step #15._
+1. ✅ **RESOLVED — Sully's dispatch judgment.** Settled as **propose-then-confirm** (ask-before-dispatch, PR #3): `decide()` returns Talk/Ask/Dispatch; on Ask, Sully proposes and dispatches only on the operator's confirm (tap **Run it** or say "yes"). No silent auto-dispatch, no quota surprise — her judgment drives a _proposal_, not an unattended spawn. The dead injection guard now precedes `@cc`.
+2. **Retire the legacy in-composer Talkback?** Still open. Realtime voice is primary; the old path duplicates playback/usage logic. Decide before consolidating the voice stack. _Refactor step #15._
+3. **Next milestone order** — verification stage (small; makes Sully trustworthy) vs. the workspace/write-tool slice (unlocks "Today's Ops"). Both teed up.
 
 ## The refactor — remaining steps (quick wins already done in `11f466e`)
 
@@ -27,11 +26,12 @@ Sequenced low-risk-first, gated behind the now-live CI so the 134 tests catch re
 
 ## Task-first roadmap (the big arc)
 
-Phase 1 shipped. The rest:
+Phases 1–3 shipped. The rest:
 
-- **Phase 2 — gate before the answer.** Decide → optionally dispatch → answer (instead of answer-then-maybe-dispatch). This is what starts emitting the `classified`/`gated`/`held` states the schema already supports. Closely tied to decision #1.
-- **Phase 3 — synthesis + surfaces.** Worker `task_result` envelope → Sully synthesizes → render a **TaskCard** in chat + a **Dynamic Island** live-activity pill (reuses the APNs foundation).
-- **Phase 4 — verification flow-back.** Verify dispatched work (PR-merge / CI) before it's "done"; memory-writes triggered on Task transitions.
+- ✅ **Phase 2 — gate before the answer (SHIPPED, PR #3).** `decide()` Talk/Ask/Dispatch; ask-before-dispatch emits the `classified`/`gated` states; proposals consumed/expired each turn.
+- ✅ **Phase 3 — synthesis + the in-chat surface (SHIPPED, PR #4–#6).** Worker result → Sully synthesizes a plain-English summary (Haiku) → renders as the seamless morphing **Task card** (working pulse → `✓ CC handled this` strip). _Remaining sub-item:_ the **Dynamic Island** live-activity pill (reuses APNs) — not started.
+- **Phase 4 — verification flow-back.** _Next._ Verify dispatched work (claimed PR/file/result actually exists) before it's "done" + before Sully's chat reply can contradict it; memory-writes triggered on Task transitions. The journal-aware QLoRA exporter lives here too.
+- **Phase 5 — workspace + artifacts.** A sandboxed write/mkdir tool + workspace container + persisted Canvas — the slice that unblocks "Today's Ops." Largest greenfield.
 - **companion-v3 retrain** — deferred until the journal has accumulated weeks of real Tasks (it's the data factory).
 
 ## Today's Ops dashboard (the first task-first test project)
@@ -39,7 +39,7 @@ Phase 1 shipped. The rest:
 Build a dashboard that answers "where did we leave off / what's next / roadmap" from **real sources** (git log, the task journal, Linear, a small projects registry) — never from stale config prose. Design: `data/peer_reviews/2026-06-02_todays-ops-data-sources_design.md`.
 
 - **MVP (one sitting):** git-activity panel + projects registry + the 3-card `/ops` page. True-on-day-one from git alone.
-- The intent is to run it **through Sully's dispatch** as the test, once decision #1/#3 is made.
+- **Blocked on Phase 5 (write-tool/workspace)** — Sully physically can't create the folder yet (gap audit `data/peer_reviews/2026-06-03_sully-vision-gap-audit.md`). The dispatch path that would _run_ it as the test is now ready (propose→confirm, decision #1 resolved); the missing piece is the write capability.
 
 ## iOS / platform
 
