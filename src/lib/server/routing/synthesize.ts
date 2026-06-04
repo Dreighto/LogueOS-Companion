@@ -33,15 +33,29 @@ const POSTURE_FRAMING: Record<'confirmed' | 'hedge' | 'warn', string> = {
  * - confirmed → no extra instruction (default)
  * - hedge     → do-not-state-unverified-claims-as-fact instruction appended
  * - warn      → heads-up-something-contradicted instruction appended
+ * The optional `concerns` param (from the adversary reviewer) appends a
+ * judgment-framed "reviewer concern" note so the Captain sees it as caution,
+ * never as a verified fact.
  */
 export async function synthesizeWorkerResult(
-	args: { brief: string; result: string; posture?: 'confirmed' | 'hedge' | 'warn' },
+	args: {
+		brief: string;
+		result: string;
+		posture?: 'confirmed' | 'hedge' | 'warn';
+		concerns?: string[];
+	},
 	timeoutMs = SYNTH_TIMEOUT_MS
 ): Promise<string | null> {
 	const result = (args.result || '').trim();
 	if (!result) return null;
 
-	const system = SYNTH_SYSTEM + (POSTURE_FRAMING[args.posture ?? 'confirmed'] || '');
+	let system = SYNTH_SYSTEM + (POSTURE_FRAMING[args.posture ?? 'confirmed'] || '');
+	const concerns = (args.concerns ?? []).filter((c) => c && c.trim());
+	if (concerns.length) {
+		system +=
+			`\n\nA REVIEWER (a second-opinion AI, not a verified check) raised these concerns — present them clearly as JUDGMENT, not fact, in a short "One thing a reviewer flagged…" note at the end. Do NOT state them as confirmed problems; they are caution, not proof:\n` +
+			concerns.map((c) => `- ${c}`).join('\n');
+	}
 	const question = `Task you handed off: "${(args.brief || '').trim() || '(no brief recorded)'}".
 
 The worker's raw result:
