@@ -74,4 +74,42 @@ describe('runMutationGate', () => {
 		const { runMutationGate } = await import('$lib/server/routing/mutation_gate');
 		expect(runMutationGate('t3', 'also do this other thing').classification).toBe('NO_ACTIVE_TASK');
 	});
+
+	// E2 over-gate fix (live audit 2026-06-04): an opinion/advice question that
+	// merely MENTIONS the running task (its work-noun, e.g. "audit") must NOT be
+	// read as new work-intent. Precision-bias: an opinion signal overrides the
+	// work-word match → stay conversational. Real imperatives still gate.
+	it('running task + opinion question mentioning the running work → CONVERSATIONAL_ONLY (E2)', async () => {
+		await seedRunning('tE2');
+		const { runMutationGate } = await import('$lib/server/routing/mutation_gate');
+		const r = runMutationGate(
+			'tE2',
+			'Hey while you are working on that audit, just chatting, what is your read on whether I should offload the voice service to the Jetson?'
+		);
+		expect(r.classification).toBe('CONVERSATIONAL_ONLY');
+	});
+	it('running task + "should I refactor X?" advice question → CONVERSATIONAL_ONLY', async () => {
+		await seedRunning('tE3');
+		const { runMutationGate } = await import('$lib/server/routing/mutation_gate');
+		expect(runMutationGate('tE3', 'should I refactor the whole voice module?').classification).toBe(
+			'CONVERSATIONAL_ONLY'
+		);
+		expect(
+			runMutationGate('tE3', 'what do you think — is it worth building a separate dashboard?')
+				.classification
+		).toBe('CONVERSATIONAL_ONLY');
+	});
+	it('running task + a real imperative still gates as RUNNING_WORK_INTENT (guard)', async () => {
+		await seedRunning('tE4');
+		const { runMutationGate } = await import('$lib/server/routing/mutation_gate');
+		expect(
+			runMutationGate(
+				'tE4',
+				'Actually while that is running, can you also fix the type error in turn_replay.ts for me?'
+			).classification
+		).toBe('RUNNING_WORK_INTENT');
+		expect(runMutationGate('tE4', 'also deploy the console build now').classification).toBe(
+			'RUNNING_WORK_INTENT'
+		);
+	});
 });
