@@ -16,6 +16,7 @@ import {
 	isKilled
 } from './dispatchBrakes';
 import { killWorker } from './dispatch-listener';
+import { ensureProject, commitWorkspace, deriveProject } from './workspace';
 
 export interface DispatchInput {
 	traceId: string;
@@ -40,10 +41,23 @@ function signBody(rawBody: string, secret: string): string {
 // (on close) its result-marker telemetry to POST <base>/api/chat/activity.
 function buildWorkerPrompt(input: DispatchInput): string {
 	const cbUrl = `${serverConfig.companionCallbackBaseUrl.replace(/\/+$/, '')}/api/chat/activity`;
+	// Phase 5 / 5a: workspace builds get explicit project-folder + freshness +
+	// commit-as-proof guidance, since you run in a WORKTREE of sully-workspace
+	// (not the main checkout) and the project folder + any references were
+	// committed to main before this dispatch.
+	const workspaceGuidance =
+		input.targetRepo === 'sully-workspace'
+			? `
+
+WORKSPACE BUILD (you are in a worktree of the sully-workspace repo):
+  - FIRST sync to the latest main content (e.g. \`git fetch && git rebase origin/main\` or \`git reset --hard origin/main\`) so the project folder + any reference files committed before dispatch are present.
+  - Build your artifact INSIDE the project folder \`${deriveProject(input.task)}/\` (it already exists). Reference files (if any) are in \`${deriveProject(input.task)}/refs/\`.
+  - COMMIT your work — the commit is the proof Sully verifies. Put the commit SHA in the evidence envelope's git_ref below. Do NOT touch any folder other than your project folder.`
+			: '';
 	return `You are a background worker dispatched by Sully (the operator's companion app).
 TASK: ${input.task}
 TARGET REPO: ${input.targetRepo}
-BRIEF: ${input.brief}
+BRIEF: ${input.brief}${workspaceGuidance}
 
 PROGRESS CALLBACK — POST each step to ${cbUrl} as JSON (no auth header needed; it's a local/tailnet callback):
   { "trace_id": "${input.traceId}", "action": "reading|edited|ran|thinking", "target": "<path or cmd>" }
@@ -90,6 +104,22 @@ export async function dispatchToWorker(input: DispatchInput): Promise<DispatchRe
 		threadId: input.threadId,
 		source: 'dispatch'
 	});
+
+	// Phase 5 / 5a: for a workspace build, create + COMMIT the project folder to
+	// sully-workspace main BEFORE dispatch, so the worker's worktree (provisioned
+	// from main) contains it. Deterministic file op (not the model). Best-effort:
+	// a failure here shouldn't strand the dispatch — the worker can still create
+	// the folder, just without the pre-commit. (Reference placement from chat
+	// uploads is a follow-on — chat_uploads has no thread link yet.)
+	if (input.targetRepo === 'sully-workspace') {
+		try {
+			const project = deriveProject(input.task);
+			await ensureProject(project);
+			await commitWorkspace(`5a: ensure project ${project} for ${input.traceId}`);
+		} catch (e) {
+			console.error('[companionDispatch] workspace prep failed (continuing)', e);
+		}
+	}
 
 	const secret = serverConfig.dispatchListenerHmacSecret;
 	if (!secret) {

@@ -39,6 +39,21 @@ export function slugify(name: string): string {
 	return slug;
 }
 
+/**
+ * Best-effort project slug from a task brief. Prefers a named project
+ * ("todays-ops project", "the ops dashboard"); falls back to 'artifact'.
+ */
+export function deriveProject(task: string): string {
+	const m = (task || '').match(
+		/\b([a-z0-9][a-z0-9_-]{1,40})\s+(?:project|dashboard|workspace|app|site|page|mockup)\b/i
+	);
+	try {
+		return m ? slugify(m[1]) : 'artifact';
+	} catch {
+		return 'artifact';
+	}
+}
+
 /** String-confine: resolve candidate under base; reject escape. Safe for non-existent paths. */
 function confineResolve(base: string, ...parts: string[]): string {
 	for (const p of parts) if (p.includes('\0')) throw new Error('null byte in path');
