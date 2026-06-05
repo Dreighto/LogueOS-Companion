@@ -37,6 +37,13 @@ export interface ResolveTurnDecisionArgs {
 	gateBlock?: string | null;
 }
 
+/** True when the turn should generate a full conversational reply (pure chat,
+ *  or chat while a task runs). All other decisions short-circuit to a short
+ *  status/proposal with no model generation. */
+export function needsFullReply(decision: TurnDecision): boolean {
+	return decision.kind === 'ANSWER_NOW' || decision.kind === 'CONVERSATIONAL_ONLY';
+}
+
 /** Pure: classify the turn's outcome from pre-/post-stream state. No writes. */
 export function resolveTurnDecision(args: ResolveTurnDecisionArgs): TurnDecision {
 	const { userText, threadId } = args;

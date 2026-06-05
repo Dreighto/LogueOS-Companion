@@ -177,6 +177,18 @@ export function createStreamingController(deps: StreamingDeps): StreamingControl
 			}
 		}
 
+		// D2.3: A work turn returns an empty stream (no text-delta events).
+		// The placeholder bubble stays message:'' and would show hanging
+		// thinking-dots. Delete it now so pollMessages surfaces the proposal
+		// card cleanly instead. A normal ANSWER_NOW turn has text → kept.
+		if (!errored) {
+			const cur = deps.getMessages();
+			const placeholder = cur.find((m) => m.id === STREAM_ID);
+			if (placeholder && !placeholder.message) {
+				deps.setMessages(cur.filter((m) => m.id !== STREAM_ID));
+			}
+		}
+
 		// Reconcile against the persisted DB state — the SDK endpoint's
 		// onFinish callback wrote the assistant row before closing the stream,
 		// so pollMessages picks up the canonical numeric-id row and the
