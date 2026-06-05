@@ -14,13 +14,8 @@ import { getChatMessages } from '$lib/server/chat';
 import { resolveVoiceModel } from '$lib/server/model_catalog';
 import { VOICE_KEEP_ALIVE } from '$lib/server/voice_runtime';
 import { buildVoiceSystemPrompt } from '$lib/server/chat_prompt';
-import {
-	persistUserTurn,
-	classifyAndTouchThread,
-	persistAssistantTurn,
-	mintTaskId
-} from '$lib/server/chat_turn';
-import { detectTargetRepo } from '$lib/server/chat/stream_prepare';
+import { persistAssistantTurn } from '$lib/server/chat_turn';
+import { prepareTurnLifecycle } from '$lib/server/chat/stream_prepare';
 import { maybeAutonomousDispatch } from '$lib/server/chat/autonomous_dispatch';
 import { runVoiceToolLoop } from '$lib/server/chat/voice_tools';
 
@@ -47,12 +42,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	// dispatch through the SAME primitives the text path uses. The ONLY
 	// difference is the streaming output format — plain text tokens for
 	// low-latency per-sentence TTS instead of the SDK data-stream protocol.
-	const taskId = mintTaskId();
-	// persistUserTurn mints the 'proposed' Task row, journals task_proposed, and
-	// writes the operator chat row carrying task_id (source='voice').
-	persistUserTurn({ text, threadId, taskId, source: 'voice' });
-	const { currentTier } = classifyAndTouchThread({ threadId, userText: text, taskId });
-	const targetRepo = detectTargetRepo(text);
+	// prepareTurnLifecycle is the single shared chokepoint for the full turn
+	// lifecycle — mint Task id, persistUserTurn (mints 'proposed' row + journals
+	// task_proposed + writes operator chat row), classifyAndTouchThread, and
+	// detectTargetRepo. The Mutation Gate (R2) will hook in here.
+	const { taskId, currentTier, targetRepo } = await prepareTurnLifecycle({
+		text,
+		threadId,
+		source: 'voice'
+	});
 	// Latency stamp for the reply's forensics.
 	const turnStartedAt = Date.now();
 

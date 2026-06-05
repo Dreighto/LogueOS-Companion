@@ -46,6 +46,48 @@ export function detectTargetRepo(message: string, hint?: string): string {
 	return appIdentity.defaultWorkspace;
 }
 
+export interface PrepareTurnLifecycleArgs {
+	/** The user's message text for this turn. */
+	text: string;
+	/** Resolved thread id. */
+	threadId: string;
+	/** Sender label — defaults to 'operator'. */
+	sender?: string;
+	/** Where this turn entered from — 'chat' | 'voice'. Defaults to 'chat'. */
+	source?: string;
+	/** Optional explicit target repo hint (keyword-scan fallback if absent). */
+	targetRepoHint?: string;
+}
+
+export interface TurnLifecycleResult {
+	taskId: string;
+	currentTier: Tier;
+	threadState: ThreadState;
+	targetRepo: string;
+	userMessageText: string;
+}
+
+/**
+ * The shared turn-lifecycle preamble: mint a Task id, persist the operator
+ * turn, classify + touch the thread, and resolve the target repo. Both the
+ * text pipeline (prepareStream) and the voice pipeline (voice-reply) call this
+ * before diverging into their respective prompt builds. The Mutation Gate (R2)
+ * hooks in here — one chokepoint, impossible to bypass.
+ */
+export async function prepareTurnLifecycle(
+	args: PrepareTurnLifecycleArgs
+): Promise<TurnLifecycleResult> {
+	const { text, threadId } = args;
+	const source = args.source ?? 'chat';
+
+	const taskId = mintTaskId();
+	persistUserTurn({ text, threadId, taskId, source, sender: args.sender });
+	const { currentTier, threadState } = classifyAndTouchThread({ threadId, userText: text, taskId });
+	const targetRepo = detectTargetRepo(text, args.targetRepoHint);
+
+	return { taskId, currentTier, threadState, targetRepo, userMessageText: text };
+}
+
 export interface PrepareArgs {
 	/** The body's current-turn messages (validated non-empty by the caller). */
 	messages: UIMessage[];
@@ -108,19 +150,19 @@ export interface PreparedStreamContext {
 export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamContext> {
 	const { messages, threadId, userText } = args;
 
-	// Mint the Task id BEFORE any DB write so every row of this turn (operator,
-	// assistant, system, journal events, dispatched job) shares one handle.
-	const taskId = mintTaskId();
-	const source = args.source ?? 'chat';
-
-	// Persist the operator's message + classify the conversation tier via the
-	// shared chat_turn service (PR C). Mirrors the legacy /api/chat behaviour.
-	// persistUserTurn also mints the 'proposed' Task row + journals task_proposed.
-	persistUserTurn({ text: userText, threadId, taskId, source });
-	const { currentTier, threadState } = classifyAndTouchThread({
+	// Shared turn-lifecycle preamble: mint Task id, persist operator turn,
+	// classify + touch thread, resolve target repo. Both text + voice call this
+	// same function — the Mutation Gate (R2) will hook in here.
+	const {
+		taskId,
+		currentTier,
+		threadState,
+		targetRepo: lifecycleTargetRepo
+	} = await prepareTurnLifecycle({
+		text: userText,
 		threadId,
-		userText,
-		taskId
+		source: args.source,
+		targetRepoHint: args.targetRepoHint
 	});
 
 	// ── Hot window ──────────────────────────────────────────────────────────
@@ -152,7 +194,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 		...messages
 	];
 
-	const targetRepo = detectTargetRepo(userText, args.targetRepoHint);
+	const targetRepo = lifecycleTargetRepo;
 
 	// Provider preference:
 	//   1. Explicit body.provider (client just chose a model)
