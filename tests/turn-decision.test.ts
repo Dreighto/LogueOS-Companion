@@ -349,3 +349,84 @@ describe('resolveTurnDecision — preserves decide() reason (journal parity)', (
 		if (d.kind === 'DISPATCH') expect(d.reason).toBe('rule:mention');
 	});
 });
+
+// D2.0: needsFullReply predicate
+describe('needsFullReply — D2.0', () => {
+	it('ANSWER_NOW → true', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(needsFullReply({ kind: 'ANSWER_NOW', reason: 'answer' })).toBe(true);
+	});
+
+	it('CONVERSATIONAL_ONLY → true', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(needsFullReply({ kind: 'CONVERSATIONAL_ONLY' })).toBe(true);
+	});
+
+	it('PROPOSE → false', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(
+			needsFullReply({
+				kind: 'PROPOSE',
+				worker: 'claude-code',
+				category: 'code',
+				brief: 'b',
+				reason: 'r'
+			})
+		).toBe(false);
+	});
+
+	it('DISPATCH → false', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(
+			needsFullReply({
+				kind: 'DISPATCH',
+				worker: 'claude-code',
+				category: 'code',
+				brief: 'b',
+				reason: 'r'
+			})
+		).toBe(false);
+	});
+
+	it('CONFIRM_PROPOSAL → false', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(
+			needsFullReply({
+				kind: 'CONFIRM_PROPOSAL',
+				proposal: {
+					taskId: 'sully-t',
+					worker: 'claude-code',
+					category: 'code',
+					brief: 'b',
+					targetRepo: 'companion',
+					task: 't',
+					proposalType: 'gated'
+				}
+			})
+		).toBe(false);
+	});
+
+	it('ROUTING_ANSWER → false', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(
+			needsFullReply({
+				kind: 'ROUTING_ANSWER',
+				answer: 'sibling',
+				proposal: {
+					taskId: 'sully-t',
+					worker: 'claude-code',
+					category: 'code',
+					brief: 'b',
+					targetRepo: 'companion',
+					task: 't',
+					proposalType: 'routing_ask'
+				}
+			})
+		).toBe(false);
+	});
+
+	it('RUNNING_WORK_INTENT → false', async () => {
+		const { needsFullReply } = await import('$lib/server/routing/turn_decision');
+		expect(needsFullReply({ kind: 'RUNNING_WORK_INTENT', activeTaskId: 'run-1' })).toBe(false);
+	});
+});
