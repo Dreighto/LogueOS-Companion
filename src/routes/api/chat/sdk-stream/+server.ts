@@ -211,7 +211,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		systemPrompt,
 		modelMessages,
 		userText: userMessageText,
-		mutationGate,
 		shadowDecision
 	} = ctx;
 

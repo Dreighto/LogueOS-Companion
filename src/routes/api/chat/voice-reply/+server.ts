@@ -47,12 +47,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	// lifecycle — mint Task id, persistUserTurn (mints 'proposed' row + journals
 	// task_proposed + writes operator chat row), classifyAndTouchThread, and
 	// detectTargetRepo. The Mutation Gate (R2) will hook in here.
-	const { taskId, currentTier, targetRepo, mutationGate, shadowDecision } =
-		await prepareTurnLifecycle({
-			text,
-			threadId,
-			source: 'voice'
-		});
+	const { taskId, currentTier, targetRepo, shadowDecision } = await prepareTurnLifecycle({
+		text,
+		threadId,
+		source: 'voice'
+	});
 
 	// D2.2: Classify-before-answer gate. A work turn speaks ONLY the short status
 	// returned by applyTurnDecision — never a full spoken answer first.
