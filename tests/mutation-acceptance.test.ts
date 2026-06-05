@@ -251,3 +251,50 @@ describe('acceptance #8 — work-intent during running task never injects or dro
 		expect(result.spokenSuffix).toMatch(/hold/i);
 	});
 });
+
+describe('acceptance #8 supplement -- IMPORTANT 3: routing-ask message posted as sent (no tap buttons)', () => {
+	it('#8d -- routing-ask message status is "sent", not "pending_approval"', async () => {
+		const runningId = await seedRunning('t8d', 'run-8d');
+
+		const j = await import('$lib/server/dispatchJobs');
+		const { runMutationGate } = await import('$lib/server/routing/mutation_gate');
+		const { maybeAutonomousDispatch } = await import('$lib/server/chat/autonomous_dispatch');
+		const { getChatMessages } = await import('$lib/server/chat');
+
+		const gate = runMutationGate('t8d', 'also fix the console build');
+		expect(gate.classification).toBe('RUNNING_WORK_INTENT');
+
+		j.proposeTask({
+			taskId: 'sully-t8d-work',
+			threadId: 't8d',
+			source: 'chat',
+			category: 'code',
+			brief: 'also fix the console build'
+		});
+		j.markClassified('sully-t8d-work', 'code', null);
+
+		await maybeAutonomousDispatch({
+			userText: 'also fix the console build',
+			targetRepo: 'companion',
+			threadId: 't8d',
+			taskId: 'sully-t8d-work',
+			tier: 'deep',
+			mutationGate: gate
+		});
+
+		// The routing-ask message must have status='sent', NOT 'pending_approval'.
+		// 'pending_approval' renders tap buttons whose trace_id is the running
+		// task id -- tapping them POSTs to /dispatch/confirm which finds no gated
+		// row and silently no-ops. 'sent' means no tap buttons render and the
+		// operator is invited to type a response instead.
+		const msgs = getChatMessages(50, 't8d');
+		const askMsg = msgs.find((m) => m.message && m.message.includes('task running'));
+		expect(askMsg, 'routing-ask message must exist').toBeTruthy();
+		expect(askMsg?.status).toBe('sent');
+		expect(askMsg?.status).not.toBe('pending_approval');
+
+		// Running task still untouched.
+		expect(j.getJob(runningId)?.status).toBe('dispatched');
+		expect(dispatchMock).not.toHaveBeenCalled();
+	});
+});

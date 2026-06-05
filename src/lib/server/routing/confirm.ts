@@ -40,7 +40,7 @@ const AFFIRMATIONS = new Set([
 export function isAffirmation(text: string): boolean {
 	const t = (text || '')
 		.toLowerCase()
-		.replace(/['']/g, '') // "let's do it" → "lets do it"
+		.replace(/['’ʼ]/g, '') // straight, curly (U+2019), modifier (U+02BC) apostrophes
 		.replace(/[.!?,]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();
@@ -93,7 +93,7 @@ const SIBLING_ANSWERS = new Set([
 export function isRoutingAnswer(text: string): 'defer' | 'sibling' | null {
 	const t = (text || '')
 		.toLowerCase()
-		.replace(/['']/g, '')
+		.replace(/['’ʼ]/g, '') // straight, curly (U+2019), modifier (U+02BC) apostrophes
 		.replace(/[.!?,]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim();

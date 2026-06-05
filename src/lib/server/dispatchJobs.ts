@@ -117,6 +117,29 @@ export function getActiveTaskForThread(threadId: string): PendingJob | null {
 	}
 }
 
+/**
+ * The most-recent RUNNING task on a thread (status in RUNNING_STATES), or null.
+ * Used by the Mutation Gate (R2) instead of getActiveTaskForThread so the gate
+ * never matches the current turn's own 'classified' row (which is pre-dispatch and
+ * will always be the highest id after classifyAndTouchThread runs). A running task
+ * can NEVER be the just-created current-turn row, so this excludes it cleanly.
+ */
+export function getRunningTaskForThread(threadId: string): PendingJob | null {
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return null;
+	const db = getDb();
+	try {
+		const inList = [...RUNNING_STATES].map(() => '?').join(',');
+		const row = db
+			.prepare(
+				`SELECT * FROM pending_jobs WHERE thread_id = ? AND status IN (${inList}) ORDER BY id DESC LIMIT 1`
+			)
+			.get(threadId, ...[...RUNNING_STATES]) as PendingJob | undefined;
+		return row ?? null;
+	} finally {
+		db.close();
+	}
+}
+
 // The Task-lifecycle columns added in Phase 1. Kept here (not only in
 // bootstrap.ts) so dispatchJobs is self-sufficient — a test or a code path that
 // touches jobs before bootstrap runs still gets the full schema.

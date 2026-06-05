@@ -2,7 +2,7 @@
 // whether a turn taken WHILE A TASK IS RUNNING is plain conversation or a
 // work-intent that must NOT silently touch the running task. Pre-dispatch
 // (gated proposal) tasks are left to the existing ask-before-dispatch flow.
-import { getActiveTaskForThread, RUNNING_STATES, type PendingJob } from '$lib/server/dispatchJobs';
+import { getRunningTaskForThread, type PendingJob } from '$lib/server/dispatchJobs';
 
 export type MutationClass = 'NO_ACTIVE_TASK' | 'CONVERSATIONAL_ONLY' | 'RUNNING_WORK_INTENT';
 export interface MutationGateResult {
@@ -20,14 +20,13 @@ const WORK_INTENT_RE =
 	/@cc\b|@agy\b|@gemini\b|\b(build|implement|create|generate|add|write|fix|patch|refactor|audit|review|run|inspect|check|verify|diagnose|deploy|migrate|update|change|delete|remove|test|investigate)\b/i;
 
 export function runMutationGate(threadId: string, userText: string): MutationGateResult {
-	const active: PendingJob | null = getActiveTaskForThread(threadId);
+	// getRunningTaskForThread queries only RUNNING_STATES rows — it will never
+	// match the current turn's own 'classified' row (which is always the highest
+	// id after classifyAndTouchThread), so the gate correctly ignores the
+	// just-created turn and only fires when a genuinely-running task exists.
+	const active: PendingJob | null = getRunningTaskForThread(threadId);
 	if (!active)
 		return { classification: 'NO_ACTIVE_TASK', activeTaskId: null, activeTaskStatus: null };
-	// Only RUNNING tasks gate here; pre-dispatch (gated proposals) are handled by
-	// ask-before-dispatch, so the gate is a no-op for them.
-	if (!RUNNING_STATES.has(active.status)) {
-		return { classification: 'NO_ACTIVE_TASK', activeTaskId: null, activeTaskStatus: null };
-	}
 	const work = WORK_INTENT_RE.test(userText || '');
 	return {
 		classification: work ? 'RUNNING_WORK_INTENT' : 'CONVERSATIONAL_ONLY',

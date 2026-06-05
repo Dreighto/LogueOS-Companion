@@ -175,8 +175,8 @@ export async function maybeAutonomousDispatch(
 			},
 			'routing_ask'
 		);
-		const ask = `I've got a task running — want me to hold this until it finishes, or run it as a separate task?`;
-		addChatMessage('local', ask, activeTaskId, null, null, 'pending_approval', threadId, {
+		const ask = `I've got a task running. Want me to hold this until it finishes, or run it as a separate task? Just tell me 'hold it' or 'run it separately'.`;
+		addChatMessage('local', ask, activeTaskId, null, null, 'sent', threadId, {
 			taskId
 		});
 		logTaskEvent(taskId, 'gate_evaluated', {
