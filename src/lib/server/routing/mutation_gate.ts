@@ -19,6 +19,18 @@ export interface MutationGateResult {
 const WORK_INTENT_RE =
 	/@cc\b|@agy\b|@gemini\b|\b(build|implement|create|generate|add|write|fix|patch|refactor|audit|review|run|inspect|check|verify|diagnose|deploy|migrate|update|change|delete|remove|test|investigate)\b/i;
 
+// Opinion/advice override (live-audit 2026-06-04, the "E2" over-gate). While a
+// task runs, the operator often MENTIONS the running work ("...that audit...")
+// inside a plain opinion question — the work-noun would otherwise trip
+// WORK_INTENT_RE. An explicit opinion/advice signal (asking Sully's view, or
+// "should I ...?" about the operator's OWN action) means it is conversation,
+// not a new request to act. @mentions still force work (they bypass this).
+// Safe by design: when both signals appear, we err toward conversation — Sully
+// answers instead of gating, never silently injecting into the running task.
+const OPINION_RE =
+	/\b(what(?:'?s| is| do you| are your)|do you (?:think|reckon)|should i\b|your (?:read|take|thoughts?|opinion|view)\b|thoughts on\b|how do you feel|wondering (?:if|whether|about))\b/i;
+const MENTION_RE = /@cc\b|@agy\b|@gemini\b/i;
+
 export function runMutationGate(threadId: string, userText: string): MutationGateResult {
 	// getRunningTaskForThread queries only RUNNING_STATES rows — it will never
 	// match the current turn's own 'classified' row (which is always the highest
@@ -27,7 +39,10 @@ export function runMutationGate(threadId: string, userText: string): MutationGat
 	const active: PendingJob | null = getRunningTaskForThread(threadId);
 	if (!active)
 		return { classification: 'NO_ACTIVE_TASK', activeTaskId: null, activeTaskStatus: null };
-	const work = WORK_INTENT_RE.test(userText || '');
+	const text = userText || '';
+	// An @mention always means work. Otherwise a work-word counts only if the turn
+	// is NOT framed as an opinion/advice question (precision-bias toward chat).
+	const work = MENTION_RE.test(text) || (WORK_INTENT_RE.test(text) && !OPINION_RE.test(text));
 	return {
 		classification: work ? 'RUNNING_WORK_INTENT' : 'CONVERSATIONAL_ONLY',
 		activeTaskId: active.trace_id,
