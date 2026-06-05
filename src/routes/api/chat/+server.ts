@@ -97,6 +97,12 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ error: 'Message content is required.' }, { status: 400 });
 		}
 
+		// Mint ONE turn task id before any DB write so the operator row, the task
+		// row, and (if a worker fires) the gateway dispatch all share the same handle.
+		// Behavior-neutral: proposed rows that never advance are already the Phase-1
+		// norm for self-handled turns.
+		const turnTaskId = mintTaskId();
+
 		// 1. Persist the operator's turn + classify the conversation tier via
 		// the shared chat_turn service (PR C). The legacy route alone needs the
 		// returned row + the recent-message count for downstream side-effects.
@@ -104,11 +110,13 @@ export const POST: RequestHandler = async ({ request }) => {
 			text: message,
 			threadId,
 			sender: sender || 'operator',
-			ticketId: ticket_id || null
+			ticketId: ticket_id || null,
+			taskId: turnTaskId
 		});
 		const { currentTier, threadState } = classifyAndTouchThread({
 			threadId,
-			userText: message
+			userText: message,
+			taskId: turnTaskId
 		});
 		// PR 8: silently mark Deep-tier threads with 3+ exchanges as observation
 		// candidates. Count excludes the just-inserted operator message.
@@ -206,7 +214,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		// the worker streams activity back into companion.db. The KERNEL gateway
 		// path below (runMode.dispatchEnabled) stays OFF in companion mode.
 		if (shouldTrigger && !runMode.dispatchEnabled && runMode.companionDispatchEnabled) {
-			const traceId = mintTaskId();
+			const traceId = turnTaskId;
 			// `worker` was resolved above to 'claude-code' | 'agy' | 'auto'.
 			// Spec §4.3: emit 'gemini' (the listener-accepted frontend name).
 			const dispatchWorker = worker === 'claude-code' ? 'claude-code' : 'gemini';
