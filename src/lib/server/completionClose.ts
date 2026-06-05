@@ -132,7 +132,7 @@ export async function closeOutTask(
 			title: outcome === 'done' ? 'Sully — task done' : 'Sully — task needs you',
 			body:
 				outcome === 'done' ? 'Your task finished. Tap to see the result.' : 'A task hit a snag.',
-			url: appIdentity.pushDefaultUrl
+			url: `${appIdentity.pushDefaultUrl}?thread=${encodeURIComponent(threadId)}`
 		};
 		void sendPushToAll(pushPayload).catch((e) =>
 			console.error('[completionClose] web push failed', e)

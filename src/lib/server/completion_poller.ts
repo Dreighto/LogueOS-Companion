@@ -18,7 +18,8 @@ interface CompletionEntry {
 	worker_id?: string;
 }
 
-function poll() {
+/** Exported only for unit tests — not part of the public API. */
+export function poll() {
 	if (!serverConfig.enableWebPush) return;
 
 	try {
@@ -58,7 +59,7 @@ function poll() {
 			sendPushToAll({
 				title: 'LogueOS: Worker complete',
 				body: `${ticketLabel}${statusLabel}`,
-				url: appIdentity.pushDefaultUrl
+				url: `${appIdentity.pushDefaultUrl}?thread=${encodeURIComponent(entry.thread_id)}`
 			}).catch(() => {});
 		}
 	} catch {
