@@ -24,7 +24,7 @@
 </script>
 
 <div
-	class="flex min-h-screen flex-col items-center justify-center bg-background p-4 font-sans text-foreground"
+	class="flex min-h-screen flex-col items-center justify-start gap-4 overflow-y-auto bg-background p-4 py-8 font-sans text-foreground"
 >
 	<div class="w-full max-w-2xl space-y-6 rounded-lg border border-border bg-card p-6 shadow-xl">
 		<h1 class="text-center text-2xl font-bold text-primary">Work Surface Preview</h1>
