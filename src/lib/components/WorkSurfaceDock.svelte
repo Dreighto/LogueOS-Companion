@@ -1,7 +1,21 @@
 <script lang="ts">
 	import WorkSurfaceCard from './WorkSurfaceCard.svelte';
+	import PhaseChecklist from './PhaseChecklist.svelte';
+	import WorkerRegistry from './WorkerRegistry.svelte';
+	import ProofCard from './ProofCard.svelte';
 	import { running, needsYou, done } from '$lib/data/surfaces.svelte';
 	import type { Surface } from '$lib/types/workSurface';
+	import { slide } from 'svelte/transition';
+
+	// Sheet accordion state — which sections are expanded. Default = all collapsed
+	// (the glance layer = status + card top + graph + timeline only). Operator
+	// taps to dig deeper; most visits end at glance.
+	let openSections = $state<Set<string>>(new Set());
+	function toggleSection(key: string) {
+		if (openSections.has(key)) openSections.delete(key);
+		else openSections.add(key);
+		openSections = new Set(openSections); // re-trigger reactivity
+	}
 
 	// Svelte 5 $props with $bindable: parent controls mode/openSurfaceId, internal
 	// transitions write back via the binding (so the preview's buttons drive us,
@@ -276,9 +290,82 @@
 				>
 			</button>
 			{#if currentSurface}
-				<WorkSurfaceCard footprint="expanded" task={currentSurface.task} />
+				<!-- Glance layer: card top + status + graph + timeline only. The
+				     inline detail panels (phases/workers/proof) are suppressed and
+				     surface below as collapsed accordions. -->
+				<WorkSurfaceCard
+					footprint="expanded"
+					task={currentSurface.task}
+					suppressInlinePanels={true}
+				/>
+
+				<!-- Detail accordions — default collapsed, expand on tap. -->
+				<div class="mt-6 space-y-2">
+					<!-- Routing Phases -->
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-lg border border-border bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('phases')}
+						onclick={() => toggleSection('phases')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('phases') ? '▾' : '▸'} Routing Phases ({currentSurface.task
+								.stageProgress?.length ?? 0})
+						</span>
+						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
+					</button>
+					{#if openSections.has('phases')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<PhaseChecklist task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<!-- Worker Registry -->
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-lg border border-border bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('workers')}
+						onclick={() => toggleSection('workers')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('workers') ? '▾' : '▸'} Worker Registry ({currentSurface.task
+								.workers?.length ?? 0})
+						</span>
+						<span class="text-xs text-muted-foreground">
+							{currentSurface.task.workers?.[0]?.shortCode ?? '—'}
+							{(currentSurface.task.workers?.length ?? 0) > 1
+								? `+${(currentSurface.task.workers?.length ?? 1) - 1}`
+								: ''}
+						</span>
+					</button>
+					{#if openSections.has('workers')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<WorkerRegistry task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<!-- Proof -->
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-lg border border-border bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('proof')}
+						onclick={() => toggleSection('proof')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('proof') ? '▾' : '▸'} Proof
+						</span>
+						<span class="text-xs text-muted-foreground">
+							{currentSurface.task.proof?.verdict ?? 'pending'}
+						</span>
+					</button>
+					{#if openSections.has('proof') && currentSurface.task.proof}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<ProofCard task={currentSurface.task} />
+						</div>
+					{/if}
+				</div>
 			{:else}
-				<p>Surface not found or no surface selected.</p>
+				<p class="text-muted-foreground">Surface not found or no surface selected.</p>
 			{/if}
 		</div>
 	</div>
