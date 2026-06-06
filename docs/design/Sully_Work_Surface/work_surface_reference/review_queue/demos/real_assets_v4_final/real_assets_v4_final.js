@@ -237,7 +237,7 @@ const PRESETS = {
     bannerIcon: "🛑",
     headerIcon: "icon-blocked",
     activeOwnershipLabel: "Stopped",
-    activeMotionType: "complete",
+    activeMotionType: "stopped",
     workers: [],
     phases: [
       { name: "Reading user payload", state: "done", time: "0.2s" },
@@ -261,7 +261,7 @@ const PRESETS = {
     bannerIcon: "❌",
     headerIcon: "icon-blocked",
     activeOwnershipLabel: "Failed",
-    activeMotionType: "complete",
+    activeMotionType: "failed",
     workers: [],
     phases: [
       { name: "Reading deployment schema", state: "done", time: "0.1s" },
@@ -658,6 +658,8 @@ function renderGraph(svgId, preset) {
   let taskStatusClass = "status-working";
   if (preset.activeMotionType === 'complete') taskStatusClass = "status-complete";
   else if (preset.activeMotionType === 'blocked') taskStatusClass = "status-blocked";
+  else if (preset.activeMotionType === 'stopped') taskStatusClass = "status-stopped";
+  else if (preset.activeMotionType === 'failed') taskStatusClass = "status-failed";
   
   centralCircle.setAttribute("class", `node-circle central-task-node ${taskStatusClass}`);
   centralG.appendChild(centralCircle);

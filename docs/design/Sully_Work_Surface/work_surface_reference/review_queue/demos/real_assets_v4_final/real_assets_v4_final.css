@@ -650,14 +650,28 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   90% { transform: scale(1.0); opacity: 0.75; stroke-width: 1.25; }
 }
 
-/* Stop all looped animations in Complete state (Settle cleanly) */
+/* Stop all looped animations in Complete, Stopped, and Failed state (Settle cleanly) */
 .status-complete .orbital-ring,
 .status-complete .edge-sweep-line,
 .status-complete .data-packet,
 .status-complete .task-ripple,
 .status-complete .edge-line-backing,
 .status-complete .task-core-pulse,
-.status-complete .core-field circle {
+.status-complete .core-field circle,
+.status-stopped .orbital-ring,
+.status-stopped .edge-sweep-line,
+.status-stopped .data-packet,
+.status-stopped .task-ripple,
+.status-stopped .edge-line-backing,
+.status-stopped .task-core-pulse,
+.status-stopped .core-field circle,
+.status-failed .orbital-ring,
+.status-failed .edge-sweep-line,
+.status-failed .data-packet,
+.status-failed .task-ripple,
+.status-failed .edge-line-backing,
+.status-failed .task-core-pulse,
+.status-failed .core-field circle {
   display: none !important;
   animation: none !important;
 }
@@ -724,6 +738,8 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 /* Central Task Node states styling */
 .central-task-node.status-working { stroke: rgba(255, 255, 255, 0.15); }
 .central-task-node.status-complete { stroke: var(--color-complete); filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4)); }
+.central-task-node.status-stopped { stroke: var(--color-waiting); filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4)); }
+.central-task-node.status-failed { stroke: var(--color-blocked); filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.4)); }
 .intensity-normal .central-task-node.status-blocked { stroke: var(--color-blocked); animation: breathBlocked 5.5s infinite; }
 .intensity-subtle .central-task-node.status-blocked { stroke: var(--color-blocked); animation: breathBlocked 7s infinite; }
 .intensity-debug .central-task-node.status-blocked { stroke: #fff; filter: drop-shadow(0 0 8px var(--color-blocked)); }
@@ -745,9 +761,13 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 .active-ownership-banner.verifying .ownership-pulse { background-color: var(--color-checking); }
 .active-ownership-banner.blocked .ownership-pulse { background-color: var(--color-blocked); }
 .active-ownership-banner.complete .ownership-pulse { background-color: var(--color-complete); animation: none; }
+.active-ownership-banner.stopped .ownership-pulse { background-color: var(--color-waiting); animation: none; }
+.active-ownership-banner.failed .ownership-pulse { background-color: var(--color-blocked); animation: none; }
 .ownership-text { font-size: 12px; font-weight: 600; color: #fff; letter-spacing: -0.1px; }
 
 .sully-card.status-complete .active-ownership-banner { background-color: rgba(16, 185, 129, 0.03); border-color: rgba(16, 185, 129, 0.06); }
+.sully-card.status-stopped .active-ownership-banner { background-color: rgba(245, 158, 11, 0.03); border-color: rgba(245, 158, 11, 0.06); }
+.sully-card.status-failed .active-ownership-banner { background-color: rgba(244, 63, 94, 0.03); border-color: rgba(244, 63, 94, 0.06); }
 
 .pulse-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .pulse-indicator.status-working { background-color: var(--color-working); animation: dotBreath 2s infinite; }
