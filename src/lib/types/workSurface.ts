@@ -139,7 +139,7 @@ export interface ProofCheck {
 export interface Proof {
 	verdict: 'go' | 'no-go' | 'pending' | 'skipped';
 	/** 0–100 confidence, optional. */
-	score?: number;
+	score?: number | null;
 	/** The Expanded "automated test reports". */
 	checks: ProofCheck[];
 	/** verification_ref — commit sha / journal link. */

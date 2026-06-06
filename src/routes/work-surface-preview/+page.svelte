@@ -30,7 +30,7 @@
 		<h1 class="text-center text-2xl font-bold text-primary">Work Surface Preview</h1>
 
 		<div class="control-group">
-			<h3 class="text-lg font-semibold text-white mb-2">Footprint State</h3>
+			<h3 class="mb-2 text-lg font-semibold text-white">Footprint State</h3>
 			<div class="flex flex-wrap justify-center gap-2">
 				{#each ['collapsed', 'compact', 'expanded'] as foot (foot)}
 					<button
@@ -40,7 +40,7 @@
 						class:text-white={footprint === foot}
 						class:bg-surface={footprint !== foot}
 						class:text-muted-foreground={footprint !== foot}
-						onclick={() => (footprint = foot)}
+						onclick={() => (footprint = foot as typeof footprint)}
 					>
 						{foot.charAt(0).toUpperCase() + foot.slice(1)}
 					</button>
@@ -49,7 +49,7 @@
 		</div>
 
 		<div class="control-group">
-			<h3 class="text-lg font-semibold text-white mb-2">Simulation Presets</h3>
+			<h3 class="mb-2 text-lg font-semibold text-white">Simulation Presets</h3>
 			<div class="flex flex-wrap justify-center gap-2">
 				{#each seedKeys as key (key)}
 					<button

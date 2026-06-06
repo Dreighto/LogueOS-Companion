@@ -60,6 +60,7 @@
 		task.workers.map((worker, i) => ({
 			...worker,
 			id: worker.identity,
+			kind: 'worker' as const,
 			pos: workerPositions[i] || { x: 0, y: 0 }, // Fallback for more workers than positions
 			motionType: ((): 'researching' | 'building' | 'verifying' | 'idle' => {
 				switch (worker.role) {
@@ -203,7 +204,7 @@
 					isSpecialSystemEdge: false // Default
 				};
 			})
-			.filter(Boolean); // Filter out nulls from missing nodes
+			.filter((r): r is NonNullable<typeof r> => r !== null); // Filter out nulls from missing nodes
 	});
 
 	// Handle the special input edge from mock (from {340,105} to system-memory)
