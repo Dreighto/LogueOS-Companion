@@ -10,9 +10,10 @@
   --sully-card-shadow: 0 16px 48px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 12px rgba(255, 255, 255, 0.02);
   
   --sully-text: #f8fafc;
-  --sully-text-muted: #64748b;
+  var(--sully-text-muted): #64748b;
   
   /* HSL Tailored Brand Palette */
+  --sully-brand-magenta: #ec2d78;
   --color-idle: #475569;
   --color-working: #3b82f6;      /* Blue for Building */
   --color-researching: #0ea5e9;  /* Cyan for Researching */
@@ -43,17 +44,11 @@ html, body {
 .reduced-motion-warning { background-color: #d97706; color: #fff; text-align: center; padding: 10px; font-size: 13px; font-weight: 600; display: none; z-index: 1000; }
 @media (prefers-reduced-motion: reduce) { 
   .reduced-motion-warning { display: block; }
-  .data-packet { animation: none !important; opacity: 0.8 !important; offset-distance: 50% !important; }
-  .node-circle { animation: none !important; }
-  .node-group-animated { animation: none !important; }
-  .orbital-ring { animation: none !important; display: none !important; }
-  .edge-sweep-line { animation: none !important; display: none !important; }
-  .edge-line-backing { display: none !important; }
-  .task-core-pulse { animation: none !important; }
-  .task-ripple { animation: none !important; display: none !important; }
-  .core-field circle { animation: none !important; }
-  .sully-card.wake-active .core-field circle { animation: none !important; }
-  .sully-card.wake-active .central-task-node { animation: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .mockup-dashboard { display: flex; flex-direction: row; gap: 40px; max-width: 1020px; width: 100%; align-items: center; justify-content: center; margin: auto; padding: 20px; flex: 1; }
@@ -177,11 +172,14 @@ html, body {
   border: 1px solid var(--sully-card-border); 
   border-radius: 16px; 
   box-shadow: var(--sully-card-shadow); 
-  backdrop-filter: blur(25px); 
-  -webkit-backdrop-filter: blur(25px); 
+  backdrop-filter: blur(14px); 
+  -webkit-backdrop-filter: blur(14px); 
   width: 100%; 
   position: relative; 
   transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); 
+}
+.sully-card.status-working, .sully-card.status-checking {
+  border-color: var(--sully-brand-magenta);
 }
 
 /* Completion Sweep Animations */
@@ -225,6 +223,15 @@ html, body {
 .expanded-details-layout { display: flex; flex-direction: column; gap: 16px; max-height: 480px; overflow-y: auto; padding-right: 2px; }
 .details-section { display: flex; flex-direction: column; gap: 8px; }
 .details-section h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sully-text-muted); }
+
+/* Timeline Spine Styles */
+.stage-timeline { display: flex; gap: 4px; margin-bottom: 16px; overflow: hidden; }
+.stage-pill { display: flex; align-items: center; justify-content: center; height: 18px; border-radius: 9px; padding: 0 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; white-space: nowrap; transition: background-color 0.3s ease, opacity 0.3s ease, border-color 0.3s ease; }
+.stage-pill.done { background-color: rgba(255,255,255,0.1); color: var(--sully-text-muted); }
+.stage-pill.done .tick { margin-right: 3px; color: var(--color-complete); }
+.stage-pill.active { background-color: var(--sully-brand-magenta); color: #fff; }
+.stage-pill.pending { border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.3); }
+.stage-pill.skipped { border: 1px dashed rgba(255,255,255,0.1); color: rgba(255,255,255,0.2); opacity: 0.6; }
 
 /* State Classes Toggling */
 .sully-card.state-collapsed { border-radius: 24px; width: max-content; margin: 0 auto; }
@@ -463,6 +470,7 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 /* Float groups subtly */
 .node-group-animated { animation: floatNode 6s ease-in-out infinite; transform-origin: center; }
 @keyframes floatNode { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-1px); } }
+.node-group-animated.secondary-active { animation: none !important; }
 
 .stagger-1 { animation-delay: 0.2s; }
 .stagger-2 { animation-delay: 1.2s; }
@@ -489,9 +497,9 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   transform: scale(0.7) !important;
 }
 .orbital-ring.secondary-active {
-  opacity: 0.05 !important;
+  opacity: 0.1 !important;
   stroke-width: 0.5;
-  animation-duration: 45s;
+  animation-duration: 35s;
 }
 .node-circle.secondary-active {
   stroke-width: 1.0;
@@ -568,8 +576,8 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 .core-blocked { color: var(--color-blocked); animation: coreBreath 4s ease-in-out infinite; }
 
 @keyframes coreBreath {
-  0%, 100% { transform: scale(0.85); opacity: 0.15; filter: blur(2px); }
-  50% { transform: scale(1.2); opacity: 0.4; filter: blur(4px); }
+  0%, 100% { transform: scale(0.85); opacity: 0.15; }
+  50% { transform: scale(1.2); opacity: 0.4; }
 }
 
 /* Central Task landing ripples (Precision synchronized collision ripples) */
@@ -650,15 +658,39 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   90% { transform: scale(1.0); opacity: 0.75; stroke-width: 1.25; }
 }
 
+@keyframes ringConverge {
+  0% { transform: scale(1.2); opacity: 0; }
+  100% { transform: scale(1); opacity: 0.5; }
+}
+@keyframes amberDampen {
+  0% { transform: scale(1.1); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 0.3; }
+}
+@keyframes redNudge {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+@keyframes oneShotPayload {
+  0% { offset-distance: 0%; opacity: 0; transform: scale(0.8); }
+  10% { opacity: 1; transform: scale(1); }
+  50% { offset-distance: 100%; opacity: 1; transform: scale(1); }
+  60%, 100% { offset-distance: 100%; opacity: 0; transform: scale(0.8); }
+}
+
 /* Stop all looped animations in Complete, Stopped, and Failed state (Settle cleanly) */
-.status-complete .orbital-ring,
+.status-complete .orbital-ring { display: block !important; animation: ringConverge 0.6s ease-out forwards !important; stroke: var(--color-complete); }
+.status-stopped .orbital-ring { display: block !important; animation: amberDampen 0.6s ease-out forwards !important; stroke: var(--color-waiting); }
+.status-failed .central-task-node { animation: redNudge 0.4s ease-out forwards !important; }
+
 .status-complete .edge-sweep-line,
 .status-complete .data-packet,
 .status-complete .task-ripple,
 .status-complete .edge-line-backing,
 .status-complete .task-core-pulse,
 .status-complete .core-field circle,
-.status-stopped .orbital-ring,
 .status-stopped .edge-sweep-line,
 .status-stopped .data-packet,
 .status-stopped .task-ripple,
@@ -675,6 +707,13 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   display: none !important;
   animation: none !important;
 }
+
+.sully-card.sweep-active .data-packet.primary-active {
+  display: block !important;
+  opacity: 1 !important;
+  animation: oneShotPayload 1.2s cubic-bezier(0.25, 0.8, 0.25, 1) forwards !important;
+}
+
 
 /* --------------------------------------------------------------------------
    INTENSITY CONTROLS
@@ -736,9 +775,9 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 .intensity-debug .task-ripple { stroke-width: 2.5; }
 
 /* Central Task Node states styling */
-.central-task-node.status-working { stroke: rgba(255, 255, 255, 0.15); }
+.central-task-node.status-working, .central-task-node.status-checking { stroke: var(--sully-brand-magenta); filter: drop-shadow(0 0 4px rgba(236, 45, 120, 0.4)); }
 .central-task-node.status-complete { stroke: var(--color-complete); filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4)); }
-.central-task-node.status-stopped { stroke: var(--color-waiting); filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4)); }
+.central-task-node.status-stopped, .central-task-node.status-waiting { stroke: var(--color-waiting); filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4)); }
 .central-task-node.status-failed { stroke: var(--color-blocked); filter: drop-shadow(0 0 4px rgba(244, 63, 94, 0.4)); }
 .intensity-normal .central-task-node.status-blocked { stroke: var(--color-blocked); animation: breathBlocked 5.5s infinite; }
 .intensity-subtle .central-task-node.status-blocked { stroke: var(--color-blocked); animation: breathBlocked 7s infinite; }
@@ -755,11 +794,7 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; 
   transition: all 0.3s ease; 
 }
-.ownership-pulse { width: 6px; height: 6px; border-radius: 50%; background-color: var(--color-working); animation: dotBreath 2s infinite; }
-.active-ownership-banner.researching .ownership-pulse { background-color: var(--color-researching); }
-.active-ownership-banner.building .ownership-pulse { background-color: var(--color-working); }
-.active-ownership-banner.verifying .ownership-pulse { background-color: var(--color-checking); }
-.active-ownership-banner.blocked .ownership-pulse { background-color: var(--color-blocked); }
+.ownership-pulse { width: 6px; height: 6px; border-radius: 50%; background-color: var(--sully-brand-magenta); animation: dotBreath 2s infinite; }
 .active-ownership-banner.complete .ownership-pulse { background-color: var(--color-complete); animation: none; }
 .active-ownership-banner.stopped .ownership-pulse { background-color: var(--color-waiting); animation: none; }
 .active-ownership-banner.failed .ownership-pulse { background-color: var(--color-blocked); animation: none; }
@@ -769,9 +804,9 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 .sully-card.status-stopped .active-ownership-banner { background-color: rgba(245, 158, 11, 0.03); border-color: rgba(245, 158, 11, 0.06); }
 .sully-card.status-failed .active-ownership-banner { background-color: rgba(244, 63, 94, 0.03); border-color: rgba(244, 63, 94, 0.06); }
 
-.pulse-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.pulse-indicator.status-working { background-color: var(--color-working); animation: dotBreath 2s infinite; }
-.pulse-indicator.status-checking { background-color: var(--color-checking); animation: dotBreath 2s infinite; }
+.pulse-indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background-color: var(--sully-brand-magenta); }
+.pulse-indicator.status-working { animation: dotBreath 2s infinite; }
+.pulse-indicator.status-checking { animation: dotBreath 2s infinite; }
 .pulse-indicator.status-waiting { background-color: var(--color-waiting); animation: dotBreath 2.4s infinite; }
 .pulse-indicator.status-blocked { background-color: var(--color-blocked); animation: dotBreath 1.6s infinite; }
 .pulse-indicator.status-complete { background-color: var(--color-complete); }

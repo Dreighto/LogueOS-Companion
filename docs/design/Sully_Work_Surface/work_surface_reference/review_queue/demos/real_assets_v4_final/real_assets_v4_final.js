@@ -174,13 +174,13 @@ const PRESETS = {
     prompt: "Delete production database backup logs.",
     systemStatus: "Sully has paused work. Operator override signature required.",
     state: "Waiting",
-    status: "blocked",
+    status: "waiting",
     statusText: "Awaiting Action",
     bannerText: "Operator verification required to execute folder deletion.",
     bannerIcon: "⚠️",
     headerIcon: "icon-approval",
     activeOwnershipLabel: "Halted - waiting for operator signature",
-    activeMotionType: "blocked",
+    activeMotionType: "waiting",
     isDestructive: true,
     workers: [
       { key: "AGY", icon: "icon-antigravity", identity: "Antigravity Agent", role: "Build", motionType: "blocked", desc: "Halted at safe Gate" }
@@ -693,6 +693,18 @@ function updateUI() {
   const data = PRESETS[currentPreset];
   const card = document.getElementById('sullyCard');
 
+  if (data.state === 'Waiting' && currentState === 'collapsed') {
+    currentState = 'compact';
+    const layoutBtns = document.querySelectorAll('#layoutControls button');
+    layoutBtns.forEach(b => {
+      if (b.getAttribute('data-state') === currentState) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+    card.classList.remove('wake-active');
+    void card.offsetWidth;
+    card.classList.add('wake-active');
+  }
+
   // Set card classes for collapsing and overall status
   card.className = `sully-card state-${currentState} status-${data.status}`;
 
@@ -706,7 +718,7 @@ function updateUI() {
 
   // Collapsed details
   document.getElementById('collapsedTitle').innerText = data.title;
-  document.getElementById('collapsedMeta').innerText = data.workers.map(w => w.key).join(' + ');
+  document.getElementById('collapsedMeta').innerText = data.activeOwnershipLabel;
 
   // Compact details
   document.getElementById('compactTaskTitle').innerText = data.title;
@@ -730,6 +742,22 @@ function updateUI() {
   // Render both viewports
   renderGraph('graphSvg', data);
   renderGraph('expandedGraphSvg', data);
+
+  // Render Timeline
+  const renderTimeline = (containerId) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = data.stageProgress.map(s => {
+      let icon = '';
+      if (s.status === 'done') icon = '<span class="tick">✓</span>';
+      return `<div class="stage-pill ${s.status}">
+        ${icon}
+        <span class="stage-label">${s.stage}</span>
+      </div>`;
+    }).join('');
+  };
+  renderTimeline('compactTimeline');
+  renderTimeline('expandedTimeline');
 
   // Active Ownership labels
   const compactOwnershipLabel = document.getElementById('compactOwnershipLabel');
