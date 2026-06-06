@@ -377,7 +377,7 @@
 	}
 
 	.action-btn {
-		@apply flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors min-h-[44px];
+		@apply flex items-center gap-1 rounded-md px-4 py-2.5 text-xs font-medium transition-colors min-h-[44px];
 		color: white;
 		background-color: var(--color-st-needs); /* Default for approve */
 	}

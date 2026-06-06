@@ -81,7 +81,7 @@
 	<!-- Idle: a quiet single dot — no pill, no label, no animation. -->
 	<button
 		type="button"
-		class="inline-flex h-9 min-w-9 items-center justify-center rounded-full px-2"
+		class="inline-flex h-11 min-w-11 items-center justify-center rounded-full px-2"
 		onclick={openMostImportant}
 		aria-label={ariaLabel}
 	>
@@ -91,7 +91,7 @@
 	<!-- Pill: state-driven dots + label. Border amber only if needs-you. -->
 	<button
 		type="button"
-		class="inline-flex h-9 items-center gap-2 rounded-full border bg-card px-3 text-xs font-medium text-foreground transition-colors {hasNeedsYou
+		class="inline-flex h-11 items-center gap-2 rounded-full border bg-card px-3 text-xs font-medium text-foreground transition-colors {hasNeedsYou
 			? 'border-[--color-st-needs]'
 			: 'border-border'}"
 		onclick={openMostImportant}

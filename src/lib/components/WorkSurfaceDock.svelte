@@ -144,17 +144,10 @@
 			{#if runningList.length > 0}
 				<h3 class="mt-4 mb-2 text-sm font-semibold text-[--color-st-run]">Running</h3>
 				{#each runningList as surface (surface.surfaceId)}
-					<div
-						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2"
-						role="button"
-						tabindex={0}
+					<button
+						type="button"
+						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2 w-full text-left"
 						onclick={() => openSurfaceSheet(surface.surfaceId)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								openSurfaceSheet(surface.surfaceId);
-							}
-						}}
 					>
 						<div
 							class="flex items-center gap-2 overflow-hidden text-sm font-medium whitespace-nowrap"
@@ -177,17 +170,10 @@
 			{#if needsYouList.length > 0}
 				<h3 class="mt-4 mb-2 text-sm font-semibold text-[--color-st-needs]">Needs You</h3>
 				{#each needsYouList as surface (surface.surfaceId)}
-					<div
-						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2"
-						role="button"
-						tabindex={0}
+					<button
+						type="button"
+						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2 w-full text-left"
 						onclick={() => openSurfaceSheet(surface.surfaceId)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								openSurfaceSheet(surface.surfaceId);
-							}
-						}}
 					>
 						<div
 							class="flex items-center gap-2 overflow-hidden text-sm font-medium whitespace-nowrap"
@@ -210,17 +196,10 @@
 			{#if doneList.length > 0}
 				<h3 class="mt-4 mb-2 text-sm font-semibold text-[--color-st-done]">Done</h3>
 				{#each doneList as surface (surface.surfaceId)}
-					<div
-						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2"
-						role="button"
-						tabindex={0}
+					<button
+						type="button"
+						class="active-trigger mb-2 cursor-pointer rounded-lg border border-border bg-surface/50 p-2 w-full text-left"
 						onclick={() => openSurfaceSheet(surface.surfaceId)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								openSurfaceSheet(surface.surfaceId);
-							}
-						}}
 					>
 						<div
 							class="flex items-center gap-2 overflow-hidden text-sm font-medium whitespace-nowrap"
