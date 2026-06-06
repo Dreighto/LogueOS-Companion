@@ -34,7 +34,7 @@
 
 ## How this fits the other two threads
 
-- The **NIC fix** (your benchmark agent, option 1) likely matters MORE for the _current_ STT regression: 54% packet loss corrupts audio in transit → bad transcription. **Re-test STT on the clean link first** — if accuracy returns, the model was never the problem and this swap is an _optimization_, not a fix.
+- **NIC fix RESOLVED 2026-06-05 (CDX).** Root cause was NOT the cable or the `r8169` driver — `enP8p1s0` on the **Jetson** was being managed by BOTH `systemd-networkd` AND NetworkManager, fighting over the interface. Fix = make NM unmanage that NIC (`/etc/NetworkManager/conf.d/99-unmanaged-enP8p1s0.conf` + delete stale NM profiles, leave networkd in charge). Validated 0% loss across 600/600 + 120/120 pings, survived a Jetson reboot. **The `r8125` vendor-driver swap is now MOOT — do not do it.** Details: `jetson/LINK_FLAP_INVESTIGATION.md`. The link being clean is what unblocks the real test below: 54% packet loss was corrupting audio in transit → **re-test STT on the clean link first** — if accuracy returns, the model was never the problem and the model swap is an _optimization_, not a fix.
 - Regardless of the NIC outcome, **Kokoro→Piper + medium-q5→turbo-q8 is the right direction** — it removes the memory ceiling that forced the quantized STT and gives accuracy headroom.
 
 ## Recommended on-box sequence (after the NIC is fixed)
