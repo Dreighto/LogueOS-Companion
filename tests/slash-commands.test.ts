@@ -17,6 +17,8 @@ function makeDeps(over: Partial<Parameters<typeof createSlashCommandsController>
 			{ id: 1, sender: 'operator', message: 'hi', timestamp: '' },
 			{ id: 2, sender: 'cc', message: 'hello!', timestamp: '' }
 		],
+		getProviderOverride: () => null,
+		getToolsKey: () => '',
 		setTextDraft: vi.fn(),
 		clearAttachments: vi.fn(),
 		focusComposer: vi.fn(),
@@ -44,7 +46,10 @@ beforeEach(() => {
 		}
 	};
 	vi.stubGlobal('localStorage', ls);
-	vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 200 })));
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => new Response(null, { status: 200 }))
+	);
 });
 
 describe('runFromDraft', () => {
@@ -121,7 +126,9 @@ describe('runFromDraft', () => {
 		await ctrl.runFromDraft('/unlock abc123');
 		expect(deps.setToolsKey).toHaveBeenCalledWith('abc123');
 		expect(localStorage.getItem('companion-tools-key')).toBe('abc123');
-		expect(deps.appendSystemMessage).toHaveBeenCalledWith(expect.stringContaining('🔓 Tools unlocked'));
+		expect(deps.appendSystemMessage).toHaveBeenCalledWith(
+			expect.stringContaining('🔓 Tools unlocked')
+		);
 	});
 
 	it('/unlock with no code toasts an error + does NOT set the key', async () => {

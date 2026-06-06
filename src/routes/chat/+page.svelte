@@ -764,6 +764,8 @@
 	const slashCtrl = createSlashCommandsController({
 		getActiveThread: () => threadsCtrl.activeThread,
 		getMessages: () => messages,
+		getProviderOverride: () => providerOverride,
+		getToolsKey: () => toolsKey,
 		setTextDraft: (s) => {
 			composerCtrl.textDraft = s;
 		},

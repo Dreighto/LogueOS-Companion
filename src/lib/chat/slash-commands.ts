@@ -16,12 +16,14 @@
 import { resolve } from '$app/paths';
 import { toasts } from '$lib/utils/toasts';
 import type { SlashCmd } from '$lib/types/slash';
-import type { ChatMessage } from '$lib/types/chat-ui';
+import type { ChatMessage, ProviderPref } from '$lib/types/chat-ui';
 
 export interface SlashDeps {
 	// Reads
 	getActiveThread: () => string;
 	getMessages: () => ChatMessage[];
+	getProviderOverride: () => ProviderPref;
+	getToolsKey: () => string;
 	// Composer surface (write — these clear the draft on a successful run)
 	setTextDraft: (s: string) => void;
 	clearAttachments: () => void;
@@ -107,8 +109,7 @@ export function createSlashCommandsController(deps: SlashDeps): SlashCommandsCon
 		{
 			key: 'unlock',
 			usage: '/unlock <code>',
-			description:
-				'Enable file-reading + web tools on this device (paste the code CC gave you)',
+			description: 'Enable file-reading + web tools on this device (paste the code CC gave you)',
 			run: (rest) => {
 				const code = rest.trim();
 				if (!code) {
@@ -156,10 +157,15 @@ export function createSlashCommandsController(deps: SlashDeps): SlashCommandsCon
 			run: () => {
 				// Get current provider to show context-aware information
 				const provider = deps.getProviderOverride();
-				const providerInfo = provider === 'anthropic' ? 'Claude (Anthropic)' :
-								  provider === 'gemini' ? 'Gemini' :
-								  provider === 'local' ? 'Local Ollama' : 'Auto-select';
-				
+				const providerInfo =
+					provider === 'anthropic'
+						? 'Claude (Anthropic)'
+						: provider === 'gemini'
+							? 'Gemini'
+							: provider === 'local'
+								? 'Local Ollama'
+								: 'Auto-select';
+
 				const codexContent = `
 # Codex — Command Reference
 
