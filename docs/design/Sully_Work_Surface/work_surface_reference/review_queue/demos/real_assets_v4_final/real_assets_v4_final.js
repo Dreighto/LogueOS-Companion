@@ -13,7 +13,7 @@ const PRESETS = {
     status: "working",
     statusText: "Researching",
     bannerText: "Next: <span class='banner-highlight'>Optimizing database lookup speed</span>",
-    bannerIcon: "🔍",
+    bannerIcon: "icon-research",
     headerIcon: "icon-dispatch",
     activeOwnershipLabel: "Claude researching database indexes",
     activeMotionType: "researching",
@@ -40,7 +40,7 @@ const PRESETS = {
     status: "working",
     statusText: "Building",
     bannerText: "Next: <span class='banner-highlight'>Running gesture telemetry scripts</span>",
-    bannerIcon: "⚡",
+    bannerIcon: "icon-build",
     headerIcon: "icon-antigravity",
     activeOwnershipLabel: "Antigravity building touch gesture handlers",
     activeMotionType: "building",
@@ -67,7 +67,7 @@ const PRESETS = {
     status: "checking",
     statusText: "Checking",
     bannerText: "Next: <span class='banner-highlight'>Reviewing logic constraint rules</span>",
-    bannerIcon: "🔍",
+    bannerIcon: "icon-verify",
     headerIcon: "icon-verify",
     activeOwnershipLabel: "DeepSeek verifying schema constraints logic",
     activeMotionType: "verifying",
@@ -94,7 +94,7 @@ const PRESETS = {
     status: "working",
     statusText: "Brainstorming",
     bannerText: "Next: <span class='banner-highlight'>Compiling vector search space</span>",
-    bannerIcon: "🧠",
+    bannerIcon: "icon-brainstorm",
     headerIcon: "icon-memory",
     activeOwnershipLabel: "Gemini brainstorming context log vectors",
     activeMotionType: "researching",
@@ -121,7 +121,7 @@ const PRESETS = {
     status: "checking",
     statusText: "Reviewing",
     bannerText: "Next: <span class='banner-highlight'>Submitting file recommendations</span>",
-    bannerIcon: "🔍",
+    bannerIcon: "icon-verify",
     headerIcon: "icon-verify",
     activeOwnershipLabel: "Codex reviewing folder structures",
     activeMotionType: "verifying",
@@ -148,7 +148,7 @@ const PRESETS = {
     status: "working",
     statusText: "Coordinated",
     bannerText: "Next: <span class='banner-highlight'>Deploying QA test environment</span>",
-    bannerIcon: "⚙️",
+    bannerIcon: "icon-coordinated",
     headerIcon: "icon-packet",
     activeOwnershipLabel: "CC, AGY & CDX concurrently executing",
     activeMotionType: "building",
@@ -177,7 +177,7 @@ const PRESETS = {
     status: "waiting",
     statusText: "Awaiting Action",
     bannerText: "Operator verification required to execute folder deletion.",
-    bannerIcon: "⚠️",
+    bannerIcon: "icon-waiting",
     headerIcon: "icon-approval",
     activeOwnershipLabel: "Halted - waiting for operator signature",
     activeMotionType: "waiting",
@@ -205,7 +205,7 @@ const PRESETS = {
     status: "complete",
     statusText: "Complete",
     bannerText: "Execution successful. Staging workspace settled.",
-    bannerIcon: "✓",
+    bannerIcon: "icon-complete",
     headerIcon: "icon-task",
     activeOwnershipLabel: "Settled - execution successful",
     activeMotionType: "complete",
@@ -234,7 +234,7 @@ const PRESETS = {
     status: "stopped",
     statusText: "Stopped",
     bannerText: "Task was stopped by the operator.",
-    bannerIcon: "🛑",
+    bannerIcon: "icon-stopped",
     headerIcon: "icon-blocked",
     activeOwnershipLabel: "Stopped",
     activeMotionType: "stopped",
@@ -258,7 +258,7 @@ const PRESETS = {
     status: "failed",
     statusText: "Failed",
     bannerText: "Task Failed: Environment missing.",
-    bannerIcon: "❌",
+    bannerIcon: "icon-failed",
     headerIcon: "icon-blocked",
     activeOwnershipLabel: "Failed",
     activeMotionType: "failed",
@@ -726,7 +726,7 @@ function updateUI() {
   document.getElementById('compactStatusBadge').className = `status-pill status-${data.status}`;
 
   const banner = document.getElementById('compactBanner');
-  banner.innerHTML = `<span class="banner-icon">${data.bannerIcon}</span><span class="banner-text">${data.bannerText}</span>`;
+  banner.innerHTML = `<svg class="banner-icon" aria-hidden="true"><use href="#${data.bannerIcon}"></use></svg><span class="banner-text">${data.bannerText}</span>`;
 
   // Header System Badges
   const headerIconWrapper = document.getElementById('systemHeaderIcon');

@@ -816,7 +816,8 @@ use[href="#icon-antigravity"] { color: #3186FF; }
 @keyframes dotBreath { 0%, 100% { opacity: 0.5; transform: scale(0.95); } 50% { opacity: 1; transform: scale(1.05); } }
 
 .operator-banner { display: flex; align-items: center; gap: 8px; background-color: rgba(255, 255, 255, 0.01); border-radius: 10px; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.03); }
-.banner-icon { font-size: 14px; }
+.banner-icon { width:14px; height:14px; vertical-align:-2px; fill:none; stroke:currentColor; }
+.status-icon { width:15px; height:15px; fill:none; stroke:currentColor; }
 .banner-text { font-size: 12px; color: var(--sully-text-muted); line-height: 1.35; }
 .banner-highlight { color: #fff; font-weight: 600; }
 
@@ -879,3 +880,26 @@ use[href="#icon-antigravity"] { color: #3186FF; }
   color: inherit;
 }
 .status-pill.status-stopped { background-color: var(--color-waiting-glow); color: var(--color-waiting); border: 1px solid rgba(245, 158, 11, 0.15); }
+
+/* Lucide stroke icon overrides */
+svg use[href^="#icon-dispatch"],
+svg use[href^="#icon-verify"],
+svg use[href^="#icon-memory"],
+svg use[href^="#icon-approval"],
+svg use[href^="#icon-task"],
+svg use[href^="#icon-packet"],
+svg use[href^="#icon-blocked"],
+svg use[href^="#icon-research"],
+svg use[href^="#icon-build"],
+svg use[href^="#icon-brainstorm"],
+svg use[href^="#icon-coordinated"],
+svg use[href^="#icon-waiting"],
+svg use[href^="#icon-complete"],
+svg use[href^="#icon-failed"],
+svg use[href^="#icon-stopped"],
+svg use[href^="#icon-signal"],
+svg use[href^="#icon-wifi"],
+svg use[href^="#icon-battery"] {
+    fill: none !important;
+    stroke: currentColor;
+}
