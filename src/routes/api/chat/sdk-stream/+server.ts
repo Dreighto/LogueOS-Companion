@@ -50,6 +50,7 @@ import { persistAssistantTurn } from '$lib/server/chat_turn';
 import { resolveChatModel } from '$lib/server/model_catalog';
 import { baseTools } from '$lib/server/chat/base_tools';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
+import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
 import { needsFullReply } from '$lib/server/routing/turn_decision';
 
@@ -323,7 +324,25 @@ export const POST: RequestHandler = async ({ request }) => {
 	// ─── Direct API path (Haiku, Gemini, Local) ──────────────────────────
 	let modelHandle: { model: ReturnType<ReturnType<typeof createAnthropic>>; modelId: string };
 	try {
-		modelHandle = pickModel(provider, currentTier, body.model);
+		// FACT ROUTING — web-search grounding fix. A current/external-fact turn
+		// needs a tool-disciplined model that TRUSTS fresh search results over its
+		// own training. Small local models (e.g. companion-v1) lean on stale memory
+		// and fabricate URLs even with web_search attached. So when the turn is a
+		// world-fact AND web tools are actually available, route it to a strong
+		// Ollama-cloud model (proxied through local Ollama with the operator's Pro
+		// key) — regardless of the casual chat model picked. Casual chat is untouched.
+		const factTurn = allowSensitive && factGate(userMessageText).category === 'world_fact';
+		if (factTurn) {
+			const factModel = process.env.COMPANION_FACT_MODEL || 'gpt-oss:120b-cloud';
+			const cloud = createOpenAICompatible({
+				name: 'ollama-fact',
+				baseURL: OLLAMA_V1,
+				apiKey: 'ollama'
+			});
+			modelHandle = { model: cloud(factModel), modelId: factModel };
+		} else {
+			modelHandle = pickModel(provider, currentTier, body.model);
+		}
 	} catch (err) {
 		return new Response(
 			JSON.stringify({ error: 'credential_unavailable', detail: (err as Error).message }),

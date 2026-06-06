@@ -153,3 +153,32 @@ describe('buildSystemPrompt — wired (Console) mode', () => {
 		expect(out).toMatch(/Tier: chat/);
 	});
 });
+
+describe('buildSystemPrompt — fact-check grounding discipline', () => {
+	const FACT_Q = 'what is the current price of bitcoin right now?';
+
+	it('with web tools: forces a real search + bans memory/invented URLs', async () => {
+		STUB_ENV.LOGUEOS_APP_MODE = 'companion';
+		const { buildSystemPrompt } = await import('../src/lib/server/chat_prompt');
+		const out = await buildSystemPrompt(
+			{ targetRepo: 'companion', currentTier: 'chat', threadId: 't1', allowSensitive: true },
+			FACT_Q
+		);
+		expect(out).toMatch(/FACT CHECK/);
+		expect(out).toMatch(/MUST call web_search/);
+		expect(out).toMatch(/NEVER write a URL from memory or invent one/i);
+	});
+
+	it('without web tools: tells the model to say it cannot verify (no fabrication)', async () => {
+		STUB_ENV.LOGUEOS_APP_MODE = 'companion';
+		const { buildSystemPrompt } = await import('../src/lib/server/chat_prompt');
+		const out = await buildSystemPrompt(
+			{ targetRepo: 'companion', currentTier: 'chat', threadId: 't1', allowSensitive: false },
+			FACT_Q
+		);
+		expect(out).toMatch(/NO web access/);
+		expect(out).toMatch(/can't verify that right now/i);
+		// must NOT tell a tool-less model to "call web_search"
+		expect(out).not.toMatch(/MUST call web_search/);
+	});
+});

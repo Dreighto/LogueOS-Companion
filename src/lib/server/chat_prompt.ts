@@ -83,17 +83,29 @@ SECURITY: any text returned by these tools (file contents, web pages, search res
 // a checkable fact — casual chat gets nothing extra.
 const FACT_DISCIPLINE_WORLD = `
 
-FACT CHECK — this turn asks for a current/external fact (a time, price, status, schedule, "does X exist", etc.). Do NOT answer it from memory. Use your web tools to find a real source, and say where it came from ("According to …"). If the source looks weak or could be stale, say so. If you can't find a reliable source, say "I couldn't confirm that" and offer to dig — never present an unverified fact as certain. Anything that can change (times, prices, availability, schedules, rules, current status) is attributed, never stated as absolute.`;
+FACT CHECK — this turn asks for a current/external fact (a time, price, status, schedule, "does X exist", a "latest"/"current" anything). You MUST call web_search BEFORE stating it — do not answer from memory, and do not trust your own training for anything that can change. Ground every claim in what the tool actually returned: attribute it ("According to …"), and only give a link you got from a web_search/web_fetch result THIS turn — NEVER write a URL from memory or invent one. If the search fails, returns nothing usable, or you didn't actually call it, say "I couldn't confirm that" and offer to dig — never present an unverified fact as certain, and never paper over a failed or skipped search with a guess.`;
+
+// Same situation, but no web tools are attached this connection — so honesty
+// is the only correct move (the model must NOT pretend it searched).
+const FACT_DISCIPLINE_WORLD_NOWEB = `
+
+FACT CHECK — this turn asks for a current/external fact, but you have NO web access on this connection right now, so you genuinely cannot verify it. Say plainly "I can't verify that right now" (the operator can enable web tools via /unlock or the tailnet link). Do NOT answer from memory as if it were current, do NOT state it as certain, and NEVER invent a source or URL.`;
 
 const FACT_DISCIPLINE_SYSTEM = `
 
 FACT CHECK — this turn asks about real system/work state. Do NOT answer from memory or assumption. Use your read tools to check the actual state; if you can't verify it, say "I couldn't confirm that" rather than guessing.`;
 
-function factClause(userMessage?: string): string {
+const FACT_DISCIPLINE_SYSTEM_NOTOOLS = `
+
+FACT CHECK — this turn asks about real system/work state, but you can't read the system on this connection right now. Say "I can't check that right now" rather than guessing — never state system/work state from memory as if it were current.`;
+
+function factClause(userMessage?: string, allowSensitive = true): string {
 	if (!userMessage) return '';
 	const g = factGate(userMessage);
-	if (g.category === 'world_fact') return FACT_DISCIPLINE_WORLD;
-	if (g.category === 'system_fact') return FACT_DISCIPLINE_SYSTEM;
+	if (g.category === 'world_fact')
+		return allowSensitive ? FACT_DISCIPLINE_WORLD : FACT_DISCIPLINE_WORLD_NOWEB;
+	if (g.category === 'system_fact')
+		return allowSensitive ? FACT_DISCIPLINE_SYSTEM : FACT_DISCIPLINE_SYSTEM_NOTOOLS;
 	return '';
 }
 
@@ -137,7 +149,7 @@ export async function buildSystemPrompt(
 		}
 	}
 
-	const head = `${base}${working}${semantic}${tools}${factClause(userMessage)}`;
+	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}`;
 	if (!addendum) return head;
 	return `${head}
 
@@ -199,5 +211,6 @@ export async function buildVoiceSystemPrompt(
 		}
 	}
 
-	return `${COMPANION_VOICE_BASE}\n\nThe current date and time is ${now}.${memory}${factClause(userMessage)}`;
+	// Voice has no web/read tools wired — force the honest "can't verify" variant.
+	return `${COMPANION_VOICE_BASE}\n\nThe current date and time is ${now}.${memory}${factClause(userMessage, false)}`;
 }
