@@ -230,6 +230,8 @@ html, body {
 .stage-pill.done { background-color: rgba(255,255,255,0.1); color: var(--sully-text-muted); }
 .stage-pill.done .tick { margin-right: 3px; color: var(--color-complete); }
 .stage-pill.active { background-color: var(--sully-brand-magenta); color: #fff; }
+.status-stopped .stage-pill.active { background-color: var(--color-waiting); color: #fff; }
+.status-failed .stage-pill.active { background-color: var(--color-blocked); color: #fff; }
 .stage-pill.pending { border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.3); }
 .stage-pill.skipped { border: 1px dashed rgba(255,255,255,0.1); color: rgba(255,255,255,0.2); opacity: 0.6; }
 
