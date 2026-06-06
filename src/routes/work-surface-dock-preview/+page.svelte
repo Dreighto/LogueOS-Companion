@@ -4,6 +4,16 @@
 	import { workSurfaceSeed } from '$lib/data/workSurfaceSeed';
 	import { onMount } from 'svelte';
 
+	// Define state for the dock mode
+	let dockMode = $state<'badge' | 'rail' | 'sheet'>('badge');
+	let dockOpenSurfaceId = $state<string | null>(null);
+
+	// Helper to switch mode
+	function setMode(mode: 'badge' | 'rail' | 'sheet', surfaceId: string | null = null) {
+		dockMode = mode;
+		dockOpenSurfaceId = surfaceId;
+	}
+
 	onMount(() => {
 		// 1. Running surface (multi-worker)
 		const runningTask = workSurfaceSeed['multi-worker'];
@@ -33,6 +43,14 @@
 		<p class="mt-1 text-sm text-muted-foreground">
 			Seed: one Running (multi-worker), one Needs-you (approval), one Done. Tap a row to expand.
 		</p>
+
+		<!-- Mode switching buttons -->
+		<div class="mt-4 flex gap-2">
+			<button class="btn-tactile px-4 py-2" onclick={() => setMode('badge')}>Badge Mode</button>
+			<button class="btn-tactile px-4 py-2" onclick={() => setMode('rail')}>Rail Mode</button>
+			<button class="btn-tactile px-4 py-2" onclick={() => setMode('sheet', 'preview-running-msg-id')}>Sheet Mode (Running)</button>
+		</div>
 	</div>
-	<WorkSurfaceDock />
+	<!-- Pass current mode and open surface to the WorkSurfaceDock component -->
+	<WorkSurfaceDock initialMode={dockMode} initialOpenSurfaceId={dockOpenSurfaceId} />
 </div>
