@@ -59,6 +59,7 @@
 	const enrichedWorkers = $derived(
 		task.workers.map((worker, i) => ({
 			...worker,
+			id: worker.identity,
 			pos: workerPositions[i] || { x: 0, y: 0 }, // Fallback for more workers than positions
 			motionType: ((): 'researching' | 'building' | 'verifying' | 'idle' => {
 				switch (worker.role) {
@@ -75,7 +76,7 @@
 		}))
 	);
 
-	const activeMotionType = $derived((): 'researching' | 'building' | 'verifying' | undefined => {
+	const activeMotionType = $derived.by((): 'researching' | 'building' | 'verifying' | undefined => {
 		switch (task.stage) {
 			case 'Research':
 				return 'researching';
@@ -95,7 +96,7 @@
 		pos: TASK_CORE_POS
 	};
 
-	const systemNodes = $derived(() => {
+	const systemNodes = $derived.by(() => {
 		const nodes: (GraphNode & { pos: { x: number; y: number } })[] = [];
 		if (task.workers.length === 1) {
 			if (task.stage === 'Research') {
@@ -126,7 +127,7 @@
 		return node ? node.pos : { x: 0, y: 0 };
 	});
 
-	const allRoutes = $derived(() => {
+	const allRoutes = $derived.by(() => {
 		if (task.state === 'Complete' || task.state === 'Stopped' || task.state === 'Failed') {
 			return []; // No active routes or packets when settled
 		}
@@ -155,10 +156,9 @@
 				const workerInRoute = enrichedWorkers.find(
 					(w) => w.id === fromNode.id || w.id === toNode.id
 				);
-				const isPrimary = $derived(
+				const isPrimary =
 					task.workers.length === 1 ||
-						(workerInRoute && workerInRoute.motionType === activeMotionType)
-				);
+					(workerInRoute && workerInRoute.motionType === activeMotionType);
 
 				let packets: { delay: string; motionType: string }[] = [];
 				let packetDelay: number;
@@ -207,7 +207,7 @@
 	});
 
 	// Handle the special input edge from mock (from {340,105} to system-memory)
-	const specialSystemInputEdge = $derived(() => {
+	const specialSystemInputEdge = $derived.by(() => {
 		if (
 			task.workers.length === 1 &&
 			task.stage === 'Research' &&
