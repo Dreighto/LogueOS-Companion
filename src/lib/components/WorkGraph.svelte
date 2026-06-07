@@ -141,6 +141,21 @@
 		}
 	}
 
+	// Per-identity brand colour (operator-locked 2026-06-06):
+	//   CC=orange · AGY=purple · CDX=gray · DPSK=blue · GMI=light blue
+	// The active worker glow on the graph node uses THIS, set inline as
+	// the --worker-color custom property. Mirrors WorkerRow's mapping.
+	function workerBrandColor(identity?: string, shortCode?: string): string {
+		const id = (identity || '').toLowerCase();
+		const code = (shortCode || '').toUpperCase();
+		if (id === 'claude-code' || code === 'CC') return '#f97316';
+		if (id === 'antigravity' || code === 'AGY') return '#a855f7';
+		if (id === 'codex' || code === 'CDX') return '#9ca3af';
+		if (id === 'deepseek' || code === 'DPSK') return '#3b82f6';
+		if (id === 'gemini' || code === 'GMI') return '#60a5fa';
+		return 'var(--color-status-blue)';
+	}
+
 	const getNodePos = $derived((id: string) => {
 		const node = allGraphNodes.find((n) => n.id === id);
 		return node ? node.pos : { x: 0, y: 0 };
@@ -238,7 +253,10 @@
 	});
 </script>
 
-<div style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+<div
+	style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;"
+	aria-hidden="true"
+>
 	<WorkerIconSprite />
 </div>
 
@@ -275,14 +293,7 @@
 					style:offset-path={`path("${route.pathD}")`}
 					style:animation-delay={p.delay}
 				>
-					<use
-						href="#{route.fromIcon}"
-						x={-5}
-						y={-5}
-						width={10}
-						height={10}
-						class="packet-shape"
-					/>
+					<use href="#{route.fromIcon}" x={-5} y={-5} width={10} height={10} class="packet-shape" />
 				</g>
 			{/each}
 		{/if}
@@ -294,20 +305,14 @@
 		<g
 			class="worker-node node-group status-{worker.status.toLowerCase()}"
 			style:transform="translate({worker.pos.x}px, {worker.pos.y}px)"
-			style:--worker-color={worker.role === 'Research' ||
-			worker.role === 'Memory' ||
-			worker.role === 'Vision'
-				? '#06b6d4'
-				: worker.role === 'Build'
-					? '#a855f7'
-					: '#f97316'}
+			style:--worker-color={workerBrandColor(worker.identity, worker.shortCode)}
 		>
 			<circle class="node-ring" r="23" />
 			<circle class="node-circle" r="17" />
 			<use
 				href="#{worker.icon ?? defaultIconForRole(worker.role)}"
-				x={-NODE_ICON_SIZE/2}
-				y={-NODE_ICON_SIZE/2}
+				x={-NODE_ICON_SIZE / 2}
+				y={-NODE_ICON_SIZE / 2}
 				width={NODE_ICON_SIZE}
 				height={NODE_ICON_SIZE}
 				class="node-icon-placeholder"
@@ -333,8 +338,8 @@
 			<circle class="node-circle" r="17" />
 			<use
 				href="#{defaultIconForRole(node.role)}"
-				x={-NODE_ICON_SIZE/2}
-				y={-NODE_ICON_SIZE/2}
+				x={-NODE_ICON_SIZE / 2}
+				y={-NODE_ICON_SIZE / 2}
 				width={NODE_ICON_SIZE}
 				height={NODE_ICON_SIZE}
 				class="node-icon-placeholder"
@@ -358,8 +363,8 @@
 		<circle class="central-task-node" r="20" />
 		<use
 			href="#icon-system"
-			x={-NODE_ICON_SIZE/2}
-			y={-NODE_ICON_SIZE/2}
+			x={-NODE_ICON_SIZE / 2}
+			y={-NODE_ICON_SIZE / 2}
 			width={NODE_ICON_SIZE}
 			height={NODE_ICON_SIZE}
 			class="node-icon-placeholder"

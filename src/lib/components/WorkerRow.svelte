@@ -10,24 +10,31 @@
 	// a WorkerStatus; the union is just expanded for comparison purposes.
 	const wState = $derived<string>(worker.status || 'idle');
 
+	// Per-identity brand colour (operator-locked 2026-06-06):
+	//   CC (claude-code)   → orange  — Anthropic / Claude orange
+	//   AGY (antigravity)  → purple  — Google AI / Antigravity purple
+	//   CDX (codex)        → gray    — OpenAI Codex neutral
+	//   DPSK (deepseek)    → blue    — DeepSeek brand blue
+	//   GMI (gemini)       → light   — Gemini lighter blue
+	// Colour reflects the WORKER, not the role — each worker is a brand.
+	const workerBrandColor = $derived.by((): string => {
+		const id = (worker.identity || '').toLowerCase();
+		const code = (worker.shortCode || '').toUpperCase();
+		if (id === 'claude-code' || code === 'CC') return '#f97316'; // orange
+		if (id === 'antigravity' || code === 'AGY') return '#a855f7'; // purple
+		if (id === 'codex' || code === 'CDX') return '#9ca3af'; // gray
+		if (id === 'deepseek' || code === 'DPSK') return '#3b82f6'; // blue
+		if (id === 'gemini' || code === 'GMI') return '#60a5fa'; // light blue
+		// Unknown identity — fall back to status-blue for active workers
+		return 'var(--color-status-blue)';
+	});
+
 	const strokeColor = $derived.by(() => {
-		if (wState === 'active') {
-			if (worker.role === 'Research' || worker.role === 'Memory' || worker.role === 'Vision') {
-				return '#06b6d4'; // cyan
-			} else if (worker.role === 'Build') {
-				return '#a855f7'; // purple
-			} else {
-				return '#f97316'; // orange
-			}
-		} else if (wState === 'waiting') {
-			return 'var(--color-st-needs)'; // amber
-		} else if (wState === 'idle') {
-			return 'var(--color-st-done)'; // gray
-		} else if (wState === 'done') {
-			return 'var(--color-status-green)'; // green
-		} else {
-			return 'var(--color-st-done)';
-		}
+		if (wState === 'active') return workerBrandColor;
+		if (wState === 'waiting') return 'var(--color-st-needs)'; // amber
+		if (wState === 'idle') return 'var(--color-st-done)'; // gray
+		if (wState === 'done') return 'var(--color-status-green)'; // green
+		return 'var(--color-st-done)';
 	});
 
 	const actionText = $derived(worker.step || worker.status || 'idle');
