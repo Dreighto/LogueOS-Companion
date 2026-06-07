@@ -100,6 +100,12 @@
 
 	.bar-active {
 		animation: wave-active 1.2s ease-in-out infinite;
+		/* Per-role glow — the waveform colour IS the worker's brand. The eye
+		   should trace from this row to the same-coloured node in the graph
+		   and read them as ONE worker. filter: drop-shadow uses currentColor
+		   automatically via the rect's fill (set above), so this glow takes
+		   the role colour with no extra wiring. */
+		filter: drop-shadow(0 0 3px currentColor);
 	}
 
 	.bar-active-1 {

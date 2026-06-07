@@ -67,7 +67,7 @@
 	}
 
 	const percent = $derived.by(() => {
-		const doneStages = task.stageProgress.filter(s => s.status === 'done').length;
+		const doneStages = task.stageProgress.filter((s) => s.status === 'done').length;
 		return Math.min(100, doneStages * 20);
 	});
 
@@ -79,7 +79,13 @@
 	});
 
 	const dotColorClass = $derived.by(() => {
-		if (task.state === 'Working' || task.state === 'Reading' || task.state === 'Planning' || task.state === 'Reviewing' || task.state === 'Delivering') {
+		if (
+			task.state === 'Working' ||
+			task.state === 'Reading' ||
+			task.state === 'Planning' ||
+			task.state === 'Reviewing' ||
+			task.state === 'Delivering'
+		) {
 			return 'bg-[--color-st-run]';
 		} else if (task.state === 'Waiting') {
 			return 'bg-[--color-st-needs]';
@@ -97,7 +103,8 @@
 	<!-- 1. COLLAPSED VIEW -->
 	<div class="sully-collapsed-view" class:active={footprint === 'collapsed'}>
 		<div class="collapsed-content">
-			<span class="pulse-indicator status-{task.state.toLowerCase()}" class:in-motion={isInMotion}></span>
+			<span class="pulse-indicator status-{task.state.toLowerCase()}" class:in-motion={isInMotion}
+			></span>
 			<span class="collapsed-title">{task.state}</span>
 			{#if task.workers.length > 0}
 				<span class="collapsed-meta">{task.workers[0].shortCode}</span>
@@ -125,7 +132,9 @@
 
 		<!-- Active Ownership Banner -->
 		{#if isInMotion}
-			<div class="active-ownership-banner bg-surface/50 p-3 rounded-md flex items-center gap-2 text-sm text-foreground">
+			<div
+				class="active-ownership-banner flex items-center gap-2 rounded-md bg-surface/50 p-3 text-sm text-foreground"
+			>
 				<span class="ownership-pulse" class:in-motion={isInMotion}></span>
 				<span class="ownership-text">Next: {firstWorkerStep}</span>
 			</div>
@@ -159,21 +168,29 @@
 	<div class="sully-expanded-wrapper" class:active={footprint === 'expanded'}>
 		<div class="sully-expanded-card">
 			<!-- 1. Status header -->
-			<div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-muted-foreground select-none mb-1">
+			<div
+				class="mb-1 flex items-center gap-2 font-mono text-xs tracking-wider text-muted-foreground uppercase select-none"
+			>
 				<span class="h-2 w-2 rounded-full {dotColorClass}"></span>
-				<span>{task.state} · {task.workers.length} worker{task.workers.length === 1 ? '' : 's'}</span>
+				<span
+					>{task.state} · {task.workers.length} worker{task.workers.length === 1 ? '' : 's'}</span
+				>
 			</div>
 
 			<!-- 2. Title -->
-			<h2 class="text-xl font-semibold tracking-tight text-white mb-4">{task.title}</h2>
+			<h2 class="mb-4 text-xl font-semibold tracking-tight text-white">{task.title}</h2>
 
 			<!-- 3. Hero ring -->
-			<div class="flex justify-center my-6">
-				<SurfaceProgressRing {percent} stage={task.stage} state={ringState} />
+			<div class="my-6 flex justify-center">
+				<SurfaceProgressRing {percent} stage={task.stage} surfaceState={ringState} />
 			</div>
 
 			<!-- 4. Worker rows -->
-			<ul role="list" aria-label="Active workers" class="list-none p-0 m-0 flex flex-col divide-y divide-border/40 my-4">
+			<ul
+				role="list"
+				aria-label="Active workers"
+				class="m-0 my-4 flex list-none flex-col divide-y divide-border/40 p-0"
+			>
 				{#each task.workers as w (w.identity)}
 					<WorkerRow worker={w} />
 				{/each}
@@ -181,7 +198,9 @@
 
 			<!-- 5. Next banner -->
 			{#if isInMotion}
-				<div class="active-ownership-banner bg-surface/50 p-3 rounded-md flex items-center gap-2 text-sm text-foreground">
+				<div
+					class="active-ownership-banner flex items-center gap-2 rounded-md bg-surface/50 p-3 text-sm text-foreground"
+				>
 					<span class="ownership-pulse" class:in-motion={isInMotion}></span>
 					<span class="ownership-text">Next: {firstWorkerStep}</span>
 				</div>
@@ -244,6 +263,21 @@
 	.work-surface-card.status-complete {
 		background-color: var(--color-status-green-10); /* Light green background */
 		border-color: var(--color-status-green);
+		/* Earned-rest ambient glow — bound to the Complete state (not a timer).
+		   Soft, slow, doesn't compete with content. Decoration would be wrong;
+		   this is "the surface is settled" made visible. Stops the instant
+		   state leaves Complete (CSS class only applies on .status-complete). */
+		box-shadow: 0 0 24px -8px var(--color-status-green);
+		animation: rest-glow 4s ease-in-out infinite;
+	}
+	@keyframes rest-glow {
+		0%,
+		100% {
+			box-shadow: 0 0 18px -10px var(--color-status-green);
+		}
+		50% {
+			box-shadow: 0 0 28px -6px var(--color-status-green);
+		}
 	}
 
 	/* Inner views - controlled by parent .state-{footprint} */
@@ -394,7 +428,7 @@
 	}
 
 	.action-btn {
-		@apply flex items-center gap-1 rounded-md px-4 py-2.5 text-xs font-medium transition-colors min-h-[44px];
+		@apply flex min-h-[44px] items-center gap-1 rounded-md px-4 py-2.5 text-xs font-medium transition-colors;
 		color: white;
 		background-color: var(--color-st-needs); /* Default for approve */
 	}

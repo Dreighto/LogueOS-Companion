@@ -23,6 +23,12 @@
 
 	import WorkSurfaceCard from '$lib/components/WorkSurfaceCard.svelte';
 	import WorkSurfaceIndicator from '$lib/components/WorkSurfaceIndicator.svelte';
+	import StageTimeline from '$lib/components/StageTimeline.svelte';
+	import WorkGraph from '$lib/components/WorkGraph.svelte';
+	import PhaseChecklist from '$lib/components/PhaseChecklist.svelte';
+	import WorkerRegistry from '$lib/components/WorkerRegistry.svelte';
+	import ProofCard from '$lib/components/ProofCard.svelte';
+	import { slide } from 'svelte/transition';
 	import {
 		spawnSurface,
 		attachToSurface,
@@ -401,6 +407,16 @@
 	const currentSurface = $derived.by(() => {
 		return running()[0] ?? needsYou()[0] ?? doneList()[0] ?? null;
 	});
+
+	// Accordion state — Activity (the graph view) is open by default so the
+	// operator sees the per-role node glow as the simulation runs. The other
+	// accordions stay collapsed; tap to drill in.
+	let openSections = $state<Set<string>>(new Set(['activity']));
+	function toggleSection(key: string) {
+		if (openSections.has(key)) openSections.delete(key);
+		else openSections.add(key);
+		openSections = new Set(openSections);
+	}
 </script>
 
 <div class="flex min-h-screen w-full flex-col overflow-y-auto bg-background text-foreground">
@@ -453,6 +469,105 @@
 						footprint="expanded"
 						suppressInlinePanels={true}
 					/>
+				</div>
+
+				<!-- Detail accordions — same shape the chat sheet will use. Activity
+				     starts OPEN by default so the graph (with per-role node glow) is
+				     visible as the simulation runs. -->
+				<div class="mt-4 space-y-2">
+					<button
+						type="button"
+						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('timeline')}
+						onclick={() => toggleSection('timeline')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('timeline') ? '▾' : '▸'} Timeline
+						</span>
+						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
+					</button>
+					{#if openSections.has('timeline')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<StageTimeline task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('activity')}
+						onclick={() => toggleSection('activity')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('activity') ? '▾' : '▸'} Activity
+						</span>
+						<span class="text-xs text-muted-foreground">Graph · per-role glow</span>
+					</button>
+					{#if openSections.has('activity')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<WorkGraph task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('phases')}
+						onclick={() => toggleSection('phases')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('phases') ? '▾' : '▸'} Routing Phases ({currentSurface.task
+								.stageProgress?.length ?? 0})
+						</span>
+						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
+					</button>
+					{#if openSections.has('phases')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<PhaseChecklist task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('workers')}
+						onclick={() => toggleSection('workers')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('workers') ? '▾' : '▸'} Worker Registry ({currentSurface.task
+								.workers?.length ?? 0})
+						</span>
+						<span class="text-xs text-muted-foreground">
+							{currentSurface.task.workers?.[0]?.shortCode ?? '—'}
+							{(currentSurface.task.workers?.length ?? 0) > 1
+								? `+${(currentSurface.task.workers?.length ?? 1) - 1}`
+								: ''}
+						</span>
+					</button>
+					{#if openSections.has('workers')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<WorkerRegistry task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<button
+						type="button"
+						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
+						aria-expanded={openSections.has('proof')}
+						onclick={() => toggleSection('proof')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('proof') ? '▾' : '▸'} Proof
+						</span>
+						<span class="text-xs text-muted-foreground">
+							{currentSurface.task.proof?.verdict ?? 'pending'}
+						</span>
+					</button>
+					{#if openSections.has('proof') && currentSurface.task.proof}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<ProofCard task={currentSurface.task} />
+						</div>
+					{/if}
 				</div>
 			{:else}
 				<div class="rounded-xl border border-border bg-card/40 p-8 text-center">
