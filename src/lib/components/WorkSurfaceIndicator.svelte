@@ -59,6 +59,27 @@
 	const hasRunning = $derived(runningList.length > 0);
 	const isIdle = $derived(!hasRunning && !hasNeedsYou);
 
+	const activeWorkerCount = $derived.by(() => {
+		let count = 0;
+		for (const s of runningList) {
+			for (const w of s.task.workers) {
+				if (w.status === 'active') count++;
+			}
+		}
+		for (const s of needsYouList) {
+			for (const w of s.task.workers) {
+				if (w.status === 'active') count++;
+			}
+		}
+		return count;
+	});
+
+	const pulseDuration = $derived.by(() => {
+		if (activeWorkerCount >= 3) return 0.6;
+		if (activeWorkerCount >= 1) return 1.6;
+		return 2.0;
+	});
+
 	function openMostImportant() {
 		// Needs-you wins, then running, then done. Stable: same input = same result.
 		const target =
@@ -77,17 +98,7 @@
 	);
 </script>
 
-{#if isIdle && !isRecentComplete}
-	<!-- Idle: a quiet single dot — no pill, no label, no animation. -->
-	<button
-		type="button"
-		class="inline-flex h-11 min-w-11 items-center justify-center rounded-full px-2"
-		onclick={openMostImportant}
-		aria-label={ariaLabel}
-	>
-		<span class="h-2 w-2 rounded-full bg-muted-foreground opacity-50"></span>
-	</button>
-{:else}
+{#if !isIdle || isRecentComplete}
 	<!-- Pill: state-driven dots + label. Border amber only if needs-you. -->
 	<button
 		type="button"
@@ -98,12 +109,19 @@
 		aria-label={ariaLabel}
 	>
 		{#if hasRunning}
-			<span class="dot-pulse-soft h-2 w-2 rounded-full bg-brand" aria-hidden="true"></span>
+			<span
+				class="dot-pulse-soft h-2 w-2 rounded-full bg-[--color-st-run]"
+				style="animation-duration: {pulseDuration}s"
+				aria-hidden="true"
+			></span>
 			<span>▶ {runningList.length}</span>
 		{/if}
 
 		{#if hasNeedsYou}
-			<span class="dot-pulse-urgent h-2 w-2 rounded-full bg-[--color-st-needs]" aria-hidden="true"
+			<span
+				class="dot-pulse-urgent h-2 w-2 rounded-full bg-[--color-st-needs]"
+				style="animation-duration: {pulseDuration}s"
+				aria-hidden="true"
 			></span>
 			<span>⏸ {needsYouList.length} needs you</span>
 		{/if}

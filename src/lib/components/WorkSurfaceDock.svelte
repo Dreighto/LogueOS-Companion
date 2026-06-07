@@ -3,6 +3,8 @@
 	import PhaseChecklist from './PhaseChecklist.svelte';
 	import WorkerRegistry from './WorkerRegistry.svelte';
 	import ProofCard from './ProofCard.svelte';
+	import StageTimeline from './StageTimeline.svelte';
+	import WorkGraph from './WorkGraph.svelte';
 	import { running, needsYou, done } from '$lib/data/surfaces.svelte';
 	import type { Surface } from '$lib/types/workSurface';
 	import { slide } from 'svelte/transition';
@@ -280,7 +282,43 @@
 
 				<!-- Detail accordions — default collapsed, expand on tap. -->
 				<div class="mt-6 space-y-2">
-					<!-- Routing Phases -->
+					<!-- Accordion 1: Timeline -->
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface min-h-[44px]"
+						aria-expanded={openSections.has('timeline')}
+						onclick={() => toggleSection('timeline')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('timeline') ? '▾' : '▸'} Timeline
+						</span>
+						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
+					</button>
+					{#if openSections.has('timeline')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<StageTimeline task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<!-- Accordion 2: Activity -->
+					<button
+						type="button"
+						class="flex w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface min-h-[44px]"
+						aria-expanded={openSections.has('activity')}
+						onclick={() => toggleSection('activity')}
+					>
+						<span class="font-semibold text-foreground">
+							{openSections.has('activity') ? '▾' : '▸'} Activity
+						</span>
+						<span class="text-xs text-muted-foreground">Graph view</span>
+					</button>
+					{#if openSections.has('activity')}
+						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
+							<WorkGraph task={currentSurface.task} />
+						</div>
+					{/if}
+
+					<!-- Accordion 3: Routing Phases -->
 					<button
 						type="button"
 						class="flex w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface min-h-[44px]"
@@ -299,7 +337,7 @@
 						</div>
 					{/if}
 
-					<!-- Worker Registry -->
+					<!-- Accordion 4: Worker Registry -->
 					<button
 						type="button"
 						class="flex w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface min-h-[44px]"
@@ -323,7 +361,7 @@
 						</div>
 					{/if}
 
-					<!-- Proof -->
+					<!-- Accordion 5: Proof -->
 					<button
 						type="button"
 						class="flex w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface min-h-[44px]"

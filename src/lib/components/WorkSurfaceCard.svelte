@@ -6,6 +6,8 @@
 	import WorkerRegistry from '$lib/components/WorkerRegistry.svelte';
 	import ProofCard from '$lib/components/ProofCard.svelte';
 	import { Check, X, Repeat } from 'lucide-svelte';
+	import SurfaceProgressRing from './SurfaceProgressRing.svelte';
+	import WorkerRow from './WorkerRow.svelte';
 
 	let {
 		task,
@@ -61,6 +63,32 @@
 	function handleRetry() {
 		onretry?.();
 	}
+
+	const percent = $derived.by(() => {
+		const doneStages = task.stageProgress.filter(s => s.status === 'done').length;
+		return Math.min(100, doneStages * 20);
+	});
+
+	const ringState = $derived.by(() => {
+		if (task.state === 'Waiting') return 'Waiting';
+		if (task.state === 'Complete') return 'Complete';
+		if (task.state === 'Failed') return 'Failed';
+		return 'Working';
+	});
+
+	const dotColorClass = $derived.by(() => {
+		if (task.state === 'Working' || task.state === 'Reading' || task.state === 'Planning' || task.state === 'Reviewing' || task.state === 'Delivering') {
+			return 'bg-[--color-st-run]';
+		} else if (task.state === 'Waiting') {
+			return 'bg-[--color-st-needs]';
+		} else if (task.state === 'Complete') {
+			return 'bg-[--color-st-done]';
+		} else if (task.state === 'Failed') {
+			return 'bg-[--color-st-fail]';
+		} else {
+			return 'bg-[--color-st-done]';
+		}
+	});
 </script>
 
 <div class="work-surface-card state-{footprint} status-{task.state.toLowerCase()}">
@@ -128,77 +156,54 @@
 	<!-- 3. EXPANDED DETAIL VIEW -->
 	<div class="sully-expanded-wrapper" class:active={footprint === 'expanded'}>
 		<div class="sully-expanded-card">
-			<div class="expanded-header">
-				<div class="header-left">
-					<div class="header-text">
-						<h2 class="task-title">{task.title}</h2>
-					</div>
-				</div>
-				<!-- Close button handled by parent in preview, or not needed for always-expanded -->
+			<!-- 1. Status header -->
+			<div class="flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-muted-foreground select-none mb-1">
+				<span class="h-2 w-2 rounded-full {dotColorClass}"></span>
+				<span>{task.state} · {task.workers.length} worker{task.workers.length === 1 ? '' : 's'}</span>
 			</div>
 
-			<StageTimeline {task} />
+			<!-- 2. Title -->
+			<h2 class="text-xl font-semibold tracking-tight text-white mb-4">{task.title}</h2>
 
-			{#if !suppressInlinePanels}
-				<div class="expanded-details-layout">
-					<div class="work-graph-slot expanded-viewport">
-						<WorkGraph {task} />
-					</div>
+			<!-- 3. Hero ring -->
+			<div class="flex justify-center my-6">
+				<SurfaceProgressRing {percent} stage={task.stage} state={ringState} />
+			</div>
 
-					{#if task.state !== 'Complete' && task.state !== 'Stopped' && task.state !== 'Failed'}
-						<div class="active-ownership-banner">
-							<span class="ownership-pulse"></span>
-							<span class="ownership-text">Now: {firstWorkerStep}</span>
-						</div>
-					{/if}
+			<!-- 4. Worker rows -->
+			<div class="flex flex-col divide-y divide-border/40 my-4">
+				{#each task.workers as w (w.identity)}
+					<WorkerRow worker={w} />
+				{/each}
+			</div>
 
-					<div class="details-section">
-						<h4>Routing Phases</h4>
-						<PhaseChecklist {task} />
-					</div>
-
-					<div class="details-section">
-						<h4>Worker Registry</h4>
-						<WorkerRegistry {task} />
-					</div>
-
-					<ProofCard {task} />
+			<!-- 5. Next banner -->
+			{#if task.state !== 'Complete' && task.state !== 'Stopped' && task.state !== 'Failed'}
+				<div class="active-ownership-banner bg-surface/50 p-3 rounded-md flex items-center gap-2 text-sm text-foreground">
+					<span class="ownership-pulse"></span>
+					<span class="ownership-text">Next: {firstWorkerStep}</span>
 				</div>
-			{:else}
-				<!-- If inline panels are suppressed, just show the graph and ownership banner directly -->
-				<div class="work-graph-slot expanded-viewport">
-					<WorkGraph {task} />
-				</div>
-
-				{#if task.state !== 'Complete' && task.state !== 'Stopped' && task.state !== 'Failed'}
-					<div class="active-ownership-banner bg-surface/50 p-3 rounded-md flex items-center gap-2 text-sm text-foreground">
-						<span class="ownership-pulse"></span>
-						<span class="ownership-text">Next: {firstWorkerStep}</span>
-					</div>
-				{/if}
 			{/if}
 
-			<div class="actions-container">
-				{#if displayApproveButton}
-					<button class="action-btn action-approve" onclick={handleApprove}>
-						{#if confirmApprove && task.isDestructive}
-							Confirm?
-						{:else}
-							<Check size="16" /> Approve
-						{/if}
-					</button>
-				{/if}
-				{#if displayStopButton}
-					<button class="action-btn action-stop" onclick={handleStop}>
-						<X size="16" /> Stop
-					</button>
-				{/if}
-				{#if displayRetryButton}
-					<button class="action-btn action-retry" onclick={handleRetry}>
-						<Repeat size="16" /> Retry
-					</button>
-				{/if}
-			</div>
+			<!-- 6. Actions -->
+			{#if task.state === 'Waiting' || task.state === 'Working'}
+				<div class="actions-container">
+					{#if task.state === 'Waiting' && displayApproveButton}
+						<button class="action-btn action-approve" onclick={handleApprove}>
+							{#if confirmApprove && task.isDestructive}
+								Confirm?
+							{:else}
+								<Check size="16" /> Approve
+							{/if}
+						</button>
+					{/if}
+					{#if task.state === 'Working' && displayStopButton}
+						<button class="action-btn action-stop" onclick={handleStop}>
+							<X size="16" /> Stop
+						</button>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
