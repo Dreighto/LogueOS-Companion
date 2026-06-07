@@ -1,13 +1,18 @@
 <script lang="ts">
-	import WorkSurfaceDock from '$lib/components/WorkSurfaceDock.svelte';
-	import WorkSurfaceIndicator from '$lib/components/WorkSurfaceIndicator.svelte';
-	import { spawnSurface, attachToSurface, setStatus } from '$lib/data/surfaces.svelte';
+	import {
+		WorkSurfaceComposerChrome,
+		spawnSurface,
+		attachToSurface,
+		setStatus,
+		type WorkSurfaceDockMode
+	} from '$lib/work-surface';
 	import { workSurfaceSeed } from '$lib/data/workSurfaceSeed';
 	import { onMount } from 'svelte';
 
 	// Bind these into the dock so our buttons actually drive it.
-	let dockMode = $state<'badge' | 'rail' | 'sheet'>('badge');
+	let dockMode = $state<WorkSurfaceDockMode>('badge');
 	let dockOpenSurfaceId = $state<string | null>(null);
+	let dockSheetReturnMode = $state<WorkSurfaceDockMode>('badge');
 
 	// Capture the real surfaceIds returned by spawnSurface so we can target the
 	// right one when jumping straight into 'sheet' mode (the seed *message* id
@@ -19,6 +24,7 @@
 	function openSheetFor(id: string | null) {
 		if (!id) return;
 		dockOpenSurfaceId = id;
+		dockSheetReturnMode = dockMode === 'inline' ? 'inline' : 'badge';
 		dockMode = 'sheet';
 	}
 
@@ -55,12 +61,25 @@
 			↓ This is the composer indicator. It shows work-state. Tap it to jump to the
 			most-important surface.
 		</p>
-		<div class="mt-2 flex flex-wrap gap-2">
-			<WorkSurfaceIndicator bind:mode={dockMode} bind:openSurfaceId={dockOpenSurfaceId} />
+		<div class="mt-2 max-w-md">
+			<WorkSurfaceComposerChrome
+				elevated={false}
+				bind:mode={dockMode}
+				bind:openSurfaceId={dockOpenSurfaceId}
+				bind:sheetReturnMode={dockSheetReturnMode}
+			/>
+		</div>
+
+		<div class="mt-4 flex flex-wrap gap-2">
+			<button
+				type="button"
+				class="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-foreground hover:bg-card"
+				onclick={() => (dockMode = 'rail')}>Open rail</button
+			>
 		</div>
 
 		<!-- Direct Sheet buttons (for manual demo) -->
-		<div class="mt-4 flex flex-wrap gap-2">
+		<div class="mt-2 flex flex-wrap gap-2">
 			<button
 				type="button"
 				class="rounded-full border border-brand bg-brand/10 px-3 py-1.5 text-xs text-foreground hover:bg-brand/20"
@@ -78,6 +97,4 @@
 			>
 		</div>
 	</div>
-	<!-- The dock component for rendering rail/sheet views -->
-	<WorkSurfaceDock bind:mode={dockMode} bind:openSurfaceId={dockOpenSurfaceId} />
 </div>
