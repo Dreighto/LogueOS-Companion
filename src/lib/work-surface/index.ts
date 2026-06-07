@@ -23,3 +23,4 @@ export { default as WorkSurfaceInlinePanel } from '$lib/work-surface/WorkSurface
 export { default as WorkSurfaceChatAnchor } from '$lib/work-surface/WorkSurfaceChatAnchor.svelte';
 export { default as WorkSurfaceDock } from '$lib/work-surface/WorkSurfaceDock.svelte';
 export { default as WorkSurfaceComposerChrome } from '$lib/work-surface/WorkSurfaceComposerChrome.svelte';
+export { default as DispatchCard } from '$lib/work-surface/DispatchCard.svelte';

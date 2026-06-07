@@ -1103,6 +1103,7 @@
 				}}
 				{ensureDispatchStream}
 				{fmtTime}
+				{traceToSurface}
 			/>
 		</div>
 

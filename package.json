@@ -67,11 +67,13 @@
 		"@fontsource-variable/inter": "^5.2.8",
 		"ai": "^6.0.191",
 		"better-sqlite3": "^12.10.0",
+		"bits-ui": "^2.18.1",
 		"dompurify": "^3.4.5",
 		"heic-convert": "^2.1.0",
 		"highlight.js": "^11.11.1",
 		"lucide-svelte": "^1.0.1",
 		"marked": "^18.0.4",
+		"svelte-gestures": "^5.2.2",
 		"web-push": "^3.6.7",
 		"ws": "^8.20.1"
 	}

@@ -17,6 +17,8 @@
 	// back via callback props.
 
 	import { base } from '$app/paths';
+	import { page } from '$app/stores';
+	import { DispatchCard, surfaceStore } from '$lib/work-surface';
 	import WorkingBubble from '$lib/components/WorkingBubble.svelte';
 	import SullyAvatar from '$lib/components/SullyAvatar.svelte';
 	import SullyNameTag from '$lib/components/SullyNameTag.svelte';
@@ -58,7 +60,8 @@
 		openCanvas,
 		onimagepreview,
 		ensureDispatchStream,
-		fmtTime
+		fmtTime,
+		traceToSurface
 	}: {
 		messages: ChatMessage[];
 		streamState: StreamState;
@@ -83,6 +86,7 @@
 			traceId: string
 		) => ReturnType<typeof import('$lib/chat/dispatchStream.svelte').createDispatchStream>;
 		fmtTime: (iso: string) => string;
+		traceToSurface: Record<string, string>;
 	} = $props();
 
 	// Friendly labels for the tool-call chips shown while Sully works, instead of
@@ -124,16 +128,32 @@
 		{#if !(streamState?.placeholderId === m.id && m.message === '')}
 			{#if m.sender === 'system' && m.trace_id?.startsWith('sully-')}
 				<!-- Dispatch hand-off: the morphing Task card IS the whole element
-				     (no LOGUEOS text bubble, no Copy/Regen footer) — one seamless unit. -->
+				     (no LOGUEOS text bubble, no Copy/Regen footer) — one seamless unit.
+				     ensureDispatchStream() runs as side-effect: opens SSE + onActive
+				     spawns the surface in surfaceStore. Result `ctrl` is used by the
+				     fallback WorkingBubble path. -->
 				{@const ctrl = ensureDispatchStream(m.trace_id)}
-				<div class="flex flex-col items-start gap-1">
-					<WorkingBubble
-						worker={m.trace_id.includes('agy') ? 'gemini' : 'claude-code'}
-						rows={ctrl.rows}
-						status={ctrl.status}
-						durationLabel={ctrl.durationLabel}
-					/>
-				</div>
+				{@const useInline = $page.url.searchParams.get('inline-dispatch') === '1'}
+				{@const surfaceId = useInline ? traceToSurface[m.trace_id] : undefined}
+				{@const surface = surfaceId
+					? surfaceStore.items.find((s) => s.surfaceId === surfaceId)
+					: null}
+				{#if useInline && surface}
+					<!-- Flag-on path (Phase 1+2): DispatchCard inline in the message feed -->
+					<div class="w-full">
+						<DispatchCard {surface} message={m} />
+					</div>
+				{:else}
+					<!-- Default path: existing dispatch chip (unchanged) -->
+					<div class="flex flex-col items-start gap-1">
+						<WorkingBubble
+							worker={m.trace_id.includes('agy') ? 'gemini' : 'claude-code'}
+							rows={ctrl.rows}
+							status={ctrl.status}
+							durationLabel={ctrl.durationLabel}
+						/>
+					</div>
+				{/if}
 			{:else}
 				<div class="flex flex-col gap-1 {m.sender === 'operator' ? 'items-end' : 'items-start'}">
 					<!-- Custom Labeling / Bubble Headers -->
