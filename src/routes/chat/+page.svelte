@@ -41,8 +41,12 @@
 	import Composer from '$lib/components/Composer.svelte';
 	import {
 		WorkSurfaceComposerChrome,
+		spawnSurface,
+		setStatus,
 		type WorkSurfaceDockMode
 	} from '$lib/work-surface';
+	import { buildInitialTaskFromProposal } from '$lib/work-surface/chatBridge.svelte';
+	import type { SurfaceStatus } from '$lib/types/workSurface';
 	import VoiceMode from '$lib/components/VoiceMode.svelte';
 	import MessageFeed from '$lib/components/MessageFeed.svelte';
 	import ImageLightbox from '$lib/components/ImageLightbox.svelte';
@@ -138,9 +142,23 @@
 	// and the row re-renders when `messages` changes — so this map needn't react.
 	const dispatchStreams: Record<string, ReturnType<typeof createDispatchStream>> = {};
 
+	// Work-surface spawn registry: trace_id → surface_id. Phase 2 wire-up so the
+	// pill appears on dispatch Run and settles on stream terminal. Map outlives
+	// individual dispatch streams; the value is the surfaceId returned by
+	// spawnSurface() at confirmProposal('run').
+	const traceToSurface: Record<string, string> = {};
+
 	function ensureDispatchStream(traceId: string) {
 		if (dispatchStreams[traceId]) return dispatchStreams[traceId];
-		const ctrl = createDispatchStream(traceId);
+		const ctrl = createDispatchStream(traceId, {
+			onTerminal: (streamStatus) => {
+				const surfaceId = traceToSurface[traceId];
+				if (!surfaceId) return;
+				const next: SurfaceStatus =
+					streamStatus === 'failed' || streamStatus === 'error' ? 'failed' : 'done';
+				setStatus(surfaceId, next);
+			}
+		});
 		ctrl.start();
 		dispatchStreams[traceId] = ctrl;
 		return ctrl;
@@ -508,6 +526,34 @@
 		messages = messages.map((x) =>
 			x.id === m.id ? { ...x, status: decision === 'run' ? 'approved' : 'denied' } : x
 		);
+
+		// Spawn the work surface BEFORE the network round-trip so the pill
+		// appears instantly on Run (Dynamic Island feel). Guard against double-
+		// spawn on double-tap. Title prefers the previous operator request when
+		// available; falls back to the proposal text itself.
+		if (decision === 'run' && !traceToSurface[taskId]) {
+			const i = messages.findIndex((x) => x.id === m.id);
+			const prior =
+				i > 0
+					? messages
+							.slice(0, i)
+							.reverse()
+							.find((x) => x.sender === 'operator')
+					: null;
+			const surfaceId = spawnSurface(
+				String(m.id),
+				buildInitialTaskFromProposal({
+					traceId: taskId,
+					threadId: threadsCtrl.activeThread,
+					requestText: prior?.message,
+					proposalText: m.message
+				})
+			);
+			traceToSurface[taskId] = surfaceId;
+			// Ensure the SSE stream is open so onTerminal fires when the worker lands.
+			ensureDispatchStream(taskId);
+		}
+
 		try {
 			await fetch(resolve('/api/chat/dispatch/confirm'), {
 				method: 'POST',

@@ -1,0 +1,106 @@
+// Chat ↔ Work Surface bridge. Builds the initial WorkSurfaceTask projection
+// from a dispatch proposal so the pill appears instantly on Run. Richer
+// projection (stage transitions, live worker step text) is the follow-up
+// pass — for now this is Path A: spawn-on-confirm, settle-on-terminal.
+//
+// Title extraction prefers the previous operator request when available
+// (the proposal text is Sully's "want me to dispatch this?" — not the task
+// itself). Falls back to compactGlanceTitle of the proposal.
+
+import type {
+	WorkSurfaceTask,
+	TaskWorker,
+	PipelineStage,
+	StageStep,
+	RoutingGraph
+} from '$lib/types/workSurface';
+import { compactGlanceTitle } from '$lib/utils/glanceText';
+
+const PIPELINE_STAGES: PipelineStage[] = ['Read', 'Research', 'Build', 'Check', 'Approve', 'Reply'];
+
+const WORKER_TEMPLATES: Record<string, Omit<TaskWorker, 'status' | 'step'>> = {
+	'claude-code': {
+		identity: 'claude-code',
+		shortCode: 'CC',
+		display: 'Claude Code',
+		role: 'Build'
+	},
+	antigravity: {
+		identity: 'antigravity',
+		shortCode: 'AGY',
+		display: 'Antigravity',
+		role: 'Build'
+	},
+	gemini: { identity: 'gemini', shortCode: 'GMI', display: 'Gemini', role: 'Build' },
+	codex: { identity: 'codex', shortCode: 'CDX', display: 'Codex', role: 'Review' },
+	deepseek: { identity: 'deepseek', shortCode: 'DPSK', display: 'DeepSeek', role: 'Build' }
+};
+
+/** Read `@cc / @agy / @gemini` mentions from the proposal text. Default to CC. */
+function inferWorkerIdentity(text: string): string {
+	const lower = text.toLowerCase();
+	if (lower.includes('@cc') || lower.includes('claude code')) return 'claude-code';
+	if (lower.includes('@agy') || lower.includes('antigravity')) return 'antigravity';
+	if (lower.includes('@gmi') || lower.includes('@gemini')) return 'gemini';
+	if (lower.includes('@cdx') || lower.includes('codex')) return 'codex';
+	if (lower.includes('@dpsk') || lower.includes('deepseek')) return 'deepseek';
+	return 'claude-code';
+}
+
+function makeStageProgress(): StageStep[] {
+	return PIPELINE_STAGES.map((stage, i) => ({
+		stage,
+		status: i === 0 ? 'active' : 'pending'
+	}));
+}
+
+function makeRouting(workerId: string): RoutingGraph {
+	return {
+		nodes: [
+			{ id: 'core', kind: 'core', status: 'active' },
+			{ id: workerId, kind: 'worker', role: 'Build', status: 'active' }
+		],
+		edges: [{ from: workerId, to: 'core', active: true, dispatch_active: true }]
+	};
+}
+
+export interface InitialTaskInput {
+	traceId: string;
+	threadId?: string | null;
+	/** The operator's original request (preferred — used as title). */
+	requestText?: string;
+	/** Sully's proposal text — used for worker inference + title fallback. */
+	proposalText: string;
+}
+
+/** Build a minimal initial WorkSurfaceTask. State=Reading, stage=Read, one active worker. */
+export function buildInitialTaskFromProposal(input: InitialTaskInput): WorkSurfaceTask {
+	const workerId = inferWorkerIdentity(input.proposalText);
+	const template = WORKER_TEMPLATES[workerId] ?? WORKER_TEMPLATES['claude-code'];
+	const worker: TaskWorker = {
+		...template,
+		status: 'active',
+		step: 'starting'
+	};
+
+	const sourceForTitle = (input.requestText || input.proposalText).trim();
+	const title = compactGlanceTitle(sourceForTitle) || 'Working';
+
+	return {
+		traceId: input.traceId,
+		threadId: input.threadId ?? null,
+		title,
+		state: 'Reading',
+		stage: 'Read',
+		stageProgress: makeStageProgress(),
+		workers: [worker],
+		routing: makeRouting(workerId),
+		block: null,
+		proof: null,
+		result: null,
+		isDestructive: false,
+		startedAt: new Date().toISOString(),
+		endedAt: null,
+		ticketId: null
+	};
+}

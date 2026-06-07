@@ -35,8 +35,15 @@ function fmtDuration(startIso: string | null, endIso: string | null): string | n
 	return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+export interface DispatchStreamOpts {
+	/** Called once when the stream reaches a terminal status (done/failed/error).
+	 *  Fires from both SSE __terminal__ frames AND reconcile() seeing a finished
+	 *  job. Idempotent: guarded so it only fires once per controller. */
+	onTerminal?: (status: string) => void;
+}
+
 // Factory: expose $state via GETTERS (codebase convention for runes modules).
-export function createDispatchStream(traceId: string) {
+export function createDispatchStream(traceId: string, opts?: DispatchStreamOpts) {
 	let rows = $state<StreamRow[]>([]);
 	let status = $state('working');
 	let resultRef = $state<string | null>(null);
@@ -46,6 +53,13 @@ export function createDispatchStream(traceId: string) {
 	let es: EventSource | null = null;
 	let removeAppResume: (() => void) | null = null;
 	let listening = false;
+	let terminalFired = false;
+
+	function fireTerminal() {
+		if (terminalFired) return;
+		terminalFired = true;
+		opts?.onTerminal?.(status);
+	}
 
 	function ingest(
 		seq: number,
@@ -63,6 +77,7 @@ export function createDispatchStream(traceId: string) {
 			resultRef = data.result_ref ?? null;
 			if (data.started_at) startedAtIso = data.started_at;
 			if (data.ended_at) endedAtIso = data.ended_at;
+			fireTerminal();
 			return;
 		}
 		const merged = reconcileRows(
@@ -115,6 +130,7 @@ export function createDispatchStream(traceId: string) {
 				resultRef = b.job.result_ref ?? null;
 				startedAtIso = b.job.started_at ?? startedAtIso;
 				endedAtIso = b.job.ended_at ?? endedAtIso;
+				fireTerminal();
 			}
 		} catch {
 			/* offline; SSE will catch up */
