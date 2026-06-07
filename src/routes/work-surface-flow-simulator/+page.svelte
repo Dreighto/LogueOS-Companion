@@ -21,23 +21,17 @@
 	// Every transition is emitted to the trajectory log on the right — that's
 	// what the local-Sully QLoRA corpus would see during training.
 
-	import WorkSurfaceCard from '$lib/components/WorkSurfaceCard.svelte';
-	import WorkSurfaceIndicator from '$lib/components/WorkSurfaceIndicator.svelte';
-	import StageTimeline from '$lib/components/StageTimeline.svelte';
-	import WorkGraph from '$lib/components/WorkGraph.svelte';
-	import PhaseChecklist from '$lib/components/PhaseChecklist.svelte';
-	import WorkerRegistry from '$lib/components/WorkerRegistry.svelte';
-	import ProofCard from '$lib/components/ProofCard.svelte';
-	import { slide } from 'svelte/transition';
+	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import {
+		WorkSurfaceComposerChrome,
+		createWorkSurfaceView,
 		spawnSurface,
 		attachToSurface,
 		setStatus,
 		removeSurface,
-		running,
-		needsYou,
-		done as doneList
-	} from '$lib/data/surfaces.svelte';
+		type WorkSurfaceDockMode
+	} from '$lib/work-surface';
 	import type {
 		WorkSurfaceTask,
 		TaskWorker,
@@ -69,8 +63,9 @@
 
 	// Start in 'badge' so the dock is dormant until the script spawns the
 	// first surface; the script flips to 'sheet' at t=0 in the first step.
-	let dockMode = $state<'badge' | 'rail' | 'sheet'>('badge');
+	let dockMode = $state<WorkSurfaceDockMode>('badge');
 	let dockOpenSurfaceId = $state<string | null>(null);
+	let dockSheetReturnMode = $state<WorkSurfaceDockMode>('badge');
 
 	const elapsedMs = $state({ value: 0 });
 
@@ -105,8 +100,11 @@
 		step: 'queued'
 	};
 
-	function makeStageProgress(current: PipelineStage): StageStep[] {
+	function makeStageProgress(current: PipelineStage, state: TaskState): StageStep[] {
 		const order: PipelineStage[] = ['Read', 'Research', 'Build', 'Check', 'Approve', 'Reply'];
+		if (state === 'Complete') {
+			return order.map((s) => ({ stage: s, status: 'done' as const }));
+		}
 		const ci = order.indexOf(current);
 		return order.map((s, i) => ({
 			stage: s,
@@ -185,15 +183,21 @@
 		stage: PipelineStage;
 		activeWorkerId: string | null;
 		doneWorkerIds: string[];
+		activeStepOverride?: string;
 	}): WorkSurfaceTask {
+		const workers = makeWorkers(opts.activeWorkerId, opts.doneWorkerIds).map((w) =>
+			opts.activeStepOverride && opts.activeWorkerId === w.identity
+				? { ...w, step: opts.activeStepOverride }
+				: w
+		);
 		return {
 			traceId: 'sim-helloworld-2026-06-06',
 			threadId: null,
 			title: 'Make a webpage with a hello world button',
 			state: opts.state,
 			stage: opts.stage,
-			stageProgress: makeStageProgress(opts.stage),
-			workers: makeWorkers(opts.activeWorkerId, opts.doneWorkerIds),
+			stageProgress: makeStageProgress(opts.stage, opts.state),
+			workers,
 			routing: makeRouting(opts.activeWorkerId),
 			block: opts.state === 'Waiting' ? { kind: 'approval', targetPath: 'hello-world.html' } : null,
 			proof: opts.state === 'Complete' ? { verdict: 'go', checks: [] } : null,
@@ -229,8 +233,9 @@
 				});
 				surfaceId = spawnSurface('sim-msg', t);
 				setStatus(surfaceId, 'running');
-				dockOpenSurfaceId = surfaceId;
-				dockMode = 'sheet';
+				// Stay collapsed — operator opens the sheet only when they want to look.
+				dockOpenSurfaceId = null;
+				dockMode = 'badge';
 			},
 			emit: 'surface_spawn',
 			data: { surfaceId: 'spawned', state: 'Reading' }
@@ -253,6 +258,24 @@
 			data: { state: 'Working', stage: 'Research', activeWorker: 'CC' }
 		},
 		{
+			at: 6500,
+			label: 'CC validating research · faster breath',
+			apply: () => {
+				if (!surfaceId) return;
+				attachToSurface(surfaceId, {
+					task: makeTask({
+						state: 'Working',
+						stage: 'Research',
+						activeWorkerId: 'claude-code',
+						doneWorkerIds: [],
+						activeStepOverride: 'Validating research coverage'
+					})
+				});
+			},
+			emit: 'state_change',
+			data: { stage: 'Research', activeWorker: 'CC', step: 'finishing' }
+		},
+		{
 			at: 8000,
 			label: 'CC done · AGY dispatched · Build stage',
 			apply: () => {
@@ -268,6 +291,24 @@
 			},
 			emit: 'worker_change',
 			data: { stage: 'Build', activeWorker: 'AGY', doneWorkers: ['CC'] }
+		},
+		{
+			at: 14000,
+			label: 'AGY running final build checks · faster breath',
+			apply: () => {
+				if (!surfaceId) return;
+				attachToSurface(surfaceId, {
+					task: makeTask({
+						state: 'Working',
+						stage: 'Build',
+						activeWorkerId: 'antigravity',
+						doneWorkerIds: ['claude-code'],
+						activeStepOverride: 'Running final build checks'
+					})
+				});
+			},
+			emit: 'state_change',
+			data: { stage: 'Build', activeWorker: 'AGY', step: 'finishing' }
 		},
 		{
 			at: 16000,
@@ -301,6 +342,9 @@
 						doneWorkerIds: ['claude-code', 'antigravity', 'codex']
 					})
 				});
+				// Needs-you earns attention — expand inline in chat (not full sheet).
+				dockOpenSurfaceId = surfaceId;
+				dockMode = 'inline';
 			},
 			emit: 'state_change',
 			data: { state: 'Waiting', requires: 'operator_approve' }
@@ -363,27 +407,35 @@
 		dockOpenSurfaceId = null;
 	}
 
+	function runDueSteps(elapsed: number) {
+		while (nextStepIdx < SCRIPT.length && SCRIPT[nextStepIdx].at <= elapsed) {
+			const step = SCRIPT[nextStepIdx];
+			step.apply();
+			if (step.emit) {
+				logEvent({
+					tMs: step.at,
+					label: step.label,
+					emit: step.emit,
+					data: step.data ?? {}
+				});
+			}
+			nextStepIdx++;
+		}
+	}
+
 	function start() {
 		reset();
 		runningScript = true;
 		scriptStartMs = Date.now();
 		const startedAt = scriptStartMs;
 
+		// Spawn the card immediately on tap — don't wait for the first interval tick.
+		elapsedMs.value = 0;
+		runDueSteps(0);
+
 		driverInterval = setInterval(() => {
 			elapsedMs.value = Date.now() - startedAt;
-			while (nextStepIdx < SCRIPT.length && SCRIPT[nextStepIdx].at <= elapsedMs.value) {
-				const step = SCRIPT[nextStepIdx];
-				step.apply();
-				if (step.emit) {
-					logEvent({
-						tMs: step.at,
-						label: step.label,
-						emit: step.emit,
-						data: step.data ?? {}
-					});
-				}
-				nextStepIdx++;
-			}
+			runDueSteps(elapsedMs.value);
 			if (nextStepIdx >= SCRIPT.length && elapsedMs.value > 40000) {
 				// End-state hold: surface fully Complete, pill in recent-complete fade
 				if (driverInterval) clearInterval(driverInterval);
@@ -393,39 +445,35 @@
 		}, 150);
 	}
 
+	onMount(() => {
+		const autostart =
+			$page.url.searchParams.get('autostart') === '1' ||
+			$page.url.searchParams.get('run') === '1';
+		if (autostart) start();
+	});
+
 	function formatMs(ms: number) {
 		const s = (ms / 1000).toFixed(1);
 		return `${s}s`;
 	}
 
-	const runningCount = $derived(running().length);
-	const needsYouCount = $derived(needsYou().length);
-	const doneCount = $derived(doneList().length);
+	const wsView = createWorkSurfaceView(() => null);
+	const runningCount = $derived(wsView.runningList.length);
+	const needsYouCount = $derived(wsView.needsYouList.length);
+	const doneCount = $derived(wsView.doneList.length);
 
-	// The current surface to render in the side-by-side view — whichever state
-	// it's in. running > needs-you > done so we always show the most-current.
-	const currentSurface = $derived.by(() => {
-		return running()[0] ?? needsYou()[0] ?? doneList()[0] ?? null;
-	});
-
-	// Accordion state — Activity (the graph view) is open by default so the
-	// operator sees the per-role node glow as the simulation runs. The other
-	// accordions stay collapsed; tap to drill in.
-	let openSections = $state<Set<string>>(new Set(['activity']));
-	function toggleSection(key: string) {
-		if (openSections.has(key)) openSections.delete(key);
-		else openSections.add(key);
-		openSections = new Set(openSections);
-	}
 </script>
 
-<div class="flex min-h-screen w-full flex-col overflow-y-auto bg-background text-foreground">
-	<div class="border-b border-border px-4 py-4">
-		<h1 class="text-lg font-semibold">Work Surface Flow Simulator</h1>
-		<p class="mt-1 text-sm text-muted-foreground">
+<div class="flex w-full flex-col bg-background text-foreground">
+	<div class="border-b border-border px-4 py-3">
+		<h1 class="text-base font-semibold sm:text-lg">Work Surface Flow Simulator</h1>
+		<p class="mt-1 hidden text-sm text-muted-foreground sm:block">
 			"Make a webpage with a hello world button" — full lifecycle in ~35s. Watch the surface breathe
 			through a real task. Every transition logs to the trajectory panel (right) — that's what the
 			local-Sully QLoRA corpus sees during training.
+		</p>
+		<p class="mt-1 text-xs text-muted-foreground sm:hidden">
+			Tap Start → pill above composer. Tap pill → card expands in chat. More detail → full view.
 		</p>
 		<div class="mt-3 flex flex-wrap items-center gap-2">
 			<button
@@ -449,133 +497,44 @@
 		</div>
 	</div>
 
-	<div class="flex flex-col gap-4 px-4 py-4 lg:flex-row">
-		<!-- The Sully surface (what the operator would see in the chat).
-		     Renders the card DIRECTLY (not through the dock's fixed sheet) so the
-		     trajectory log stays visible side-by-side. -->
-		<div class="min-h-[640px] flex-1">
-			<div class="mb-2 flex items-center gap-2">
-				<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-					Sully surface (what the operator sees)
-				</div>
-				<div class="ml-auto">
-					<WorkSurfaceIndicator bind:mode={dockMode} bind:openSurfaceId={dockOpenSurfaceId} />
+	<div class="flex flex-col gap-4 px-3 py-3 sm:px-4 sm:py-4 lg:flex-row">
+		<!-- Chat chrome mock — same collapse ladder as /companion/chat -->
+		<div class="flex-1">
+			<p class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+				Chat (simulated)
+			</p>
+			<div
+				class="iphone-glance-frame mx-auto flex min-h-[420px] w-full max-w-[393px] flex-col rounded-2xl border border-border bg-card/30"
+			>
+				<p class="mb-1.5 pt-3 text-center font-mono text-[9px] tracking-widest text-muted-foreground uppercase">
+					iPhone glance width (393px)
+				</p>
+				<div class="flex flex-1 flex-col justify-end px-3 pb-3">
+					<div class="mb-3 rounded-2xl border border-border/60 bg-surface/40 px-3 py-2 text-xs text-muted-foreground">
+						{#if runningCount > 0 || needsYouCount > 0}
+							Chat continues here while work runs in the background.
+						{:else}
+							Press <b>Start simulation</b>. When work starts, a pill appears above the composer.
+						{/if}
+					</div>
+					<WorkSurfaceComposerChrome
+						embedded
+						elevated={false}
+						bind:mode={dockMode}
+						bind:openSurfaceId={dockOpenSurfaceId}
+						bind:sheetReturnMode={dockSheetReturnMode}
+					/>
+					<div
+						class="rounded-full border border-border bg-surface/80 px-4 py-3 text-sm text-muted-foreground"
+					>
+						Message Sully…
+					</div>
 				</div>
 			</div>
-			{#if currentSurface}
-				<div class="rounded-xl border border-border bg-card p-4">
-					<WorkSurfaceCard task={currentSurface.task} footprint="expanded" />
-				</div>
-
-				<!-- Detail accordions — same shape the chat sheet will use. Activity
-				     starts OPEN by default so the graph (with per-role node glow) is
-				     visible as the simulation runs. -->
-				<div class="mt-4 space-y-2">
-					<button
-						type="button"
-						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
-						aria-expanded={openSections.has('timeline')}
-						onclick={() => toggleSection('timeline')}
-					>
-						<span class="font-semibold text-foreground">
-							{openSections.has('timeline') ? '▾' : '▸'} Timeline
-						</span>
-						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
-					</button>
-					{#if openSections.has('timeline')}
-						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
-							<StageTimeline task={currentSurface.task} />
-						</div>
-					{/if}
-
-					<button
-						type="button"
-						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
-						aria-expanded={openSections.has('activity')}
-						onclick={() => toggleSection('activity')}
-					>
-						<span class="font-semibold text-foreground">
-							{openSections.has('activity') ? '▾' : '▸'} Activity
-						</span>
-						<span class="text-xs text-muted-foreground">Graph · per-role glow</span>
-					</button>
-					{#if openSections.has('activity')}
-						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
-							<WorkGraph task={currentSurface.task} />
-						</div>
-					{/if}
-
-					<button
-						type="button"
-						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
-						aria-expanded={openSections.has('phases')}
-						onclick={() => toggleSection('phases')}
-					>
-						<span class="font-semibold text-foreground">
-							{openSections.has('phases') ? '▾' : '▸'} Routing Phases ({currentSurface.task
-								.stageProgress?.length ?? 0})
-						</span>
-						<span class="text-xs text-muted-foreground">{currentSurface.task.stage}</span>
-					</button>
-					{#if openSections.has('phases')}
-						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
-							<PhaseChecklist task={currentSurface.task} />
-						</div>
-					{/if}
-
-					<button
-						type="button"
-						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
-						aria-expanded={openSections.has('workers')}
-						onclick={() => toggleSection('workers')}
-					>
-						<span class="font-semibold text-foreground">
-							{openSections.has('workers') ? '▾' : '▸'} Worker Registry ({currentSurface.task
-								.workers?.length ?? 0})
-						</span>
-						<span class="text-xs text-muted-foreground">
-							{currentSurface.task.workers?.[0]?.shortCode ?? '—'}
-							{(currentSurface.task.workers?.length ?? 0) > 1
-								? `+${(currentSurface.task.workers?.length ?? 1) - 1}`
-								: ''}
-						</span>
-					</button>
-					{#if openSections.has('workers')}
-						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
-							<WorkerRegistry task={currentSurface.task} />
-						</div>
-					{/if}
-
-					<button
-						type="button"
-						class="flex min-h-[44px] w-full items-center justify-between rounded-lg bg-surface/50 px-4 py-3 text-left text-sm hover:bg-surface"
-						aria-expanded={openSections.has('proof')}
-						onclick={() => toggleSection('proof')}
-					>
-						<span class="font-semibold text-foreground">
-							{openSections.has('proof') ? '▾' : '▸'} Proof
-						</span>
-						<span class="text-xs text-muted-foreground">
-							{currentSurface.task.proof?.verdict ?? 'pending'}
-						</span>
-					</button>
-					{#if openSections.has('proof') && currentSurface.task.proof}
-						<div transition:slide={{ duration: 200 }} class="px-1 pb-2">
-							<ProofCard task={currentSurface.task} />
-						</div>
-					{/if}
-				</div>
-			{:else}
-				<div class="rounded-xl border border-border bg-card/40 p-8 text-center">
-					<p class="text-sm text-muted-foreground">
-						Press <b>Start simulation</b>. The surface will spawn here as Sully decides to dispatch.
-					</p>
-				</div>
-			{/if}
 		</div>
 
-		<!-- Trajectory log (what the QLoRA corpus sees) -->
-		<div class="min-h-[640px] w-full max-w-md flex-none">
+		<!-- Trajectory log (desktop / wide only — hidden on phone so the card stays in view) -->
+		<div class="hidden min-h-[320px] w-full max-w-md flex-none lg:block">
 			<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 				Trajectory log (QLoRA corpus view)
 			</div>
@@ -606,4 +565,5 @@
 			</div>
 		</div>
 	</div>
+
 </div>

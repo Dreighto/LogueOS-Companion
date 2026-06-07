@@ -1,5 +1,11 @@
 <script lang="ts">
 	import type { WorkSurfaceTask, GraphNode, GraphEdge, WorkerRole } from '$lib/types/workSurface';
+	import {
+		packetGlideDuration,
+		workerBrandColor,
+		workerBreathDelay,
+		workerBreathFinishing
+	} from '$lib/utils/workerVisual';
 	import WorkerIconSprite from './WorkerIconSprite.svelte';
 
 	let { task }: { task: WorkSurfaceTask } = $props();
@@ -9,6 +15,8 @@
 	const CORE_FIELD_RADII = [17, 20, 23, 26, 29, 32];
 	const NODE_ICON_SIZE = 22; // For worker icons inside circles
 	const PACKET_SIZE = 12;
+	const WORKER_EDGE_R = 18; // trim routes to node rim (node-circle r=17)
+	const CORE_EDGE_R = 21; // trim routes to TASK rim (central-task-node r=20)
 
 	// §3a. Layout (EASY — port the lookup table verbatim)
 	function getWorkerPositions(count: number) {
@@ -42,17 +50,46 @@
 		];
 	}
 
+	// Trim a center-to-center segment so the lane terminates on node rims (reads as connect,
+	// not lines piercing circles).
+	function trimEndpoints(
+		sx: number,
+		sy: number,
+		ex: number,
+		ey: number,
+		startR: number,
+		endR: number
+	): { sx: number; sy: number; ex: number; ey: number } {
+		const dx = ex - sx;
+		const dy = ey - sy;
+		const len = Math.hypot(dx, dy);
+		if (len <= startR + endR) {
+			return { sx, sy, ex, ey };
+		}
+		const ux = dx / len;
+		const uy = dy / len;
+		return {
+			sx: sx + ux * startR,
+			sy: sy + uy * startR,
+			ex: ex - ux * endR,
+			ey: ey - uy * endR
+		};
+	}
+
 	// §3b. Edge paths (EASY — pure function)
 	function pathD(sx: number, sy: number, ex: number, ey: number): string {
+		const trimmed = trimEndpoints(sx, sy, ex, ey, WORKER_EDGE_R, CORE_EDGE_R);
+		sx = trimmed.sx;
+		sy = trimmed.sy;
+		ex = trimmed.ex;
+		ey = trimmed.ey;
+
 		if (sy === ey) {
-			// Straight line for horizontal paths
 			return `M ${sx} ${sy} L ${ex} ${ey}`;
-		} else {
-			// Quadratic bezier for curved paths, bowing away from the task core (y=65) by 10px
-			const midX = (sx + ex) / 2;
-			const ctrlY = sy < TASK_CORE_POS.y ? sy - 10 : sy + 10;
-			return `M ${sx} ${sy} Q ${midX} ${ctrlY} ${ex} ${ey}`;
 		}
+		const midX = (sx + ex) / 2;
+		const ctrlY = sy < TASK_CORE_POS.y ? sy - 10 : sy + 10;
+		return `M ${sx} ${sy} Q ${midX} ${ctrlY} ${ex} ${ey}`;
 	}
 
 	const workerPositions = $derived(getWorkerPositions(task.workers.length));
@@ -63,6 +100,9 @@
 			id: worker.identity,
 			kind: 'worker' as const,
 			pos: workerPositions[i] || { x: 0, y: 0 }, // Fallback for more workers than positions
+			isBreathing: worker.status === 'active',
+			isBreathFinishing: workerBreathFinishing(worker),
+			breathDelay: workerBreathDelay(i),
 			motionType: ((): 'researching' | 'building' | 'verifying' | 'idle' => {
 				switch (worker.role) {
 					case 'Research':
@@ -144,22 +184,6 @@
 		}
 	}
 
-	// Per-identity brand colour (operator-locked 2026-06-06):
-	//   CC=orange · AGY=purple · CDX=gray · DPSK=blue · GMI=light blue · CUR=warm gray
-	// The active worker glow on the graph node uses THIS, set inline as
-	// the --worker-color custom property. Mirrors WorkerRow's mapping.
-	function workerBrandColor(identity?: string, shortCode?: string): string {
-		const id = (identity || '').toLowerCase();
-		const code = (shortCode || '').toUpperCase();
-		if (id === 'claude-code' || code === 'CC') return '#f97316';
-		if (id === 'antigravity' || code === 'AGY') return '#a855f7';
-		if (id === 'codex' || code === 'CDX') return '#9ca3af';
-		if (id === 'deepseek' || code === 'DPSK') return '#3b82f6';
-		if (id === 'gemini' || code === 'GMI') return '#60a5fa';
-		if (id === 'cursor' || code === 'CUR') return '#a8a29e';
-		return 'var(--color-status-blue)';
-	}
-
 	const allRoutes = $derived.by(() => {
 		if (task.state === 'Complete' || task.state === 'Stopped' || task.state === 'Failed') {
 			return []; // No active routes or packets when settled
@@ -232,25 +256,42 @@
 						: 'icon-system';
 
 				const isDispatchActive = edge.dispatchActive ?? edge.dispatch_active ?? false;
+				const workerColor = sourceWorker
+					? workerBrandColor(sourceWorker.identity, sourceWorker.shortCode)
+					: 'var(--color-muted-foreground)';
 				return {
 					id: `${edge.from}-${edge.to}`,
 					from: edge.from,
 					to: edge.to,
 					pathD: currentPathD,
+					x1: sx,
+					y1: sy,
+					x2: ex,
+					y2: ey,
 					active: edge.active,
 					dispatchActive: isDispatchActive,
 					dispatch_active: isDispatchActive,
 					isPrimary: isPrimary,
+					isWorkerToCore,
 					hasSweep: isPrimary && edge.active && activeMotionType !== undefined, // Sweep only for active primary routes
 					motionType: workerInRoute?.motionType,
 					packets: packets,
 					isInputEdge: false, // Default, handled below
 					isSpecialSystemEdge: false, // Default
-					fromIcon
+					fromIcon,
+					workerColor
 				};
 			})
 			.filter((r): r is NonNullable<typeof r> => r !== null); // Filter out nulls from missing nodes
 	});
+
+	const activeDispatchRoute = $derived(
+		allRoutes.find((route) => route.isPrimary && route.dispatch_active && route.isWorkerToCore)
+	);
+	const taskLandDuration = $derived(packetGlideDuration(activeDispatchRoute?.motionType));
+	const taskReceiverColor = $derived(
+		activeDispatchRoute?.workerColor ?? 'var(--color-st-run)'
+	);
 </script>
 
 <div
@@ -269,6 +310,36 @@
 		(task.state as string) === 'Idle'}
 	viewBox={WORK_GRAPH_VIEWBOX}
 >
+	<defs>
+		<marker
+			id="edge-flow-arrow"
+			viewBox="0 0 10 10"
+			refX="8"
+			refY="5"
+			markerWidth="5"
+			markerHeight="5"
+			orient="auto"
+		>
+			<path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" opacity="0.9" />
+		</marker>
+		{#each allRoutes as route (route.id)}
+			{#if route.isWorkerToCore}
+				<linearGradient
+					id="edge-grad-{route.id}"
+					gradientUnits="userSpaceOnUse"
+					x1={route.x1}
+					y1={route.y1}
+					x2={route.x2}
+					y2={route.y2}
+				>
+					<stop offset="0%" stop-color={route.workerColor} stop-opacity="0.25" />
+					<stop offset="72%" stop-color={route.workerColor} stop-opacity="0.55" />
+					<stop offset="100%" stop-color="var(--color-st-run)" stop-opacity="0.95" />
+				</linearGradient>
+			{/if}
+		{/each}
+	</defs>
+
 	<!-- 1. Core field rings -->
 	{#each CORE_FIELD_RADII as r}
 		<circle class="core-field" {r} cx={TASK_CORE_POS.x} cy={TASK_CORE_POS.y} />
@@ -276,15 +347,33 @@
 
 	<!-- 2. Routes (backing, base, sweep, packets) -->
 	{#each allRoutes as route (route.id)}
+		{#if route.isWorkerToCore}
+			<!-- Static lane: every worker shows a faint directed path into TASK -->
+			<path
+				class="edge-lane {route.isPrimary && route.active ? 'lane-primary' : 'lane-idle'}"
+				d={route.pathD}
+				marker-end="url(#edge-flow-arrow)"
+			/>
+		{/if}
 		{#if route.isPrimary && route.active}
 			<path class="edge-line-backing" d={route.pathD} />
 		{/if}
 		<path
-			class="edge-line {route.isPrimary ? '' : 'secondary-active'} {route.active ? 'active' : ''}"
+			class="edge-line {route.isPrimary ? 'primary-route' : 'secondary-active'} {route.active
+				? 'active'
+				: ''} {route.isWorkerToCore ? 'worker-to-core' : ''}"
 			d={route.pathD}
+			style:stroke={route.isWorkerToCore && route.isPrimary && route.active
+				? `url(#edge-grad-${route.id})`
+				: undefined}
+			marker-end={route.isWorkerToCore ? 'url(#edge-flow-arrow)' : undefined}
 		/>
 		{#if route.hasSweep && route.motionType && route.dispatch_active}
-			<path class="edge-sweep-line {route.motionType}" d={route.pathD} />
+			<path
+				class="edge-sweep-line {route.motionType}"
+				d={route.pathD}
+				style:stroke={route.workerColor}
+			/>
 		{/if}
 		{#if route.dispatch_active}
 			{#each route.packets as p, i (i)}
@@ -292,6 +381,7 @@
 					class="node-icon-wrapper {p.motionType}"
 					style:offset-path={`path("${route.pathD}")`}
 					style:animation-delay={p.delay}
+					style:--packet-color={route.workerColor}
 				>
 					<use href="#{route.fromIcon}" x={-5} y={-5} width={10} height={10} class="packet-shape" />
 				</g>
@@ -303,11 +393,17 @@
 	     Research/Memory/Vision = cyan; Build = purple; else (Review/Verify/etc.) = orange. -->
 	{#each enrichedWorkers as worker (worker.id)}
 		<g
-			class="worker-node node-group status-{worker.status.toLowerCase()}"
+			class="worker-node node-group status-{worker.status.toLowerCase()} {worker.isBreathing
+				? 'worker-breath'
+				: ''} {worker.isBreathFinishing ? 'worker-surface-breath--finishing' : ''}"
 			style:transform="translate({worker.pos.x}px, {worker.pos.y}px)"
 			style:--worker-color={workerBrandColor(worker.identity, worker.shortCode)}
+			style:--breath-delay={worker.breathDelay}
 		>
-			<circle class="node-ring" r="23" />
+			<circle
+				class="node-ring {worker.isBreathing ? 'worker-surface-ring-breath' : ''}"
+				r="23"
+			/>
 			<circle class="node-circle" r="17" />
 			<use
 				href="#{worker.icon ?? defaultIconForRole(worker.role, worker.identity, worker.shortCode)}"
@@ -315,16 +411,9 @@
 				y={-NODE_ICON_SIZE / 2}
 				width={NODE_ICON_SIZE}
 				height={NODE_ICON_SIZE}
-				class="node-icon-placeholder"
+				class="node-icon-placeholder {worker.isBreathing ? 'worker-surface-breath' : ''}"
 				style:color="var(--worker-color, var(--color-st-run))"
 			/>
-			<text
-				class="node-label"
-				x="0"
-				y={NODE_ICON_SIZE / 2 + 8}
-				text-anchor="middle"
-				dominant-baseline="hanging">{worker.shortCode}</text
-			>
 		</g>
 	{/each}
 
@@ -345,24 +434,27 @@
 				class="node-icon-placeholder"
 				style:color="var(--color-muted-foreground)"
 			/>
-			<text
-				class="node-label"
-				x="0"
-				y={NODE_ICON_SIZE / 2 + 8}
-				text-anchor="middle"
-				dominant-baseline="hanging">{node.role === 'Memory' ? 'Memory' : node.role}</text
-			>
 		</g>
 	{/each}
 
 	<!-- 5. Central TASK group -->
 	<g
 		class="central-task node-group status-{task.state.toLowerCase()}"
+		class:task-receiving={taskLandDuration !== null}
 		style:transform="translate({TASK_CORE_POS.x}px, {TASK_CORE_POS.y}px)"
+		style:--land-duration={taskLandDuration ?? undefined}
+		style:--receiver-color={taskReceiverColor}
 	>
-		<circle class="central-task-node" r="20" />
+		{#if taskLandDuration}
+			<circle class="task-land-ripple" r="20" />
+		{/if}
+		<circle
+			class="central-task-node"
+			class:task-land-core-pulse={taskLandDuration !== null}
+			r="20"
+		/>
 		<use
-			href="#icon-system"
+			href="#icon-task"
 			x={-NODE_ICON_SIZE / 2}
 			y={-NODE_ICON_SIZE / 2}
 			width={NODE_ICON_SIZE}
@@ -370,13 +462,6 @@
 			class="node-icon-placeholder"
 			style:color="var(--color-on-brand)"
 		/>
-		<text
-			class="node-label"
-			x="0"
-			y={NODE_ICON_SIZE / 2 + 8}
-			text-anchor="middle"
-			dominant-baseline="hanging">TASK</text
-		>
 	</g>
 </svg>
 
@@ -407,11 +492,6 @@
 	.node-icon-placeholder {
 		transform-origin: center center;
 	}
-	.node-label {
-		@apply text-xs font-semibold text-white; /* Adjust as needed for specific nodes */
-		fill: var(--color-muted-foreground);
-		font-size: 8px; /* Matching mock's label size */
-	}
 
 	/* Core Fields */
 	.core-field {
@@ -421,20 +501,43 @@
 		opacity: 0.1;
 	}
 
-	/* Edges and Paths */
+	/* Edges and Paths — worker → TASK lanes read as directed flow */
+	.edge-lane {
+		fill: none;
+		stroke: var(--color-border);
+		stroke-width: 1.25px;
+		stroke-linecap: round;
+		pointer-events: none;
+	}
+	.edge-lane.lane-idle {
+		stroke-dasharray: 3 5;
+		opacity: 0.14;
+	}
+	.edge-lane.lane-primary {
+		stroke-dasharray: none;
+		opacity: 0.22;
+	}
+
 	.edge-line {
 		fill: none;
 		stroke: var(--color-border);
-		stroke-width: 1px;
-		opacity: 0.3;
-		transition: opacity 0.3s ease;
+		stroke-width: 1.25px;
+		stroke-linecap: round;
+		opacity: 0.22;
+		transition:
+			opacity 0.3s ease,
+			stroke-width 0.3s ease;
 	}
-	.edge-line.active {
-		opacity: 0.7;
+	.edge-line.worker-to-core.active.primary-route {
+		stroke-width: 2px;
+		opacity: 1;
+	}
+	.edge-line.active:not(.primary-route) {
+		opacity: 0.35;
 		stroke: var(--color-muted-foreground);
 	}
 	.edge-line.secondary-active {
-		opacity: 0.1;
+		opacity: 0.08;
 	}
 	.edge-line.edge-input {
 		stroke-dasharray: 4 4;
@@ -480,28 +583,20 @@
 	}
 
 	.node-icon-wrapper .packet-shape {
-		color: var(--color-st-run); /* Default packet color */
-		fill: var(--color-st-run);
+		color: var(--packet-color, var(--color-st-run));
+		fill: var(--packet-color, var(--color-st-run));
+		filter: drop-shadow(0 0 4px color-mix(in srgb, var(--packet-color, var(--color-st-run)) 55%, transparent));
 		width: 10px;
 		height: 10px;
 	}
 	.node-icon-wrapper.researching {
 		animation-duration: 7.5s; /* 3 packets * 2.5s delay */
 	}
-	.node-icon-wrapper.researching .packet-shape {
-		fill: #0ea5e9;
-	}
 	.node-icon-wrapper.building {
 		animation-duration: 2s; /* 5 packets * 0.4s delay */
 	}
-	.node-icon-wrapper.building .packet-shape {
-		fill: var(--color-status-blue);
-	}
 	.node-icon-wrapper.verifying {
 		animation-duration: 1s; /* 1 packet * 1.0s delay */
-	}
-	.node-icon-wrapper.verifying .packet-shape {
-		fill: var(--color-status-purple);
 	}
 
 	/* Central Task Node */
@@ -512,9 +607,6 @@
 		transform-box: fill-box; /* Crucial for transform-origin: center center; */
 	}
 	.central-task-node + .node-icon-placeholder {
-		fill: var(--color-on-brand);
-	}
-	.central-task-node + .node-icon-placeholder + .node-label {
 		fill: var(--color-on-brand);
 	}
 
@@ -543,6 +635,32 @@
 		stroke: var(--worker-color, var(--color-st-run));
 		stroke-width: 1;
 		opacity: 0.5;
+	}
+
+	/* worker-active: shared heartbeat classes live in app.css; stagger delay here. */
+	.work-graph .worker-node.worker-breath .node-icon-placeholder,
+	.work-graph .worker-node.worker-breath .node-ring {
+		animation-delay: var(--breath-delay, 0s);
+	}
+	.work-graph .worker-node.worker-breath.worker-surface-breath--finishing .node-icon-placeholder,
+	.work-graph .worker-node.worker-breath.worker-surface-breath--finishing .node-ring {
+		animation-duration: var(--worker-breath-duration-finishing, 1.05s);
+	}
+
+	.task-land-ripple {
+		fill: none;
+		stroke: var(--receiver-color, var(--color-st-run));
+		stroke-width: 2;
+		transform-box: fill-box;
+		transform-origin: center;
+		pointer-events: none;
+		animation: task-land-ripple var(--land-duration, 2s) ease-out infinite;
+	}
+
+	.central-task-node.task-land-core-pulse {
+		transform-box: fill-box;
+		transform-origin: center;
+		animation: task-land-core var(--land-duration, 2s) ease-out infinite;
 	}
 
 	/* Settle States for Graph Elements */

@@ -7,8 +7,10 @@
 		sans-serif;
 	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-	--color-background: #050505;
-	--color-surface: #111111;
+	/* Operator glass + build mode (Companion revamp v1) */
+	--color-background: #0a0a0b;
+	--color-surface: #141416;
+	--color-surface-raised: #1a1a1e;
 	--color-cta: #cf6f93;
 
 	/* ── Sully brand: the magenta "thought-drop" identity (companion-brand-sheet.png).
@@ -32,14 +34,15 @@
 	--color-status-purple: #a855f7;
 	--color-status-grey: #6b7280;
 
-	/* Cockpit semantic status palette — muted, dark-tuned (Work Surface dock).
-	   Pair colour with icon + label; never colour alone. Magenta is NOT here. */
-	--color-st-run: #5b8db8; /* running / active — calm blue (green reserved for done) */
-	--color-st-needs: #c9a34e; /* needs-you — muted amber (not bright yellow) */
-	--color-st-done: #6b7280; /* complete / idle — gray */
-	--color-st-fail: #c25b5b; /* failure — desaturated rose */
-	--color-edge: #2a2f3a; /* idle connector edge */
-	--color-edge-active: #3d4a63; /* active data-flow edge */
+	/* Work-surface status — zinc/white in flight; colour lives on worker brands. */
+	--color-st-run: #d4d4d8; /* in progress — neutral beam (Perplexity-style) */
+	--color-st-needs: #c9a34e; /* needs-you — muted amber */
+	--color-st-done: #71717a; /* complete / idle */
+	--color-st-fail: #c25b5b; /* failure */
+	--color-progress-beam: #f4f4f5; /* progress head / comet */
+	--color-progress-glow: rgb(255 255 255 / 0.35);
+	--color-edge: #2a2a2e;
+	--color-edge-active: #3f3f46;
 
 	--color-worker-claude: #8b5cf6;
 	--color-worker-gemini: #3b82f6;
@@ -57,7 +60,7 @@
 	--color-secondary-foreground: #ffffff;
 
 	--color-muted: #18181b;
-	--color-muted-foreground: #8b949e;
+	--color-muted-foreground: #a1a1aa;
 
 	--color-accent: #18181b;
 	--color-accent-foreground: #ffffff;
@@ -67,6 +70,7 @@
 
 	--color-border: #27272a;
 	--color-input: #27272a;
+	--color-hairline: rgb(255 255 255 / 0.09);
 	--color-ring: #cf6f93;
 
 	/* Tailwind 4 utility-class tokens — these must live in @theme (not just
@@ -74,27 +78,27 @@
      The :root block below is the legacy Tailwind 3 / shadcn convention
      kept for any components that read CSS vars directly; these @theme
      entries are what generates the actual utility classes. */
-	--color-foreground: #ffffff;
-	--color-card: #111111;
-	--color-card-foreground: #ffffff;
-	--color-popover: #111111;
+	--color-foreground: #fafafa;
+	--color-card: #141416;
+	--color-card-foreground: #fafafa;
+	--color-popover: #141416;
 	--color-popover-foreground: #ffffff;
 }
 
 @layer base {
 	:root {
-		--background: #050505;
-		--foreground: #ffffff;
-		--card: #111111;
-		--card-foreground: #ffffff;
-		--popover: #111111;
+		--background: #0a0a0b;
+		--foreground: #fafafa;
+		--card: #141416;
+		--card-foreground: #fafafa;
+		--popover: #141416;
 		--popover-foreground: #ffffff;
 		--primary: #cf6f93;
 		--primary-foreground: #ffffff;
 		--secondary: #18181b;
 		--secondary-foreground: #ffffff;
 		--muted: #18181b;
-		--muted-foreground: #8b949e;
+		--muted-foreground: #a1a1aa;
 		--accent: #18181b;
 		--accent-foreground: #ffffff;
 		--destructive: #f85149;
@@ -223,6 +227,84 @@
 			inset 0 1px 1px rgb(255 255 255 / 0.4),
 			inset 0 0 0 1px rgb(255 255 255 / 0.06),
 			0 4px 14px -4px rgb(236 45 120 / 0.55);
+	}
+
+	/* Work Surface type ramp — Linear/v0 clarity, Apple headline tracking.
+	   Scoped utilities for cockpit cards; safe to reuse in Companion revamp. */
+	.work-surface-card {
+		font-feature-settings:
+			'cv11' 1,
+			'ss01' 1,
+			'tnum' 1,
+			'kern' 1;
+	}
+
+	.ws-eyebrow {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1.2;
+		letter-spacing: 0.01em;
+		color: color-mix(in srgb, var(--color-foreground) 62%, transparent);
+	}
+
+	.ws-title {
+		font-size: 17px;
+		font-weight: 600;
+		line-height: 1.25;
+		letter-spacing: -0.022em;
+		color: rgb(255 255 255 / 0.96);
+	}
+
+	.ws-title-compact {
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1.3;
+		letter-spacing: -0.02em;
+		color: rgb(255 255 255 / 0.96);
+	}
+
+	.ws-live {
+		font-size: 13px;
+		font-weight: 500;
+		line-height: 1.35;
+		letter-spacing: -0.008em;
+		color: rgb(255 255 255 / 0.88);
+	}
+
+	.ws-meta {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1.2;
+		letter-spacing: 0.015em;
+		color: color-mix(in srgb, var(--color-foreground) 68%, transparent);
+	}
+
+	.ws-meta-tabular {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.ws-chip-label {
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1;
+		letter-spacing: 0.01em;
+	}
+
+	.ws-code {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: 0.03em;
+	}
+
+	.ws-section-label {
+		font-size: 10px;
+		font-weight: 600;
+		line-height: 1.2;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--color-muted-foreground);
 	}
 
 	/* Icon button — 44px touch target on mobile, 36px on desktop. */
@@ -506,6 +588,121 @@
 @media (prefers-reduced-motion: reduce) {
 	.app-aurora span {
 		animation: none;
+	}
+}
+
+/* ── Work Surface: shared worker heartbeat (graph · waveform · registry · Next) */
+:root {
+	--worker-breath-duration: 1.6s;
+	--worker-breath-duration-finishing: 1.05s;
+	--worker-breath-delay-stagger: 0.35s;
+}
+
+@keyframes worker-surface-breath {
+	0%,
+	100% {
+		opacity: 0.85;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+@keyframes worker-surface-ring-breath {
+	0%,
+	100% {
+		opacity: 0.5;
+		transform: scale(1);
+	}
+	50% {
+		opacity: 0.95;
+		transform: scale(1.045);
+	}
+}
+
+@keyframes worker-surface-wave-breath {
+	0%,
+	100% {
+		height: 4px;
+		y: 12px;
+		opacity: 0.7;
+	}
+	50% {
+		height: 14px;
+		y: 2px;
+		opacity: 1;
+	}
+}
+
+@keyframes task-land-ripple {
+	0%,
+	84% {
+		transform: scale(1);
+		opacity: 0;
+	}
+	90% {
+		transform: scale(1);
+		opacity: 0.75;
+	}
+	100% {
+		transform: scale(1.55);
+		opacity: 0;
+	}
+}
+
+@keyframes task-land-core {
+	0%,
+	84% {
+		transform: scale(1);
+	}
+	90% {
+		transform: scale(1.07);
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+
+.worker-surface-breath {
+	animation: worker-surface-breath var(--worker-breath-duration, 1.6s) ease-in-out infinite;
+	animation-delay: var(--worker-breath-delay, 0s);
+}
+
+.worker-surface-ring-breath {
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: worker-surface-ring-breath var(--worker-breath-duration, 1.6s) ease-in-out infinite;
+	animation-delay: var(--worker-breath-delay, 0s);
+}
+
+.worker-surface-dot-breath {
+	animation: worker-surface-ring-breath var(--worker-breath-duration, 1.6s) ease-in-out infinite;
+	animation-delay: var(--worker-breath-delay, 0s);
+}
+
+.worker-surface-breath--finishing,
+.worker-surface-breath--finishing.worker-surface-ring-breath,
+.worker-surface-breath--finishing.worker-surface-dot-breath {
+	animation-duration: var(--worker-breath-duration-finishing, 1.05s);
+}
+
+.worker-surface-wave-breath {
+	animation: worker-surface-wave-breath var(--worker-breath-duration, 1.6s) ease-in-out infinite;
+}
+
+.worker-surface-wave-breath.worker-surface-breath--finishing {
+	animation-duration: var(--worker-breath-duration-finishing, 1.05s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.worker-surface-breath,
+	.worker-surface-ring-breath,
+	.worker-surface-dot-breath,
+	.worker-surface-wave-breath,
+	.task-land-ripple,
+	.task-land-core-pulse {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
 	}
 }
 

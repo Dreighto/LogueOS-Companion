@@ -90,6 +90,15 @@
 			</g>
 		</symbol>
 
+		<!-- Task focal — central work-surface mark. Four-point sparkle reads as
+		     "the focal point" without literal task semantics. -->
+		<symbol id="icon-task" viewBox="0 0 24 24">
+			<path
+				fill="currentColor"
+				d="M12 2 L13.6 10.4 L22 12 L13.6 13.6 L12 22 L10.4 13.6 L2 12 L10.4 10.4 Z"
+			/>
+		</symbol>
+
 		<!-- System / local (Ollama) -->
 		<symbol id="icon-system" viewBox="0 0 24 24">
 			<path
