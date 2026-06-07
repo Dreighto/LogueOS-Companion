@@ -12,6 +12,7 @@
 
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { browser } from '$app/environment';
+	import { page } from '$app/stores';
 	import { resolve } from '$app/paths';
 	import { createDispatchStream } from '$lib/chat/dispatchStream.svelte';
 	import { parseDbTimestamp } from '$lib/utils/format';
@@ -150,6 +151,13 @@
 	// MessageFeed's flag-on conditional. Caught during Phase 3 iOS verify —
 	// plain-object mutation didn't re-evaluate the @const block.
 	const traceToSurface = $state<Record<string, string>>({});
+
+	// Phase 1+2 feature flag — when on, render DispatchCard inline in the chat
+	// feed AND suppress the old WorkSurfaceComposerChrome (pill + dock above
+	// composer). Without this gate, both paths render simultaneously and the
+	// operator sees the same surface in two places. Caught live 2026-06-07.
+	// Phase 4 deletes the old chrome entirely + makes this flag default-on.
+	const useInlineDispatch = $derived($page.url.searchParams.get('inline-dispatch') === '1');
 
 	/** Spawn a work-surface for `traceId` if one doesn't exist yet. Looks up the
 	 *  dispatch row in `messages` and the operator request that preceded it to
@@ -1125,51 +1133,56 @@
 			</button>
 		{/if}
 
-		<WorkSurfaceComposerChrome
-			bind:mode={dockMode}
-			bind:openSurfaceId={dockOpenSurfaceId}
-			bind:sheetReturnMode={dockSheetReturnMode}
-		>
-			{#snippet composer()}
-				<!-- ═════════════════════════════════════════════════════════════════
-				     HERO COMPOSER PILL — extracted to <Composer /> (Task #7 PR 4).
-				     Drag handlers stay on the outer wrapper (composerCtrl.handleDragEnter/Over/
-				     Leave/Drop above); Composer renders the drop overlay conditional
-				     on `isDragging`.
-				     ═════════════════════════════════════════════════════════════════ -->
-				<Composer
-					bind:textDraft={() => composerCtrl.textDraft, (v) => (composerCtrl.textDraft = v)}
-					bind:imageMode
-					bind:isDragging={() => composerCtrl.isDragging, (v) => (composerCtrl.isDragging = v)}
-					bind:textareaEl
-					bind:showModelOverrideModal
-					attachments={composerCtrl.attachments}
-					{composerMode}
-					{sending}
-					talkbackPhase={voice.phase}
-					{slashMode}
-					{slashMatches}
-					{selectedModelChoice}
-					{MODEL_CHOICES}
-					{pickerProvider}
-					{lastModelUsed}
-					onsend={() => void sendMessage()}
-					onabort={abortSend}
-					onpaste={composerCtrl.handlePaste}
-					onkey={handleKey}
-					onfocus={() => composerMode === 'idle' && (composerMode = 'focused')}
-					onblur={() => composerMode === 'focused' && (composerMode = 'idle')}
-					ontriggerUpload={triggerUpload}
-					ontoggleTalkback={() => void voice.toggleTalkback()}
-					onstopTalkback={() => void voice.stopTalkback()}
-					onvoiceMode={() => void rtVoice.enter()}
-					onpickSlash={(cmd) => void pickSlash(cmd)}
-					onremoveAttachment={composerCtrl.removeAttachment}
-					onsetModelChoice={(choice) => void setModelChoice(choice)}
-					oncloseAllPopovers={closeAllPopovers}
-				/>
-			{/snippet}
-		</WorkSurfaceComposerChrome>
+		{#snippet composerEl()}
+			<Composer
+				bind:textDraft={() => composerCtrl.textDraft, (v) => (composerCtrl.textDraft = v)}
+				bind:imageMode
+				bind:isDragging={() => composerCtrl.isDragging, (v) => (composerCtrl.isDragging = v)}
+				bind:textareaEl
+				bind:showModelOverrideModal
+				attachments={composerCtrl.attachments}
+				{composerMode}
+				{sending}
+				talkbackPhase={voice.phase}
+				{slashMode}
+				{slashMatches}
+				{selectedModelChoice}
+				{MODEL_CHOICES}
+				{pickerProvider}
+				{lastModelUsed}
+				onsend={() => void sendMessage()}
+				onabort={abortSend}
+				onpaste={composerCtrl.handlePaste}
+				onkey={handleKey}
+				onfocus={() => composerMode === 'idle' && (composerMode = 'focused')}
+				onblur={() => composerMode === 'focused' && (composerMode = 'idle')}
+				ontriggerUpload={triggerUpload}
+				ontoggleTalkback={() => void voice.toggleTalkback()}
+				onstopTalkback={() => void voice.stopTalkback()}
+				onvoiceMode={() => void rtVoice.enter()}
+				onpickSlash={(cmd) => void pickSlash(cmd)}
+				onremoveAttachment={composerCtrl.removeAttachment}
+				onsetModelChoice={(choice) => void setModelChoice(choice)}
+				oncloseAllPopovers={closeAllPopovers}
+			/>
+		{/snippet}
+
+		{#if useInlineDispatch}
+			<!-- Flag-on: Composer alone. DispatchCard renders inline in MessageFeed;
+			     old chrome (pill + dock above composer) suppressed to avoid the
+			     "2 graphs / 2 surfaces" double-render. -->
+			{@render composerEl()}
+		{:else}
+			<WorkSurfaceComposerChrome
+				bind:mode={dockMode}
+				bind:openSurfaceId={dockOpenSurfaceId}
+				bind:sheetReturnMode={dockSheetReturnMode}
+			>
+				{#snippet composer()}
+					{@render composerEl()}
+				{/snippet}
+			</WorkSurfaceComposerChrome>
+		{/if}
 	</main>
 </div>
 
