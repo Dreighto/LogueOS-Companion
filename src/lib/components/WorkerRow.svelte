@@ -31,14 +31,16 @@
 </script>
 
 <div class="flex items-center gap-3 py-2">
-	<span class="font-mono text-[12px] text-foreground w-10 flex-none">{worker.shortCode}</span>
-	
+	<span class="w-10 flex-none font-mono text-[12px] text-foreground">{worker.shortCode}</span>
+
 	<svg
 		width="60"
 		height="16"
 		viewBox="0 0 60 16"
-		class="flex-none max-w-32 select-none {wState === 'done' ? 'wave-done' : ''}"
+		class="max-w-32 flex-none select-none {wState === 'done' ? 'wave-done' : ''}"
 		style="color: {strokeColor}; opacity: {wState === 'idle' ? 0.5 : 1};"
+		role="img"
+		aria-label={`${worker.shortCode} ${wState}`}
 	>
 		{#if wState === 'active'}
 			<rect x="10" y="12" width="4" height="4" rx="2" class="bar-active bar-active-1" />
@@ -73,17 +75,20 @@
 		{/if}
 	</svg>
 
-	<span class="text-sm text-muted-foreground flex-1 truncate">{actionText}</span>
+	<span class="flex-1 truncate text-sm text-muted-foreground">{actionText}</span>
 </div>
 
 <style>
 	rect {
 		fill: currentColor;
-		transition: height 0.2s ease, y 0.2s ease;
+		transition:
+			height 0.2s ease,
+			y 0.2s ease;
 	}
 
 	@keyframes wave-active {
-		0%, 100% {
+		0%,
+		100% {
 			height: 4px;
 			y: 12px;
 		}
@@ -97,11 +102,21 @@
 		animation: wave-active 1.2s ease-in-out infinite;
 	}
 
-	.bar-active-1 { animation-delay: 0s; }
-	.bar-active-2 { animation-delay: 0.1s; }
-	.bar-active-3 { animation-delay: 0.2s; }
-	.bar-active-4 { animation-delay: 0.3s; }
-	.bar-active-5 { animation-delay: 0.4s; }
+	.bar-active-1 {
+		animation-delay: 0s;
+	}
+	.bar-active-2 {
+		animation-delay: 0.1s;
+	}
+	.bar-active-3 {
+		animation-delay: 0.2s;
+	}
+	.bar-active-4 {
+		animation-delay: 0.3s;
+	}
+	.bar-active-5 {
+		animation-delay: 0.4s;
+	}
 
 	.wave-done {
 		animation: pulse-once-fade 0.6s ease-out forwards;

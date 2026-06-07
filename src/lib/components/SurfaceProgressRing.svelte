@@ -36,22 +36,29 @@
 	});
 </script>
 
-<div class="relative flex items-center justify-center w-[140px] h-[140px] mx-auto">
-	<svg width="140" height="140" viewBox="0 0 140 140" class="select-none">
+<div class="relative mx-auto flex h-[140px] w-[140px] items-center justify-center">
+	<svg
+		width="140"
+		height="140"
+		viewBox="0 0 140 140"
+		class="select-none"
+		role="img"
+		aria-label={`${Math.round(percent)}% complete${stage ? ' · ' + stage : ''}`}
+	>
 		<!-- Background ring -->
 		<circle
-			cx={cx}
-			cy={cy}
-			r={r}
+			{cx}
+			{cy}
+			{r}
 			fill="none"
 			stroke="var(--color-edge, rgba(255, 255, 255, 0.15))"
 			stroke-width="1"
 		/>
 		<!-- Foreground arc -->
 		<circle
-			cx={cx}
-			cy={cy}
-			r={r}
+			{cx}
+			{cy}
+			{r}
 			fill="none"
 			stroke={strokeColor}
 			stroke-width="4"
@@ -63,15 +70,17 @@
 	</svg>
 	<!-- Center label -->
 	<div class="absolute flex flex-col items-center justify-center text-center">
-		<span class="text-2xl font-semibold text-white tracking-tight">{Math.round(percent)}%</span>
+		<span class="text-2xl font-semibold tracking-tight text-white">{Math.round(percent)}%</span>
 		{#if stage}
-			<span class="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mt-0.5">{stage}</span>
+			<span class="mt-0.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase"
+				>{stage}</span
+			>
 		{/if}
 	</div>
 </div>
 
 <style>
 	.ring-foreground-arc {
-		transition: stroke-dasharray 0.6s cubic-bezier(.2,.8,.2,1);
+		transition: stroke-dasharray 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 </style>
