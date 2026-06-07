@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { WorkSurfaceTask, GraphNode, GraphEdge, WorkerRole } from '$lib/types/workSurface';
+	import WorkerIconSprite from './WorkerIconSprite.svelte';
 
 	let { task }: { task: WorkSurfaceTask } = $props();
 
@@ -123,6 +124,23 @@
 
 	const allGraphNodes = $derived([...enrichedWorkers, ...systemNodes, coreNode]);
 
+	function defaultIconForRole(role?: WorkerRole): string {
+		if (!role) return 'icon-system';
+		switch (role) {
+			case 'Research':
+				return 'icon-claude';
+			case 'Build':
+				return 'icon-antigravity';
+			case 'Review':
+				return 'icon-codex';
+			case 'Memory':
+			case 'Vision':
+			case 'Voice':
+			default:
+				return 'icon-system';
+		}
+	}
+
 	const getNodePos = $derived((id: string) => {
 		const node = allGraphNodes.find((n) => n.id === id);
 		return node ? node.pos : { x: 0, y: 0 };
@@ -190,6 +208,14 @@
 					}
 				}
 
+				const sourceWorker = enrichedWorkers.find((w) => w.id === edge.from);
+				const sourceSystemNode = systemNodes.find((n) => n.id === edge.from);
+				const fromIcon = sourceWorker
+					? (sourceWorker.icon ?? defaultIconForRole(sourceWorker.role))
+					: sourceSystemNode
+						? defaultIconForRole(sourceSystemNode.role)
+						: 'icon-system';
+
 				const isDispatchActive = edge.dispatchActive ?? edge.dispatch_active ?? false;
 				return {
 					id: `${edge.from}-${edge.to}`,
@@ -204,12 +230,17 @@
 					motionType: workerInRoute?.motionType,
 					packets: packets,
 					isInputEdge: false, // Default, handled below
-					isSpecialSystemEdge: false // Default
+					isSpecialSystemEdge: false, // Default
+					fromIcon
 				};
 			})
 			.filter((r): r is NonNullable<typeof r> => r !== null); // Filter out nulls from missing nodes
 	});
 </script>
+
+<div style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+	<WorkerIconSprite />
+</div>
 
 <svg
 	class="work-graph"
@@ -244,8 +275,14 @@
 					style:offset-path={`path("${route.pathD}")`}
 					style:animation-delay={p.delay}
 				>
-					<!-- Will use <use href="#payload-{p.motionType}" /> when WorkSurfaceSprite is available -->
-					<rect width={PACKET_SIZE} height={PACKET_SIZE} rx="2" class="packet-shape" />
+					<use
+						href="#{route.fromIcon}"
+						x={-5}
+						y={-5}
+						width={10}
+						height={10}
+						class="packet-shape"
+					/>
 				</g>
 			{/each}
 		{/if}
@@ -267,8 +304,15 @@
 		>
 			<circle class="node-ring" r="23" />
 			<circle class="node-circle" r="17" />
-			<!-- Placeholder for icon, will use <use href="#{worker.icon}" /> -->
-			<circle class="node-icon-placeholder" r={NODE_ICON_SIZE / 2} fill="var(--color-st-run)" />
+			<use
+				href="#{worker.icon ?? defaultIconForRole(worker.role)}"
+				x={-NODE_ICON_SIZE/2}
+				y={-NODE_ICON_SIZE/2}
+				width={NODE_ICON_SIZE}
+				height={NODE_ICON_SIZE}
+				class="node-icon-placeholder"
+				style:color="var(--worker-color, var(--color-st-run))"
+			/>
 			<text
 				class="node-label"
 				x="0"
@@ -287,11 +331,14 @@
 		>
 			<circle class="node-ring" r="23" />
 			<circle class="node-circle" r="17" />
-			<!-- Placeholder for icon -->
-			<circle
+			<use
+				href="#{defaultIconForRole(node.role)}"
+				x={-NODE_ICON_SIZE/2}
+				y={-NODE_ICON_SIZE/2}
+				width={NODE_ICON_SIZE}
+				height={NODE_ICON_SIZE}
 				class="node-icon-placeholder"
-				r={NODE_ICON_SIZE / 2}
-				fill="var(--color-muted-foreground)"
+				style:color="var(--color-muted-foreground)"
 			/>
 			<text
 				class="node-label"
@@ -309,8 +356,15 @@
 		style:transform="translate({TASK_CORE_POS.x}px, {TASK_CORE_POS.y}px)"
 	>
 		<circle class="central-task-node" r="20" />
-		<!-- Placeholder for icon, will use <use href="#icon-task" /> -->
-		<circle class="node-icon-placeholder" r={NODE_ICON_SIZE / 2} fill="var(--color-st-run)" />
+		<use
+			href="#icon-system"
+			x={-NODE_ICON_SIZE/2}
+			y={-NODE_ICON_SIZE/2}
+			width={NODE_ICON_SIZE}
+			height={NODE_ICON_SIZE}
+			class="node-icon-placeholder"
+			style:color="var(--color-on-brand)"
+		/>
 		<text
 			class="node-label"
 			x="0"
@@ -421,20 +475,23 @@
 	}
 
 	.node-icon-wrapper .packet-shape {
-		fill: var(--color-st-run); /* Default packet color */
-		transform: translate(-50%, -50%); /* Center the packet on the path */
-		width: var(--packet-size, 12px);
-		height: var(--packet-size, 12px);
+		color: var(--color-st-run); /* Default packet color */
+		fill: var(--color-st-run);
+		width: 10px;
+		height: 10px;
 	}
 	.node-icon-wrapper.researching .packet-shape {
+		color: #0ea5e9;
 		fill: #0ea5e9;
 		animation-duration: 7.5s; /* 3 packets * 2.5s delay */
 	}
 	.node-icon-wrapper.building .packet-shape {
+		color: var(--color-status-blue);
 		fill: var(--color-status-blue);
 		animation-duration: 2s; /* 5 packets * 0.4s delay */
 	}
 	.node-icon-wrapper.verifying .packet-shape {
+		color: var(--color-status-purple);
 		fill: var(--color-status-purple);
 		animation-duration: 1s; /* 1 packet * 1.0s delay */
 	}
