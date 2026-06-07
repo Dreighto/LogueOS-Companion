@@ -209,10 +209,17 @@
 			})
 			.filter((r): r is NonNullable<typeof r> => r !== null); // Filter out nulls from missing nodes
 	});
+</script>
 
-	</script>
-
-<svg class="work-graph" class:idle={task.state === 'Waiting' || task.state === 'Stopped' || task.state === 'Failed' || task.state === 'Complete' || (task.state as string) === 'Idle'} viewBox={WORK_GRAPH_VIEWBOX}>
+<svg
+	class="work-graph"
+	class:idle={task.state === 'Waiting' ||
+		task.state === 'Stopped' ||
+		task.state === 'Failed' ||
+		task.state === 'Complete' ||
+		(task.state as string) === 'Idle'}
+	viewBox={WORK_GRAPH_VIEWBOX}
+>
 	<!-- 1. Core field rings -->
 	{#each CORE_FIELD_RADII as r}
 		<circle class="core-field" {r} cx={TASK_CORE_POS.x} cy={TASK_CORE_POS.y} />
@@ -244,11 +251,19 @@
 		{/if}
 	{/each}
 
-	<!-- 3. Worker Nodes -->
+	<!-- 3. Worker Nodes — per-role colour via --worker-color (matches WorkerRow waveform palette).
+	     Research/Memory/Vision = cyan; Build = purple; else (Review/Verify/etc.) = orange. -->
 	{#each enrichedWorkers as worker (worker.id)}
 		<g
 			class="worker-node node-group status-{worker.status.toLowerCase()}"
 			style:transform="translate({worker.pos.x}px, {worker.pos.y}px)"
+			style:--worker-color={worker.role === 'Research' ||
+			worker.role === 'Memory' ||
+			worker.role === 'Vision'
+				? '#06b6d4'
+				: worker.role === 'Build'
+					? '#a855f7'
+					: '#f97316'}
 		>
 			<circle class="node-ring" r="23" />
 			<circle class="node-circle" r="17" />
@@ -438,6 +453,22 @@
 		fill: var(--color-on-brand);
 	}
 
+	/* Per-role colour on the active worker node — mirrors the WorkerRow waveform
+	   palette so the surface speaks one consistent visual vocabulary. Without
+	   this rule, an active worker rendered identical to default/pending; the
+	   operator could not see WHERE work was being routed. The --worker-color
+	   custom property is set inline on each <g class="worker-node"> from the
+	   worker.role at line ~257. Fallback = --color-st-run if role is unknown. */
+	.work-graph .worker-node.status-active .node-icon-placeholder {
+		fill: var(--worker-color, var(--color-st-run));
+		filter: drop-shadow(0 0 6px var(--worker-color, var(--color-st-run)));
+	}
+	.work-graph .worker-node.status-active .node-ring {
+		stroke: var(--worker-color, var(--color-st-run));
+		stroke-width: 1.5;
+		opacity: 0.55;
+	}
+
 	/* Settle States for Graph Elements */
 	.work-graph .central-task.status-complete .central-task-node,
 	.work-graph .worker-node.status-done .node-icon-placeholder {
@@ -503,5 +534,4 @@
 	.work-graph.idle * {
 		animation: none !important;
 	}
-
 </style>
