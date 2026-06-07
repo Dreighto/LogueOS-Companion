@@ -29,6 +29,14 @@ playwright-report/
 blob-report/
 *.log
 
+# Playwright MCP tool output — agents using the playwright MCP server land
+# screenshots + snapshots here at the shell cwd. Never commit; evidence
+# that matters goes under data/peer_reviews/<date>-evidence/ explicitly.
+.playwright-mcp/
+/*.png
+/*.jpg
+/*.jpeg
+
 # Aider CLI session artifacts (operator's interactive tool)
 .aider*
 .superpowers/
