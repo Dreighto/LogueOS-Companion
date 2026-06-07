@@ -459,14 +459,25 @@
 	   operator could not see WHERE work was being routed. The --worker-color
 	   custom property is set inline on each <g class="worker-node"> from the
 	   worker.role at line ~257. Fallback = --color-st-run if role is unknown. */
+	/* Mobile-glow note: WebKit on iOS renders filter:drop-shadow with weaker
+	   presence than Chromium. At the small graph node scale on a 390px viewport,
+	   a 6px shadow barely reads. Two compensating signals so the active worker
+	   pops on both platforms: (a) bigger 12px drop-shadow (stronger halo), AND
+	   (b) a brighter, thicker, more opaque ring stroke (drop-shadow-independent
+	   colour signal). Whichever the renderer favours, the active worker shows. */
 	.work-graph .worker-node.status-active .node-icon-placeholder {
 		fill: var(--worker-color, var(--color-st-run));
-		filter: drop-shadow(0 0 6px var(--worker-color, var(--color-st-run)));
+		filter: drop-shadow(0 0 12px var(--worker-color, var(--color-st-run)));
 	}
 	.work-graph .worker-node.status-active .node-ring {
 		stroke: var(--worker-color, var(--color-st-run));
-		stroke-width: 1.5;
-		opacity: 0.55;
+		stroke-width: 2.5;
+		opacity: 0.75;
+	}
+	.work-graph .worker-node.status-active .node-circle {
+		stroke: var(--worker-color, var(--color-st-run));
+		stroke-width: 1;
+		opacity: 0.5;
 	}
 
 	/* Settle States for Graph Elements */
