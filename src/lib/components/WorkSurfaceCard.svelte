@@ -59,9 +59,7 @@
 			? workerBrandColor(activeWorker.identity, activeWorker.shortCode)
 			: 'var(--color-st-run)'
 	);
-	const ownershipFinishing = $derived(
-		activeWorker ? workerBreathFinishing(activeWorker) : false
-	);
+	const ownershipFinishing = $derived(activeWorker ? workerBreathFinishing(activeWorker) : false);
 
 	const isInMotion = $derived(
 		task.state !== 'Complete' && task.state !== 'Stopped' && task.state !== 'Failed'
@@ -77,9 +75,7 @@
 		displayApproveButton || displayStopButton || displayRetryButton
 	);
 
-	const activeWorkerCount = $derived(
-		task.workers.filter((w) => w.status === 'active').length
-	);
+	const activeWorkerCount = $derived(task.workers.filter((w) => w.status === 'active').length);
 
 	function handleApprove() {
 		if (task.isDestructive && !confirmApprove) {
@@ -257,111 +253,110 @@
 	<!-- 3. EXPANDED — unified shell: glance layer + inset drill-down -->
 	<div class="sully-expanded-wrapper" class:active={footprint === 'expanded'}>
 		<div class="surface-glance-layer">
-		<div class="sully-expanded-card">
-			<!-- 1. Status row + inline surface actions (iPhone glance — no chunky footer bar) -->
-			<div class="expanded-top-row">
-				<div class="expanded-status-line ws-eyebrow select-none">
-					<span class="h-1.5 w-1.5 rounded-full {dotColorClass}"></span>
-					<span>{task.state} · {activeWorkerCount} active</span>
+			<div class="sully-expanded-card">
+				<!-- 1. Status row + inline surface actions (iPhone glance — no chunky footer bar) -->
+				<div class="expanded-top-row">
+					<div class="expanded-status-line ws-eyebrow select-none">
+						<span class="h-1.5 w-1.5 rounded-full {dotColorClass}"></span>
+						<span>{task.state} · {activeWorkerCount} active</span>
+					</div>
+					{#if showSurfaceActions}
+						<div class="surface-action-chips">
+							{#if displayApproveButton}
+								<button
+									type="button"
+									class="action-chip action-chip-approve ws-chip-label"
+									onclick={handleApprove}
+								>
+									{#if confirmApprove && task.isDestructive}
+										Confirm?
+									{:else}
+										<Check size="13" strokeWidth={2.5} /> Approve
+									{/if}
+								</button>
+							{/if}
+							{#if displayStopButton}
+								<button
+									type="button"
+									class="action-chip action-chip-stop ws-chip-label"
+									onclick={handleStop}
+								>
+									<X size="13" strokeWidth={2.5} /> Stop
+								</button>
+							{/if}
+							{#if displayRetryButton}
+								<button
+									type="button"
+									class="action-chip action-chip-retry ws-chip-label"
+									onclick={handleRetry}
+								>
+									<Repeat size="13" strokeWidth={2.5} /> Retry
+								</button>
+							{/if}
+						</div>
+					{/if}
 				</div>
-				{#if showSurfaceActions}
-					<div class="surface-action-chips">
-						{#if displayApproveButton}
-							<button
-								type="button"
-								class="action-chip action-chip-approve ws-chip-label"
-								onclick={handleApprove}
-							>
-								{#if confirmApprove && task.isDestructive}
-									Confirm?
-								{:else}
-									<Check size="13" strokeWidth={2.5} /> Approve
-								{/if}
-							</button>
+
+				<!-- 2. Title + slim stage rail -->
+				<h2 class="expanded-title ws-title" title={task.title}>{glanceTitle}</h2>
+				<div
+					class="stage-progress-strip"
+					class:strip-lively={isInMotion}
+					role="progressbar"
+					aria-valuenow={percent}
+					aria-valuemin={0}
+					aria-valuemax={100}
+					aria-label="{percent}% complete · {task.stage} stage"
+				>
+					<div class="stage-progress-meta ws-meta">
+						<div class="stage-progress-meta-left">
+							<StageActIcon stage={task.stage} pulse={stageActPulse} />
+							<span>{task.stage}</span>
+						</div>
+						<span class="ws-meta-tabular">{percent}%</span>
+					</div>
+					<div
+						class="stage-progress-track"
+						class:track-lively={isInMotion && progressBarClass === 'progress-run'}
+					>
+						<div
+							class="stage-progress-fill {progressBarClass}"
+							class:fill-lively={isInMotion && progressBarClass === 'progress-run'}
+							style:width="{percent}%"
+						></div>
+						{#if isInMotion && progressBarClass === 'progress-run'}
+							<div
+								class="progress-comet"
+								style:left="clamp(4px, calc({percent}% - 1px), calc(100% - 4px))"
+							></div>
 						{/if}
-						{#if displayStopButton}
-							<button
-								type="button"
-								class="action-chip action-chip-stop ws-chip-label"
-								onclick={handleStop}
-							>
-								<X size="13" strokeWidth={2.5} /> Stop
-							</button>
-						{/if}
-						{#if displayRetryButton}
-							<button
-								type="button"
-								class="action-chip action-chip-retry ws-chip-label"
-								onclick={handleRetry}
-							>
-								<Repeat size="13" strokeWidth={2.5} /> Retry
-							</button>
-						{/if}
+					</div>
+				</div>
+
+				<!-- 3. Live routing graph — primary glance real estate -->
+				{#if isInMotion}
+					<div class="work-graph-slot work-graph-slot--inset">
+						<WorkGraph {task} />
+					</div>
+				{/if}
+
+				<!-- 4. Next banner — same heartbeat as graph nodes -->
+				{#if isInMotion}
+					<div
+						class="active-ownership-banner"
+						class:banner-finishing={ownershipFinishing}
+						style:--worker-color={ownershipColor}
+					>
+						<span
+							class="ownership-pulse"
+							class:worker-surface-dot-breath={isInMotion}
+							class:worker-surface-breath--finishing={ownershipFinishing && isInMotion}
+							style:background-color={ownershipColor}
+						></span>
+						<span class="ownership-text ws-live" title={rawWorkerStep}>{glanceStep}</span>
 					</div>
 				{/if}
 			</div>
-
-			<!-- 2. Title + slim stage rail -->
-			<h2 class="expanded-title ws-title" title={task.title}>{glanceTitle}</h2>
-			<div
-				class="stage-progress-strip"
-				class:strip-lively={isInMotion}
-				role="progressbar"
-				aria-valuenow={percent}
-				aria-valuemin={0}
-				aria-valuemax={100}
-				aria-label="{percent}% complete · {task.stage} stage"
-			>
-				<div class="stage-progress-meta ws-meta">
-					<div class="stage-progress-meta-left">
-						<StageActIcon stage={task.stage} pulse={stageActPulse} />
-						<span>{task.stage}</span>
-					</div>
-					<span class="ws-meta-tabular">{percent}%</span>
-				</div>
-				<div
-					class="stage-progress-track"
-					class:track-lively={isInMotion && progressBarClass === 'progress-run'}
-				>
-					<div
-						class="stage-progress-fill {progressBarClass}"
-						class:fill-lively={isInMotion && progressBarClass === 'progress-run'}
-						style:width="{percent}%"
-					></div>
-					{#if isInMotion && progressBarClass === 'progress-run'}
-						<div
-							class="progress-comet"
-							style:left="clamp(4px, calc({percent}% - 1px), calc(100% - 4px))"
-						></div>
-					{/if}
-				</div>
-			</div>
-
-			<!-- 3. Live routing graph — primary glance real estate -->
-			{#if isInMotion}
-				<div class="work-graph-slot work-graph-slot--inset">
-					<WorkGraph {task} />
-				</div>
-			{/if}
-
-			<!-- 4. Next banner — same heartbeat as graph nodes -->
-			{#if isInMotion}
-				<div
-					class="active-ownership-banner"
-					class:banner-finishing={ownershipFinishing}
-					style:--worker-color={ownershipColor}
-				>
-					<span
-						class="ownership-pulse"
-						class:worker-surface-dot-breath={isInMotion}
-						class:worker-surface-breath--finishing={ownershipFinishing && isInMotion}
-						style:background-color={ownershipColor}
-					></span>
-					<span class="ownership-text ws-live" title={rawWorkerStep}>{glanceStep}</span>
-				</div>
-			{/if}
-
-		</div>
 		</div>
 
 		<div class="surface-drill-layer" style:--worker-color={ownershipColor}>
@@ -474,8 +469,10 @@
 		);
 		box-shadow:
 			inset 0 1px 0 rgb(255 255 255 / 0.1),
-			0 0 0 1px color-mix(in srgb, var(--active-worker-color, var(--color-st-run)) 18%, rgb(0 0 0 / 0.5)),
-			0 0 28px -14px color-mix(in srgb, var(--active-worker-color, var(--color-st-run)) 42%, transparent),
+			0 0 0 1px
+				color-mix(in srgb, var(--active-worker-color, var(--color-st-run)) 18%, rgb(0 0 0 / 0.5)),
+			0 0 28px -14px
+				color-mix(in srgb, var(--active-worker-color, var(--color-st-run)) 42%, transparent),
 			0 18px 44px -28px rgb(0 0 0 / 0.9);
 	}
 
@@ -517,16 +514,28 @@
 		}
 	}
 
-	/* Inner views - controlled by parent .state-{footprint} */
-	.sully-collapsed-view,
-	.sully-compact-card,
-	.sully-expanded-wrapper {
-		@apply hidden;
+	/* Inner views — controlled by the .state-{footprint} class on the parent
+	   .work-surface-card. Specificity is load-bearing here: each inner section
+	   defines its own `@apply flex|grid|block` further down for content
+	   layout, which has class-level specificity (0,1,0). If the hide rule
+	   also has class-level specificity, the later-defined inner rule wins,
+	   and ALL three footprints render simultaneously (caught 2026-06-07
+	   when DispatchCard exposed it — operator saw 2 work-graphs). Prefixing
+	   with .work-surface-card bumps the hide/show rules to (0,2,0) / (0,3,0)
+	   so they always beat the inner layout rules. */
+	.work-surface-card .sully-collapsed-view,
+	.work-surface-card .sully-compact-card,
+	.work-surface-card .sully-expanded-wrapper {
+		display: none;
 	}
-	.state-collapsed .sully-collapsed-view,
-	.state-compact .sully-compact-card,
-	.state-expanded .sully-expanded-wrapper {
-		@apply block;
+	.work-surface-card.state-collapsed .sully-collapsed-view {
+		display: flex;
+	}
+	.work-surface-card.state-compact .sully-compact-card {
+		display: block;
+	}
+	.work-surface-card.state-expanded .sully-expanded-wrapper {
+		display: flex;
 	}
 
 	/* 1. COLLAPSED VIEW */
@@ -682,19 +691,23 @@
 
 	.active-ownership-banner {
 		@apply flex items-center gap-2 rounded-[0.875rem] border px-2.5 py-2;
-		border-color: color-mix(in srgb, var(--worker-color, var(--color-st-run)) 22%, var(--ws-hairline));
-		background:
-			linear-gradient(
-				180deg,
-				color-mix(in srgb, var(--worker-color, var(--color-st-run)) 10%, var(--ws-panel-raised)) 0%,
-				var(--ws-panel) 100%
-			);
+		border-color: color-mix(
+			in srgb,
+			var(--worker-color, var(--color-st-run)) 22%,
+			var(--ws-hairline)
+		);
+		background: linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--worker-color, var(--color-st-run)) 10%, var(--ws-panel-raised)) 0%,
+			var(--ws-panel) 100%
+		);
 		box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
 	}
 
 	.ownership-pulse {
 		@apply h-2.5 w-2.5 flex-shrink-0 rounded-full;
-		box-shadow: 0 0 10px color-mix(in srgb, var(--worker-color, var(--color-st-run)) 55%, transparent);
+		box-shadow: 0 0 10px
+			color-mix(in srgb, var(--worker-color, var(--color-st-run)) 55%, transparent);
 	}
 
 	.ownership-text {
@@ -702,7 +715,8 @@
 	}
 
 	.active-ownership-banner.banner-finishing .ownership-pulse {
-		box-shadow: 0 0 14px color-mix(in srgb, var(--worker-color, var(--color-st-run)) 80%, transparent);
+		box-shadow: 0 0 14px
+			color-mix(in srgb, var(--worker-color, var(--color-st-run)) 80%, transparent);
 	}
 
 	.surface-action-chips {
@@ -902,7 +916,11 @@
 		background: rgb(255 255 255 / 0.03);
 	}
 	.drill-accordion-btn[aria-expanded='true'] {
-		background: color-mix(in srgb, var(--worker-color, var(--color-st-run)) 7%, rgb(255 255 255 / 0.02));
+		background: color-mix(
+			in srgb,
+			var(--worker-color, var(--color-st-run)) 7%,
+			rgb(255 255 255 / 0.02)
+		);
 		box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
 	}
 
