@@ -23,7 +23,7 @@ const PIPELINE_STAGES: PipelineStage[] = ['Read', 'Research', 'Build', 'Check', 
 // rendering as the AGY mark (operator caught 2026-06-07 in his "build me a
 // mockup" surface). Identity always wins over role; role-fallback is only
 // for unknown identities.
-const WORKER_TEMPLATES: Record<string, Omit<TaskWorker, 'status' | 'step'>> = {
+export const WORKER_TEMPLATES: Record<string, Omit<TaskWorker, 'status' | 'step'>> = {
 	'claude-code': {
 		identity: 'claude-code',
 		shortCode: 'CC',
@@ -87,6 +87,45 @@ function makeRouting(workerId: string): RoutingGraph {
 		],
 		edges: [{ from: workerId, to: 'core', active: true, dispatch_active: true }]
 	};
+}
+
+/** Maps a raw worker action string to a Work Surface pipeline stage.
+ *  Returns null if the action does not advance the stage. */
+export function inferStageFromAction(action: string): PipelineStage | null {
+	const lowerAction = action.toLowerCase().trim();
+
+	// New explicit mappings from the table
+	if (lowerAction === 'thinking') return 'Read';
+	if (lowerAction === 'task_proposed') return 'Read';
+	if (lowerAction === 'classifier_ran') return 'Read';
+	if (lowerAction === 'reading') return 'Read';
+
+	if (lowerAction === 'tool_invoked') return 'Build';
+	if (lowerAction === 'tool_result') return 'Build';
+	if (lowerAction === 'edited') return 'Build';
+	if (lowerAction === 'running') return 'Build';
+	if (lowerAction === 'ran') return 'Build';
+	if (lowerAction === 'shell') return 'Build';
+
+	if (lowerAction === 'verification_poll') return 'Check';
+	if (lowerAction === 'adversary_reviewed') return 'Check';
+
+	if (lowerAction === 'finalizing') return 'Reply';
+	if (lowerAction === 'complete') return 'Reply';
+	if (lowerAction === 'completed') return 'Reply';
+	if (lowerAction === 'synthesis_completed') return 'Reply';
+	if (lowerAction === 'reply_persisted') return 'Reply';
+
+	// Implied existing patterns (from test example and context in prompt)
+	if (lowerAction.startsWith('read_')) return 'Read';
+	if (lowerAction.startsWith('write_')) return 'Build';
+
+	// Actions that do not map to a stage
+	if (lowerAction === 'turn_decision_shadow') return null;
+	if (lowerAction === 'gate_evaluated') return null;
+
+	// Default for unrecognized actions
+	return null;
 }
 
 export interface InitialTaskInput {

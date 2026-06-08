@@ -1,0 +1,56 @@
+// src/lib/work-surface/hybrid/hybrid-types.ts
+export type PhaseKey = 'read' | 'research' | 'build' | 'check' | 'approve' | 'reply';
+export type PhaseStatus =
+	| 'done'
+	| 'active'
+	| 'pending'
+	| 'skipped'
+	| 'blocked'
+	| 'needs-you'
+	| 'failed';
+export type FileStatus = 'available' | 'generating' | 'needs-approval' | 'failed' | 'superseded';
+export type AggrStatus = 'running' | 'needs-you' | 'blocked' | 'done' | 'failed';
+
+export interface SeedPhase {
+	key: PhaseKey;
+	status: PhaseStatus;
+	startedAt: string | null;
+	endedAt: string | null;
+	/** Required when status === 'skipped'. ≤ 80 chars in seed; full version shown in State C. */
+	reason?: string;
+}
+
+export interface SeedWorker {
+	id: string;
+	shortcode: string;
+	/** Symbol ID from WorkerIconSprite.svelte: 'icon-claude', 'icon-antigravity', etc. */
+	iconId: string;
+	/** CSS color string from workerBrandColor(). */
+	color: string;
+	status: 'running' | 'done' | 'needs-you' | 'blocked' | 'failed';
+	currentStep: string;
+	stepHistory: string[];
+}
+
+export interface SeedFile {
+	path: string;
+	status: FileStatus;
+	sizeBytes?: number;
+	modifiedAt: string | null;
+}
+
+export interface SeedSurface {
+	surfaceId: string;
+	title: string;
+	aggr: AggrStatus;
+	workers: SeedWorker[];
+	phases: SeedPhase[];
+	files: SeedFile[];
+	/** Present only when aggr === 'needs-you'. */
+	needs?: { action: string; target: string };
+	/** Present only when aggr === 'blocked'. */
+	blockedBy?: string;
+	createdAt: string;
+	/** Elapsed display string shown in pill and card footer. */
+	elapsedDisplay: string;
+}
