@@ -7,6 +7,7 @@ import {
 	storeDirFor,
 	writeManifestAtomic,
 	readManifest,
+	promoteArtifactsForTask,
 	type ArtifactMetadata
 } from '$lib/server/artifactStore';
 
@@ -92,7 +93,7 @@ describe('artifact store paths and atomic manifest', () => {
 		expect(fs.existsSync(path.join(dir, 'report.md'))).toBe(true);
 		const man = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
 		expect(man.map((m: any) => m.original_path)).toEqual(['report.md']);
-		expect(res.failed.map((f: any) => basename(f.path))).toEqual(['gone.md']);
+		expect(res.failed.map((f: any) => path.basename(f.path))).toEqual(['gone.md']);
 		// Cleanup
 		fs.rmSync(repoRoot, { recursive: true, force: true });
 		fs.rmSync(wt, { recursive: true, force: true });
