@@ -2,7 +2,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { Dialog } from 'bits-ui';
-	import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
 	import type { SeedSurface } from './hybrid-types';
 
 	let {
@@ -15,23 +14,44 @@
 
 	let open = $state(true);
 
-	// Swipe-down to dismiss. useSwipe() returns props to spread on the touch target.
-	// Applied to the WHOLE swipe-zone (handle + header) so a phone gesture doesn't
-	// need to hit the 28px handle precisely. minSwipeDistance lowered to 40px and
-	// timeframe widened to 360ms — easier to trigger on a real iPhone in flow.
-	const handleSwipeProps = useSwipe(
-		(e: SwipeCustomEvent) => {
-			if (e.detail.direction === 'bottom') {
-				open = false;
-				onclose();
-			}
-		},
-		() => ({ timeframe: 360, minSwipeDistance: 40, touchAction: 'pan-y' })
-	);
-
 	function close() {
 		open = false;
 		onclose();
+	}
+
+	// Custom swipe-down handler. svelte-gestures' useSwipe() didn't fire reliably
+	// inside bits-ui Dialog.Content on iOS PWA (CUR confirmed both slow drag and
+	// fast flick failed even with the swipe zone widened). Going pointer-event
+	// raw — predictable, no third-party gesture-lib edge cases.
+	//
+	// Threshold: 50px downward over ≤500ms triggers dismiss. Vertical-dominant
+	// (|dy| > |dx|) so a horizontal swipe doesn't accidentally fire it.
+	let pointerDownY = 0;
+	let pointerDownX = 0;
+	let pointerDownT = 0;
+	const SWIPE_MIN_DY = 50;
+	const SWIPE_MAX_MS = 500;
+
+	function onSwipePointerDown(e: PointerEvent) {
+		if (e.pointerType === 'mouse' && e.button !== 0) return;
+		pointerDownY = e.clientY;
+		pointerDownX = e.clientX;
+		pointerDownT = performance.now();
+	}
+
+	function onSwipePointerUp(e: PointerEvent) {
+		if (pointerDownT === 0) return;
+		const dy = e.clientY - pointerDownY;
+		const dx = Math.abs(e.clientX - pointerDownX);
+		const dt = performance.now() - pointerDownT;
+		pointerDownT = 0;
+		if (dy >= SWIPE_MIN_DY && dy > dx && dt <= SWIPE_MAX_MS) {
+			close();
+		}
+	}
+
+	function onSwipePointerCancel() {
+		pointerDownT = 0;
 	}
 
 	const PHASE_LABELS: Record<string, string> = {
@@ -129,7 +149,13 @@
 			<!-- Swipe-down dismiss wrapper covers BOTH the visible handle AND the
 				 header (title + X), so a downward swipe anywhere on the top of the
 				 sheet closes it, not just on the 28px handle pip. -->
-			<div class="sheet-swipe-zone" {...handleSwipeProps}>
+			<div
+				class="sheet-swipe-zone"
+				onpointerdown={onSwipePointerDown}
+				onpointerup={onSwipePointerUp}
+				onpointercancel={onSwipePointerCancel}
+				onpointerleave={onSwipePointerCancel}
+			>
 				<div class="sheet-handle-zone">
 					<div class="sheet-handle" aria-hidden="true"></div>
 				</div>
@@ -309,10 +335,14 @@
 			<div class="sheet-actions">
 				<button class="sheet-btn sheet-btn--cancel" type="button" onclick={close}>Close</button>
 				{#if surface.aggr === 'failed'}
-					<button class="sheet-btn sheet-btn--retry" type="button">Retry</button>
+					<button class="sheet-btn sheet-btn--retry" type="button" disabled title="Coming soon"
+						>Retry</button
+					>
 				{/if}
 				{#if surface.aggr === 'running' || surface.aggr === 'needs-you'}
-					<button class="sheet-btn sheet-btn--stop" type="button">Stop task</button>
+					<button class="sheet-btn sheet-btn--stop" type="button" disabled title="Coming soon"
+						>Stop task</button
+					>
 				{/if}
 			</div>
 		</Dialog.Content>

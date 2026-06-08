@@ -201,7 +201,7 @@
 					<HybridWorkerCluster workers={surface.workers} />
 					<span class="card-title">{surface.title}</span>
 					{#if isActive}
-						<button class="stop-btn" type="button">Stop</button>
+						<button class="stop-btn" type="button" disabled title="Coming soon">Stop</button>
 					{/if}
 				</div>
 
@@ -279,7 +279,9 @@
 						<span class="needs-text">
 							Waiting — {surface.needs.action} in <strong>{surface.needs.target}</strong>
 						</span>
-						<button class="needs-approve-btn" type="button">Approve</button>
+						<button class="needs-approve-btn" type="button" disabled title="Coming soon"
+							>Approve</button
+						>
 					</div>
 				{/if}
 
