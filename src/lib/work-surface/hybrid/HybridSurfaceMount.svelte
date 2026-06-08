@@ -16,12 +16,14 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { base } from '$app/paths';
 	import HybridDispatchCard from './HybridDispatchCard.svelte';
+	import HybridDetailSheet from './HybridDetailSheet.svelte';
 	import type { SeedSurface } from './hybrid-types';
 
 	let { traceId }: { traceId: string } = $props();
 
 	let surface = $state<SeedSurface | null>(null);
 	let loadError = $state<string | null>(null);
+	let detailOpen = $state(false);
 	let pollHandle: ReturnType<typeof setInterval> | null = null;
 
 	const TERMINAL: ReadonlySet<SeedSurface['aggr']> = new Set(['done', 'failed']);
@@ -66,7 +68,10 @@
 </script>
 
 {#if surface}
-	<HybridDispatchCard {surface} />
+	<HybridDispatchCard {surface} onOpenDetail={() => (detailOpen = true)} />
+	{#if detailOpen}
+		<HybridDetailSheet {surface} onclose={() => (detailOpen = false)} />
+	{/if}
 {:else if loadError === 'trace_not_found'}
 	<div class="text-xs text-zinc-500 italic">Surface not found for {traceId}</div>
 {:else if loadError}
