@@ -46,8 +46,8 @@ export async function liveSurfaceFromTrace(traceId: string): Promise<SeedSurface
 		// Build files
 		const files = await buildFiles(activityRows);
 
-		// Compute elapsed display
-		const elapsedDisplay = computeElapsedDisplay(jobRow.started_at, jobRow.ended_at);
+		// Compute elapsed display (glyph derived from status, not endedAt)
+		const elapsedDisplay = computeElapsedDisplay(jobRow.started_at, jobRow.ended_at, aggrStatus);
 
 		// Build needs from gate_evaluated activity
 		const needs = buildNeeds(activityRows);
@@ -73,16 +73,25 @@ export async function liveSurfaceFromTrace(traceId: string): Promise<SeedSurface
 	}
 }
 
-function mapJobStatusToAggrStatus(status: string): 'running' | 'done' | 'failed' {
+function mapJobStatusToAggrStatus(status: string): AggrStatus {
 	switch (status) {
 		case 'decided':
 		case 'classified':
 		case 'dispatched':
 		case 'working':
+		case 'retry':
 			return 'running';
+		case 'gated':
+		case 'held':
+			// Awaiting operator confirmation — surfaces as "needs you".
+			return 'needs-you';
 		case 'synthesized':
+		case 'done':
+		case 'verified':
 			return 'done';
 		case 'aborted':
+			// Operator-initiated Stop — NEUTRAL, not an error. Distinct from failed.
+			return 'stopped';
 		case 'failed':
 			return 'failed';
 		default:
@@ -110,18 +119,27 @@ function buildWorkers(workerId: string, aggrStatus: string, activityRows: any[])
 		}
 	}
 
-	// Map aggrStatus to worker status
-	let workerStatus: 'running' | 'done' | 'failed';
+	// Map aggrStatus → worker status 1:1. Must cover every terminal/blocked
+	// state — falling through to 'running' on a stopped/failed/needs-you task
+	// would make deriveAggr() report 'running' and the surface poll forever.
+	let workerStatus: SeedWorker['status'];
 	switch (aggrStatus) {
-		case 'running':
-			workerStatus = 'running';
-			break;
 		case 'done':
 			workerStatus = 'done';
 			break;
 		case 'failed':
 			workerStatus = 'failed';
 			break;
+		case 'stopped':
+			workerStatus = 'stopped';
+			break;
+		case 'needs-you':
+			workerStatus = 'needs-you';
+			break;
+		case 'blocked':
+			workerStatus = 'blocked';
+			break;
+		case 'running':
 		default:
 			workerStatus = 'running';
 	}
@@ -249,7 +267,11 @@ async function buildFiles(activityRows: any[]): Promise<SeedFile[]> {
 	return files;
 }
 
-function computeElapsedDisplay(startedAt: string | null, endedAt: string | null): string {
+function computeElapsedDisplay(
+	startedAt: string | null,
+	endedAt: string | null,
+	aggr: AggrStatus
+): string {
 	if (!startedAt) return '';
 
 	const start = new Date(startedAt);
@@ -266,14 +288,18 @@ function computeElapsedDisplay(startedAt: string | null, endedAt: string | null)
 	if (seconds > 0) display += `${seconds}s`;
 	display = display.trim();
 
-	if (endedAt) {
-		if (endedAt === 'failed') {
-			return `✕ ${display}`;
-		} else {
-			return `✓ ${display}`;
-		}
+	// Glyph derived from STATUS, not endedAt (the old `endedAt === 'failed'`
+	// check was impossible — endedAt is a timestamp — so failures showed ✓).
+	switch (aggr) {
+		case 'done':
+			return `✓ ${display}`.trim();
+		case 'failed':
+			return `✕ ${display}`.trim();
+		case 'stopped':
+			return `■ ${display}`.trim(); // neutral stop glyph, not an error mark
+		default:
+			return display; // running / needs-you / blocked: bare elapsed
 	}
-	return display;
 }
 
 /**

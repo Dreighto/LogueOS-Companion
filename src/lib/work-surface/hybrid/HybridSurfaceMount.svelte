@@ -26,7 +26,7 @@
 	let detailOpen = $state(false);
 	let pollHandle: ReturnType<typeof setInterval> | null = null;
 
-	const TERMINAL: ReadonlySet<SeedSurface['aggr']> = new Set(['done', 'failed']);
+	const TERMINAL: ReadonlySet<SeedSurface['aggr']> = new Set(['done', 'failed', 'stopped']);
 	const POLL_MS = 2000;
 
 	async function fetchOnce(): Promise<void> {

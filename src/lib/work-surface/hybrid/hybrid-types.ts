@@ -9,7 +9,7 @@ export type PhaseStatus =
 	| 'needs-you'
 	| 'failed';
 export type FileStatus = 'available' | 'generating' | 'needs-approval' | 'failed' | 'superseded';
-export type AggrStatus = 'running' | 'needs-you' | 'blocked' | 'done' | 'failed';
+export type AggrStatus = 'running' | 'needs-you' | 'blocked' | 'done' | 'failed' | 'stopped';
 
 export interface SeedPhase {
 	key: PhaseKey;
@@ -27,7 +27,7 @@ export interface SeedWorker {
 	iconId: string;
 	/** CSS color string from workerBrandColor(). */
 	color: string;
-	status: 'running' | 'done' | 'needs-you' | 'blocked' | 'failed';
+	status: 'running' | 'done' | 'needs-you' | 'blocked' | 'failed' | 'stopped';
 	currentStep: string;
 	stepHistory: string[];
 }

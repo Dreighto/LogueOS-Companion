@@ -47,7 +47,7 @@
 	const aggr = $derived(deriveAggr(surface.workers));
 	const effectiveExpanded = $derived(forceExpanded || expanded);
 
-	const cleanElapsed = $derived(surface.elapsedDisplay.replace(/^[✓✕]\s*/, ''));
+	const cleanElapsed = $derived(surface.elapsedDisplay.replace(/^[✓✕■]\s*/, ''));
 	const showWorkerLanes = $derived(surface.workers.length > 1);
 
 	const hasFiles = $derived(surface.files.length > 0);
@@ -86,7 +86,8 @@
 		'needs-you': 'Needs you',
 		blocked: 'Blocked',
 		done: 'Done',
-		failed: 'Failed'
+		failed: 'Failed',
+		stopped: 'Stopped'
 	};
 
 	// Devin-style phase lines (step history of active worker)
@@ -211,6 +212,7 @@
 				class:expanded-container--needs={aggr === 'needs-you'}
 				class:expanded-container--failed={aggr === 'failed'}
 				class:expanded-container--done={aggr === 'done'}
+				class:expanded-container--stopped={aggr === 'stopped'}
 				class:expanded-container--running={aggr === 'running'}
 				class:expanded-container--blocked={aggr === 'blocked'}
 			>
@@ -247,7 +249,8 @@
 						{#each surface.workers as worker (worker.id)}
 							<div
 								class="worker-lane-row"
-								class:worker-lane-row--done={worker.status === 'done'}
+								class:worker-lane-row--done={worker.status === 'done' ||
+									worker.status === 'stopped'}
 								data-testid="worker-lane-row"
 								data-worker-status={worker.status}
 							>
@@ -387,6 +390,30 @@
 								: ''}
 						</span>
 						<button class="view-result-btn" type="button" onclick={onOpenDetail}>View logs</button>
+					</div>
+				{/if}
+
+				<!-- Stopped row (operator-initiated — neutral, not an error) -->
+				{#if aggr === 'stopped'}
+					<div class="complete-row complete-row--stopped" data-testid="stopped-row">
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							style="color: var(--color-edge-active);"
+							aria-hidden="true"
+						>
+							<rect x="6" y="6" width="12" height="12" rx="1.5" />
+						</svg>
+						<span class="complete-text">Stopped · {cleanElapsed}</span>
+						{#if hasFiles}
+							<button class="view-result-btn" type="button" onclick={onOpenDetail}
+								>View result</button
+							>
+						{/if}
 					</div>
 				{/if}
 

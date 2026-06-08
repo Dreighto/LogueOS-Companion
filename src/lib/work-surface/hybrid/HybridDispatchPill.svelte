@@ -39,6 +39,7 @@
 	class:pill--needs={aggr === 'needs-you'}
 	class:pill--failed={aggr === 'failed'}
 	class:pill--done={aggr === 'done'}
+	class:pill--stopped={aggr === 'stopped'}
 	class:pill--blocked={aggr === 'blocked'}
 	class:pill--running={aggr === 'running'}
 	data-testid="hybrid-pill"
@@ -101,6 +102,11 @@
 	.pill--blocked {
 		border-color: color-mix(in srgb, var(--color-st-needs) 50%, var(--color-edge));
 	}
+	/* Stopped = neutral terminal (operator chose to stop). Dimmed, NOT red. */
+	.pill--stopped {
+		opacity: 0.6;
+		border-color: var(--color-edge);
+	}
 
 	.dot {
 		width: 7px;
@@ -124,6 +130,9 @@
 	}
 	.dot--failed {
 		background: var(--color-st-fail);
+	}
+	.dot--stopped {
+		background: var(--color-edge-active);
 	}
 
 	.title {
