@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { serverConfig } from '$lib/server/config';
 import { WORKER_TEMPLATES } from '$lib/work-surface/chatBridge.svelte';
+import { findStoreDir, readManifest } from '$lib/server/artifactStore';
 
 const FILE_ACTIONS = new Set(['wrote_file', 'created_artifact', 'write_file']);
 
@@ -218,31 +219,34 @@ export function buildArtifactMetadata(
 }
 
 export function getTraceWorkspacePath(traceId: string): string | null {
-	const job = getJob(traceId);
-	if (!job) return null;
-	const activityRows = getActivity(traceId);
-	return resolveWorkspacePath(job, activityRows);
+	const repoRoot = path.resolve(process.cwd());
+	return findStoreDir(repoRoot, traceId);
 }
 
 export function listArtifactsForTrace(traceId: string): ArtifactListResponse | null {
 	const job = getJob(traceId);
 	if (!job) return null;
 
-	const activityRows = getActivity(traceId);
-	const workspacePath = resolveWorkspacePath(job, activityRows);
-
-	const artifacts: ArtifactMetadata[] = [];
-	for (const row of activityRows) {
-		if (!row.target) continue;
-		const originalPath = toOriginalPath(workspacePath, row.target);
-		artifacts.push(buildArtifactMetadata(job, workspacePath, row, originalPath));
+	// Read from the durable manifest instead of activity rows
+	const repoRoot = path.resolve(process.cwd());
+	const storeDir = findStoreDir(repoRoot, traceId);
+	if (!storeDir) {
+		return {
+			trace_id: traceId,
+			task_id: (job.ticket_id as string | null) ?? traceId,
+			artifacts: [],
+			count: 0,
+			bundle_url: `${APP_BASE}/api/artifacts/${encodeURIComponent(traceId)}/bundle.zip`
+		};
 	}
 
+	const manifest = readManifest(storeDir);
+	
 	return {
 		trace_id: traceId,
 		task_id: (job.ticket_id as string | null) ?? traceId,
-		artifacts,
-		count: artifacts.length,
+		artifacts: manifest,
+		count: manifest.length,
 		bundle_url: `${APP_BASE}/api/artifacts/${encodeURIComponent(traceId)}/bundle.zip`
 	};
 }
@@ -302,7 +306,8 @@ export function findArtifactMetadata(
 	if (!meta) return null;
 
 	try {
-		const absolutePath = resolveArtifactFile(meta.workspace_path, filepathParts);
+		// Resolve path within the store directory
+		const absolutePath = path.resolve(meta.workspace_path, meta.original_path);
 		assertInsideWorkspace(meta.workspace_path, absolutePath);
 		return { meta, absolutePath };
 	} catch {
@@ -411,13 +416,12 @@ export function buildBundleZip(traceId: string): Buffer | null {
 
 	for (const meta of listing.artifacts) {
 		try {
-			const parts = meta.original_path.split('/');
-			const absolute = resolveArtifactFile(meta.workspace_path, parts);
-			assertInsideWorkspace(meta.workspace_path, absolute);
-			if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) continue;
+			const absolutePath = path.resolve(meta.workspace_path, meta.original_path);
+			assertInsideWorkspace(meta.workspace_path, absolutePath);
+			if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) continue;
 			zipEntries.push({
 				path: meta.original_path.replace(/\\/g, '/'),
-				data: fs.readFileSync(absolute)
+				data: fs.readFileSync(absolutePath)
 			});
 		} catch {
 			// Skip missing/unreadable artifacts — manifest still lists them.
