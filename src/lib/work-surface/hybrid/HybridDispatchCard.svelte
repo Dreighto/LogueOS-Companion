@@ -34,7 +34,7 @@
 
 	const hasFiles = $derived(surface.files.length > 0);
 	const generatingCount = $derived(surface.files.filter((f) => f.status === 'generating').length);
-	
+
 	const filesSummary = $derived(
 		generatingCount > 0 && generatingCount === surface.files.length
 			? 'Generating…'
@@ -80,13 +80,18 @@
 
 	const phaseLines = $derived.by(() => {
 		if (!activeWorker) return [];
-		const lines = [...activeWorker.stepHistory, activeWorker.currentStep];
+		// Avoid duplicate-key crash when currentStep is already the last stepHistory
+		// entry (common — adapter emits the live event as both). De-dup with stable
+		// chronological order preserved.
+		const last = activeWorker.stepHistory[activeWorker.stepHistory.length - 1];
+		const lines =
+			activeWorker.currentStep && activeWorker.currentStep !== last
+				? [...activeWorker.stepHistory, activeWorker.currentStep]
+				: [...activeWorker.stepHistory];
 		return lines.slice(-5);
 	});
 
-	const skippedPhases = $derived(
-		surface.phases.filter((p) => p.status === 'skipped')
-	);
+	const skippedPhases = $derived(surface.phases.filter((p) => p.status === 'skipped'));
 
 	// Crossfade animation for active worker's step changes
 	const [send, receive] = crossfade({
@@ -159,12 +164,7 @@
 	});
 </script>
 
-<div
-	bind:this={cardEl}
-	class="card-wrap"
-	style="position: relative;"
-	data-testid="hybrid-card"
->
+<div bind:this={cardEl} class="card-wrap" style="position: relative;" data-testid="hybrid-card">
 	{#if showRing}
 		<div class="complete-ring-el anim-ring" aria-hidden="true"></div>
 	{/if}
@@ -359,7 +359,9 @@
 				<!-- Footer -->
 				<div class="card-footer">
 					<span class="footer-meta">
-						{AGGR_LABELS[aggr] ?? aggr} · {surface.workers.length} worker{surface.workers.length > 1 ? 's' : ''}
+						{AGGR_LABELS[aggr] ?? aggr} · {surface.workers.length} worker{surface.workers.length > 1
+							? 's'
+							: ''}
 					</span>
 					<button class="detail-link" type="button" onclick={onOpenDetail}>
 						More detail
