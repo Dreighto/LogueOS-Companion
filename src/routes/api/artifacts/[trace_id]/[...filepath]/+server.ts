@@ -54,7 +54,7 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 	}
 
 	if (url.searchParams.get('meta') === '1') {
-		return json(meta);
+		return json(meta, { headers: metadataHeaders(meta) });
 	}
 
 	const ext = path.extname(absolutePath).slice(1).toLowerCase();

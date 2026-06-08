@@ -215,6 +215,9 @@ describe('artifact endpoints', () => {
 		});
 		expect(res.status).toBe(200);
 		expect(res.headers.get('content-type')).toContain('application/json');
+		for (const key of HEADER_KEYS) {
+			expect(res.headers.get(key)).toBeTruthy();
+		}
 		const meta = await res.json();
 		for (const key of META_KEYS) {
 			expect(meta[key]).toBeTruthy();
