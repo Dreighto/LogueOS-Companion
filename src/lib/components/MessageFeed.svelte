@@ -142,7 +142,7 @@
 					: null}
 				{#if useHybrid}
 					<!-- Flag-on path (Hybrid): C+B hybrid surface, fetched from /api/surface -->
-					<div class="w-full">
+					<div class="w-full max-w-full min-w-0">
 						<HybridSurfaceMount traceId={m.trace_id} />
 					</div>
 				{:else if useInline && surface}

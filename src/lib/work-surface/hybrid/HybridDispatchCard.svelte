@@ -386,10 +386,16 @@
 <style>
 	.card-wrap {
 		width: 100%;
+		max-width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
 	}
-	.trigger-btn {
-		display: block;
-		width: 100%;
+	:global(.trigger-btn) {
+		display: block !important;
+		width: 100% !important;
+		max-width: 100% !important;
+		min-width: 0 !important;
+		box-sizing: border-box !important;
 		border: none;
 		background: none;
 		padding: 0;

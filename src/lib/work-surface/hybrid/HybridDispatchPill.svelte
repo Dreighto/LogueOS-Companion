@@ -48,12 +48,7 @@
 >
 	<HybridWorkerCluster workers={surface.workers} />
 
-	<div
-		class="dot dot--{aggr}"
-		data-testid="status-dot"
-		data-status={aggr}
-		aria-hidden="true"
-	></div>
+	<div class="dot dot--{aggr}" data-testid="status-dot" data-status={aggr} aria-hidden="true"></div>
 
 	<span class="title">{glanceTitle}</span>
 
@@ -73,6 +68,9 @@
 		padding: 10px 14px;
 		min-height: 44px;
 		width: 100%;
+		max-width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
 		background: var(--color-surface);
 		border: 1px solid var(--color-edge);
 		border-radius: 12px;
@@ -129,7 +127,8 @@
 	}
 
 	.title {
-		flex: 1;
+		flex: 1 1 0;
+		min-width: 0;
 		font-size: 13.5px;
 		font-weight: 500;
 		overflow: hidden;
