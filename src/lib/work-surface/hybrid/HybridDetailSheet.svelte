@@ -1,5 +1,6 @@
 <!-- src/lib/work-surface/hybrid/HybridDetailSheet.svelte -->
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { Dialog } from 'bits-ui';
 	import { useSwipe, type SwipeCustomEvent } from 'svelte-gestures';
 	import type { SeedSurface } from './hybrid-types';
@@ -53,6 +54,46 @@
 		if (b < 1024) return `${b} B`;
 		if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
 		return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
+	const traceId = $derived(surface.surfaceId);
+	const availableFiles = $derived(surface.files.filter((f) => f.status === 'available'));
+
+	function artifactUrl(filePath: string, download = false): string {
+		const segments = filePath.split('/').map((s) => encodeURIComponent(s));
+		const url = `${base}/api/artifacts/${encodeURIComponent(traceId)}/${segments.join('/')}`;
+		return download ? `${url}?download=1` : url;
+	}
+
+	function bundleUrl(): string {
+		return `${base}/api/artifacts/${encodeURIComponent(traceId)}/bundle.zip`;
+	}
+
+	function openFile(filePath: string) {
+		window.open(artifactUrl(filePath), '_blank', 'noopener,noreferrer');
+	}
+
+	async function shareFile(filePath: string) {
+		const url = artifactUrl(filePath);
+		if (typeof navigator !== 'undefined' && navigator.share) {
+			try {
+				await navigator.share({ title: filePath, url });
+				return;
+			} catch {
+				// User cancelled or share failed — fall through to copy.
+			}
+		}
+		await copyText(url);
+	}
+
+	async function copyPath(filePath: string) {
+		await copyText(filePath);
+	}
+
+	async function copyText(text: string) {
+		if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+			await navigator.clipboard.writeText(text);
+		}
 	}
 </script>
 
@@ -134,19 +175,71 @@
 					<section class="sheet-section">
 						<div class="section-header">
 							<h2 class="sheet-section-label">Result files</h2>
-							<button class="download-btn-stub" type="button">Download All</button>
+							{#if availableFiles.length > 0}
+								<a
+									class="download-all-btn"
+									href={bundleUrl()}
+									download
+									data-testid="download-all-btn"
+								>
+									Download all ({availableFiles.length})
+								</a>
+							{/if}
 						</div>
 						<div class="file-list">
 							{#each surface.files as file}
 								<div class="file-entry" data-testid="file-entry" data-status={file.status}>
 									<div class="file-dot file-dot--{file.status}" aria-hidden="true"></div>
-									<span class="file-name" class:file-name--superseded={file.status === 'superseded'}>
-										{file.path}
-									</span>
-									<span class="file-meta">{fmtBytes(file.sizeBytes)}</span>
-									<span class="file-label file-label--{file.status}">
-										{FILE_STATUS_LABELS[file.status] ?? file.status}
-									</span>
+									{#if file.status === 'available'}
+										<button
+											type="button"
+											class="file-name file-name--link"
+											data-testid="file-open"
+											onclick={() => openFile(file.path)}
+										>
+											{file.path}
+										</button>
+										<span class="file-meta">{fmtBytes(file.sizeBytes)}</span>
+										<div class="file-actions">
+											<button
+												type="button"
+												class="file-action-btn"
+												data-testid="file-share"
+												aria-label="Share {file.path}"
+												onclick={() => shareFile(file.path)}
+											>
+												Share
+											</button>
+											<a
+												class="file-action-btn"
+												href={artifactUrl(file.path, true)}
+												download
+												data-testid="file-download"
+											>
+												Download
+											</a>
+											<button
+												type="button"
+												class="file-action-btn"
+												data-testid="file-copy-path"
+												aria-label="Copy path for {file.path}"
+												onclick={() => copyPath(file.path)}
+											>
+												Copy path
+											</button>
+										</div>
+									{:else}
+										<span
+											class="file-name"
+											class:file-name--superseded={file.status === 'superseded'}
+										>
+											{file.path}
+										</span>
+										<span class="file-meta">{fmtBytes(file.sizeBytes)}</span>
+										<span class="file-label file-label--{file.status}">
+											{FILE_STATUS_LABELS[file.status] ?? file.status}
+										</span>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -276,7 +369,7 @@
 		color: var(--color-st-done);
 		margin-bottom: 0;
 	}
-	.download-btn-stub {
+	.download-all-btn {
 		font-size: 11px;
 		font-weight: 600;
 		color: var(--color-brand);
@@ -289,8 +382,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		text-decoration: none;
 	}
-	.download-btn-stub:hover {
+	.download-all-btn:hover {
 		background: rgba(207, 111, 147, 0.08);
 	}
 
@@ -364,9 +458,10 @@
 	}
 	.file-entry {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 10px;
-		padding: 7px 0;
+		gap: 8px 10px;
+		padding: 10px 0;
 		border-bottom: 1px solid var(--color-edge);
 		font-size: 12px;
 	}
@@ -396,11 +491,49 @@
 		background: var(--color-st-done);
 	}
 	.file-name {
-		flex: 1;
+		flex: 1 1 100%;
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
 		color: var(--color-text, #e8eaf0);
+		min-width: 0;
+	}
+	.file-name--link {
+		background: none;
+		border: none;
+		padding: 0;
+		text-align: left;
+		cursor: pointer;
+		font: inherit;
+		color: var(--color-brand);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		min-height: 44px;
+	}
+	.file-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		flex: 1 1 100%;
+	}
+	.file-action-btn {
+		font-size: 10px;
+		font-weight: 600;
+		padding: 6px 10px;
+		border-radius: 6px;
+		border: 1px solid var(--color-edge);
+		background: var(--color-surface-raised);
+		color: var(--color-st-done);
+		cursor: pointer;
+		min-height: 44px;
+		text-decoration: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.file-action-btn:hover {
+		border-color: var(--color-brand);
+		color: var(--color-brand);
 	}
 	.file-name--superseded {
 		text-decoration: line-through;
