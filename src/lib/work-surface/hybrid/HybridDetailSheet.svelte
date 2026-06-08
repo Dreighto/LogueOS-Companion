@@ -19,40 +19,11 @@
 		onclose();
 	}
 
-	// Custom swipe-down handler. svelte-gestures' useSwipe() didn't fire reliably
-	// inside bits-ui Dialog.Content on iOS PWA (CUR confirmed both slow drag and
-	// fast flick failed even with the swipe zone widened). Going pointer-event
-	// raw — predictable, no third-party gesture-lib edge cases.
-	//
-	// Threshold: 50px downward over ≤500ms triggers dismiss. Vertical-dominant
-	// (|dy| > |dx|) so a horizontal swipe doesn't accidentally fire it.
-	let pointerDownY = 0;
-	let pointerDownX = 0;
-	let pointerDownT = 0;
-	const SWIPE_MIN_DY = 50;
-	const SWIPE_MAX_MS = 500;
-
-	function onSwipePointerDown(e: PointerEvent) {
-		if (e.pointerType === 'mouse' && e.button !== 0) return;
-		pointerDownY = e.clientY;
-		pointerDownX = e.clientX;
-		pointerDownT = performance.now();
-	}
-
-	function onSwipePointerUp(e: PointerEvent) {
-		if (pointerDownT === 0) return;
-		const dy = e.clientY - pointerDownY;
-		const dx = Math.abs(e.clientX - pointerDownX);
-		const dt = performance.now() - pointerDownT;
-		pointerDownT = 0;
-		if (dy >= SWIPE_MIN_DY && dy > dx && dt <= SWIPE_MAX_MS) {
-			close();
-		}
-	}
-
-	function onSwipePointerCancel() {
-		pointerDownT = 0;
-	}
+	// Swipe-down dismiss removed 2026-06-07: operator feedback that the swipe
+	// gesture conflicted with normal touch-scroll inside the sheet body, and
+	// that this surface reads better as a MODAL than a bottom-sheet (X + tap-
+	// outside are the canonical dismissals). The swipe-zone wrapper + handle
+	// pip were removed at the same time.
 
 	const PHASE_LABELS: Record<string, string> = {
 		read: 'Read',
@@ -146,44 +117,28 @@
 			data-testid="detail-sheet"
 			aria-label="Task detail — {surface.title}"
 		>
-			<!-- Swipe-down dismiss wrapper covers BOTH the visible handle AND the
-				 header (title + X), so a downward swipe anywhere on the top of the
-				 sheet closes it, not just on the 28px handle pip. -->
-			<div
-				class="sheet-swipe-zone"
-				onpointerdown={onSwipePointerDown}
-				onpointerup={onSwipePointerUp}
-				onpointercancel={onSwipePointerCancel}
-				onpointerleave={onSwipePointerCancel}
-			>
-				<div class="sheet-handle-zone">
-					<div class="sheet-handle" aria-hidden="true"></div>
-				</div>
+			<!-- bits-ui v2 requires a Title + Description or it logs a console error. Screen-reader-only. -->
+			<Dialog.Title class="sr-only">{surface.title}</Dialog.Title>
+			<Dialog.Description class="sr-only">Task detail for {surface.title}</Dialog.Description>
 
-				<!-- bits-ui v2 requires a Title + Description or it logs a console error. Screen-reader-only. -->
-				<Dialog.Title class="sr-only">{surface.title}</Dialog.Title>
-				<Dialog.Description class="sr-only">Task detail for {surface.title}</Dialog.Description>
-
-				<!-- Header -->
-				<div class="sheet-header">
-					<span class="sheet-title">{surface.title}</span>
-					<Dialog.Close class="sheet-close" aria-label="Close" onclick={close}>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2.5"
-							aria-hidden="true"
-						>
-							<line x1="18" y1="6" x2="6" y2="18" />
-							<line x1="6" y1="6" x2="18" y2="18" />
-						</svg>
-					</Dialog.Close>
-				</div>
+			<!-- Modal-style header (no swipe pip — X + tap-outside are the only dismissals). -->
+			<div class="sheet-header">
+				<span class="sheet-title">{surface.title}</span>
+				<Dialog.Close class="sheet-close" aria-label="Close" onclick={close}>
+					<svg
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						aria-hidden="true"
+					>
+						<line x1="18" y1="6" x2="6" y2="18" />
+						<line x1="6" y1="6" x2="18" y2="18" />
+					</svg>
+				</Dialog.Close>
 			</div>
-			<!-- /sheet-swipe-zone -->
 
 			<div class="sheet-body">
 				<!-- Activity log — what the worker actually did, plain English -->
@@ -362,7 +317,9 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		max-height: 88dvh;
+		max-height: 70dvh;
+		max-width: 480px;
+		margin: 0 auto;
 		background: var(--color-surface);
 		border-radius: 20px 20px 0 0;
 		border-top: 1px solid var(--color-edge);
@@ -420,22 +377,22 @@
 	}
 
 	.sheet-section {
-		padding: 14px 16px;
+		padding: 10px 14px;
 		border-bottom: 1px solid var(--color-edge);
 	}
 	.section-header {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		margin-bottom: 10px;
+		margin-bottom: 6px;
 	}
 	.sheet-section-label {
-		font-size: 10px;
+		font-size: 9.5px;
 		font-weight: 600;
-		letter-spacing: 0.1em;
+		letter-spacing: 0.09em;
 		text-transform: uppercase;
 		color: var(--color-st-done);
-		margin-bottom: 0;
+		margin: 0 0 6px;
 	}
 	.download-all-btn {
 		font-size: 11px;
@@ -460,14 +417,15 @@
 	.timeline {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		margin-top: 10px;
+		gap: 4px;
+		margin-top: 4px;
 	}
 	.timeline-row {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		font-size: 12px;
+		font-size: 11.5px;
+		padding: 2px 0;
 	}
 	.timeline-dot {
 		width: 7px;
@@ -724,26 +682,23 @@
 		}
 	}
 
-	.sheet-swipe-zone {
-		touch-action: pan-y;
-	}
-
 	/* ── Activity log ── */
 	.activity-log {
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
-		max-height: 280px;
+		gap: 4px;
+		max-height: 200px;
 		overflow-y: auto;
-		padding-right: 4px;
+		-webkit-overflow-scrolling: touch;
+		padding-right: 2px;
 	}
 	.activity-row {
 		display: flex;
-		gap: 10px;
-		font-size: 13px;
-		line-height: 1.45;
-		padding: 6px 8px;
-		border-radius: 6px;
+		gap: 8px;
+		font-size: 12.5px;
+		line-height: 1.4;
+		padding: 4px 7px;
+		border-radius: 5px;
 		background: var(--color-surface-raised, rgba(255, 255, 255, 0.02));
 		border: 1px solid var(--color-edge, rgba(255, 255, 255, 0.06));
 		align-items: baseline;
@@ -759,10 +714,11 @@
 	}
 	.activity-time {
 		flex: none;
-		font-size: 11px;
+		font-size: 10.5px;
 		color: var(--color-st-done);
 		font-variant-numeric: tabular-nums;
-		min-width: 56px;
+		min-width: 48px;
+		opacity: 0.85;
 	}
 	.activity-text {
 		flex: 1 1 0;
