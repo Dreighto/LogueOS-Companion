@@ -13,6 +13,7 @@ import type {
 	SeedActivity
 } from '$lib/work-surface/hybrid/hybrid-types';
 import fs from 'node:fs';
+import path from 'node:path';
 
 export async function liveSurfaceFromTrace(traceId: string): Promise<SeedSurface | null> {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return null;
@@ -45,17 +46,17 @@ export async function liveSurfaceFromTrace(traceId: string): Promise<SeedSurface
 
 		// Build files from manifest
 		const files = await buildFiles(activityRows);
-		
+
 		// Build evidence from wrote_file activity
 		const evidence = activityRows
-			.filter(row => row.action === 'wrote_file' || row.action === 'write_file')
-			.map(row => ({ path: row.target }))
-			.filter(ev => ev.path);
-		
+			.filter((row) => row.action === 'wrote_file' || row.action === 'write_file')
+			.map((row) => ({ path: row.target }))
+			.filter((ev) => ev.path);
+
 		// Check for promotion warnings
 		let promotionWarning: string | undefined;
 		const failedPromotionCount = activityRows.filter(
-			row => row.action === 'wrote_file' && row.target?.includes('promotion')
+			(row) => row.action === 'wrote_file' && row.target?.includes('promotion')
 		).length;
 		if (failedPromotionCount > 0) {
 			promotionWarning = `${failedPromotionCount} deliverable${failedPromotionCount === 1 ? '' : 's'} couldn't be saved`;
@@ -300,19 +301,19 @@ function buildPhases(activityRows: any[], aggrStatus: string): SeedPhase[] {
 	return phases;
 }
 
-import { findStoreDir, readManifest } from '$lib/server/artifactStore';
+import { findStoreDir, readManifest, artifactRepoRoot } from '$lib/server/artifactStore';
 
 async function buildFiles(activityRows: any[]): Promise<SeedFile[]> {
-	const repoRoot = process.cwd();
+	const repoRoot = artifactRepoRoot();
 	const traceId = activityRows[0]?.trace_id;
 	if (!traceId) return [];
-	
+
 	const storeDir = findStoreDir(repoRoot, traceId);
 	if (!storeDir) return [];
-	
+
 	const manifest = readManifest(storeDir);
 	const files: SeedFile[] = [];
-	
+
 	for (const meta of manifest) {
 		try {
 			const absolutePath = path.resolve(storeDir, meta.original_path);
@@ -336,11 +337,11 @@ async function buildFiles(activityRows: any[]): Promise<SeedFile[]> {
 			});
 		}
 	}
-	
+
 	// Sort by importance: primary → secondary → supporting
 	const order = { primary: 0, secondary: 1, supporting: 2 };
-	files.sort((a, b) => (order[a.importance ?? 'secondary'] - order[b.importance ?? 'secondary']));
-	
+	files.sort((a, b) => order[a.importance ?? 'secondary'] - order[b.importance ?? 'secondary']);
+
 	return files;
 }
 

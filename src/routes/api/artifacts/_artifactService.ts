@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { serverConfig } from '$lib/server/config';
 import { WORKER_TEMPLATES } from '$lib/work-surface/chatBridge.svelte';
-import { findStoreDir, readManifest } from '$lib/server/artifactStore';
+import { findStoreDir, readManifest, artifactRepoRoot } from '$lib/server/artifactStore';
 
 const FILE_ACTIONS = new Set(['wrote_file', 'created_artifact', 'write_file']);
 
@@ -118,7 +118,9 @@ function getJob(traceId: string): JobRow | null {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return null;
 	const db = openDb();
 	try {
-		return (db.prepare('SELECT * FROM pending_jobs WHERE trace_id = ?').get(traceId) as JobRow) ?? null;
+		return (
+			(db.prepare('SELECT * FROM pending_jobs WHERE trace_id = ?').get(traceId) as JobRow) ?? null
+		);
 	} finally {
 		db.close();
 	}
@@ -219,7 +221,7 @@ export function buildArtifactMetadata(
 }
 
 export function getTraceWorkspacePath(traceId: string): string | null {
-	const repoRoot = path.resolve(process.cwd());
+	const repoRoot = artifactRepoRoot();
 	return findStoreDir(repoRoot, traceId);
 }
 
@@ -228,7 +230,7 @@ export function listArtifactsForTrace(traceId: string): ArtifactListResponse | n
 	if (!job) return null;
 
 	// Read from the durable manifest instead of activity rows
-	const repoRoot = path.resolve(process.cwd());
+	const repoRoot = artifactRepoRoot();
 	const storeDir = findStoreDir(repoRoot, traceId);
 	if (!storeDir) {
 		return {
@@ -241,7 +243,7 @@ export function listArtifactsForTrace(traceId: string): ArtifactListResponse | n
 	}
 
 	const manifest = readManifest(storeDir);
-	
+
 	return {
 		trace_id: traceId,
 		task_id: (job.ticket_id as string | null) ?? traceId,
