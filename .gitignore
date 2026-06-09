@@ -29,6 +29,16 @@ playwright-report/
 blob-report/
 *.log
 
+# Operator-side working artifacts that should not ship in git.
+data/peer_reviews/
+docs/Screenshots /
+docs/research/
+docs/superpowers/plans/
+docs/design/brand-concepts/
+docs/design/brand-mockup.html
+docs/design/ref_material/claudecode-color.svg
+docs/design/Sully_Work_Surface/work_surface_reference/svg_assets/workers/cursor.svg
+
 # Playwright MCP tool output — agents using the playwright MCP server land
 # screenshots + snapshots here at the shell cwd. Never commit; evidence
 # that matters goes under data/peer_reviews/<date>-evidence/ explicitly.
