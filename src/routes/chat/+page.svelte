@@ -42,12 +42,7 @@
 	import ThreadsSidebar from '$lib/components/ThreadsSidebar.svelte';
 	import ChatHeader from '$lib/components/ChatHeader.svelte';
 	import Composer from '$lib/components/Composer.svelte';
-	import {
-		WorkSurfaceComposerChrome,
-		spawnSurface,
-		setStatus,
-		type WorkSurfaceDockMode
-	} from '$lib/work-surface';
+	import { spawnSurface, setStatus } from '$lib/work-surface';
 	import { buildInitialTaskFromProposal } from '$lib/work-surface/chatBridge.svelte';
 	import type { SurfaceStatus } from '$lib/types/workSurface';
 	import VoiceMode from '$lib/components/VoiceMode.svelte';
@@ -163,12 +158,12 @@
 	// plain-object mutation didn't re-evaluate the @const block.
 	const traceToSurface = $state<Record<string, string>>({});
 
-	// Phase 1+2 feature flag — when on, render DispatchCard inline in the chat
-	// feed AND suppress the old WorkSurfaceComposerChrome (pill + dock above
-	// composer). Without this gate, both paths render simultaneously and the
-	// operator sees the same surface in two places. Caught live 2026-06-07.
-	// Phase 4 deletes the old chrome entirely + makes this flag default-on.
-	const useInlineDispatch = $derived($page.url.searchParams.get('inline-dispatch') === '1');
+	// LOS-192 part 1: the old work-surface chrome (WorkSurfaceComposerChrome
+	// pill + dock above the composer) and the flag-gated DispatchCard /
+	// HybridSurfaceMount feed paths are RETIRED from the mount tree — the feed
+	// renders the collapsed WorkerPill for dispatch rows instead. The legacy
+	// module is quarantined on disk (build-then-delete discipline); the
+	// surfaceStore spawn plumbing below stays live for the part-2 run sheet.
 
 	/** Spawn a work-surface for `traceId` if one doesn't exist yet. Looks up the
 	 *  dispatch row in `messages` and the operator request that preceded it to
@@ -228,23 +223,17 @@
 	// Composer states
 	let composerMode = $state<ComposerMode>('idle');
 
-	// Work surface: badge (pill) → inline (card in chat) → sheet (full detail).
-	let dockMode = $state<WorkSurfaceDockMode>('badge');
-	let dockOpenSurfaceId = $state<string | null>(null);
-	let dockSheetReturnMode = $state<WorkSurfaceDockMode>('badge');
-
-	/** Open the work-surface card for `traceId` as an expanded sheet. Used by the
-	 *  notification deep-link (PR-0c): tap a "task done" push → land in the thread
-	 *  → focus that task's card. Idempotent + safe to no-op (returns quietly if the
-	 *  dispatch row for this trace isn't in the loaded thread, e.g. it was deleted). */
+	/** Focus the run for `traceId` after a notification deep-link (PR-0c): tap a
+	 *  "task done" push → land in the thread; the run's WorkerPill is in the feed.
+	 *  The old dock-sheet expansion is retired with the legacy chrome (LOS-192
+	 *  part 1) — the part-2 run sheet re-wires this to open it. Still ensures the
+	 *  surface exists so the part-2 sheet has state to open onto. Idempotent +
+	 *  safe to no-op (returns quietly if the dispatch row for this trace isn't in
+	 *  the loaded thread, e.g. it was deleted). */
 	function focusTraceCard(traceId: string) {
 		const t = (traceId || '').trim();
 		if (!t) return;
-		const surfaceId = ensureSurfaceForTrace(t);
-		if (!surfaceId) return;
-		dockOpenSurfaceId = surfaceId;
-		dockSheetReturnMode = 'badge';
-		dockMode = 'sheet';
+		ensureSurfaceForTrace(t);
 	}
 
 	/** Apply a notification deep-link URL: switch to its `thread` (if different)
@@ -1203,7 +1192,6 @@
 				}}
 				{ensureDispatchStream}
 				{fmtTime}
-				{traceToSurface}
 			/>
 		</div>
 
@@ -1262,22 +1250,11 @@
 		     can't leak. The full-screen VoiceMode overlay owns the screen instead.
 		     The {#if} (not display:none) is what makes the unmount real. -->
 		{#if voiceMode.composerMounted}
-			{#if useInlineDispatch}
-				<!-- Flag-on: Composer alone. DispatchCard renders inline in MessageFeed;
-				     old chrome (pill + dock above composer) suppressed to avoid the
-				     "2 graphs / 2 surfaces" double-render. -->
-				{@render composerEl()}
-			{:else}
-				<WorkSurfaceComposerChrome
-					bind:mode={dockMode}
-					bind:openSurfaceId={dockOpenSurfaceId}
-					bind:sheetReturnMode={dockSheetReturnMode}
-				>
-					{#snippet composer()}
-						{@render composerEl()}
-					{/snippet}
-				</WorkSurfaceComposerChrome>
-			{/if}
+			<!-- LOS-192 part 1: composer mounts bare. The legacy work-surface
+			     chrome (pill + dock + sheet) that wrapped it is retired — the
+			     feed's WorkerPill is the run surface now; the tap-to-open run
+			     sheet returns in part 2. -->
+			{@render composerEl()}
 		{/if}
 	</main>
 </div>
