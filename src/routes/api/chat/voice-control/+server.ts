@@ -35,8 +35,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		const result = await startVoiceServices(undefined, { skipTts: cloudAvailable() });
 		if (result.ready) return json({ ready: true });
 		const error = result.errors[0] || 'failed to start speech services';
-		const status = error.startsWith('failed to start speech services') ? 500 : 504;
-		return json({ ready: false, error, errors: result.errors }, { status });
+		// A `failed` unit (crash loop / dead service) is service-unavailable, not a
+		// gateway timeout — surface it as 503 so the fast-fail reads distinctly from
+		// the genuine cold-start timeout (504). `reason` is forwarded for the client
+		// + logs; the client shows the offline toast either way.
+		const status =
+			result.reason === 'unit_failed'
+				? 503
+				: error.startsWith('failed to start speech services')
+					? 500
+					: 504;
+		return json({ ready: false, error, errors: result.errors, reason: result.reason }, { status });
 	}
 
 	return json({ error: 'unknown action' }, { status: 400 });

@@ -125,6 +125,8 @@
 	// WebKit consume the downward drag as a scroll before it could arm.)
 
 	const TALKBACK_PHASE_LABELS: Record<TalkbackPhase, string> = {
+		connecting: '🔌 Connecting…',
+		warming: '🔥 Warming up…',
 		capture: '🔴 Capture',
 		transcribe: '🔄 Transcribe',
 		dispatch: '📤 Sending',
@@ -276,20 +278,29 @@
 			>
 				<div class="flex items-center gap-1.5">
 					<span class="h-2 w-2 animate-ping rounded-full bg-emerald-400"></span>
-					<span class="font-semibold text-emerald-400"> 🔊 Walkie-Talkie Engaged </span>
+					<span class="font-semibold text-emerald-400">
+						{talkbackPhase === 'connecting' || talkbackPhase === 'warming'
+							? '🔊 Talkback'
+							: '🔊 Walkie-Talkie Engaged'}
+					</span>
 					{#if composerMode === 'talkback' && talkbackPhase}
 						<span class="rounded border border-zinc-800 bg-black/40 px-1 text-zinc-500">
 							{TALKBACK_PHASE_LABELS[talkbackPhase]}
 						</span>
 					{/if}
 				</div>
-				<button
-					type="button"
-					onclick={onstopTalkback}
-					class="rounded-full border border-red-500/30 bg-red-950/20 px-2 py-0.5 text-[9px] tracking-wider text-red-400 uppercase transition-all hover:bg-red-900/30"
-				>
-					Disconnect
-				</button>
+				<!-- No Disconnect during the bring-up window (connecting/warming): there's
+				     nothing to disconnect yet, and it resolves to a session or the offline
+				     toast within the fast-fail window. The button returns once live. -->
+				{#if talkbackPhase !== 'connecting' && talkbackPhase !== 'warming'}
+					<button
+						type="button"
+						onclick={onstopTalkback}
+						class="rounded-full border border-red-500/30 bg-red-950/20 px-2 py-0.5 text-[9px] tracking-wider text-red-400 uppercase transition-all hover:bg-red-900/30"
+					>
+						Disconnect
+					</button>
+				{/if}
 			</div>
 		{:else if imageMode}
 			<div

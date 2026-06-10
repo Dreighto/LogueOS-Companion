@@ -48,7 +48,18 @@ export type Attachment = {
 };
 
 export type ComposerMode = 'idle' | 'focused' | 'talkback';
-export type TalkbackPhase = 'capture' | 'transcribe' | 'dispatch' | 'speak' | 'loop';
+// `connecting` / `warming` are the bring-up ack states shown the instant Talkback
+// is tapped (LOS-181): `connecting` is the <100ms "connecting…" affordance;
+// `warming` is the distinct "warming up…" copy once a bring-up outlives the
+// fast-fail window (a genuine GPU cold start). The rest are the live-loop phases.
+export type TalkbackPhase =
+	| 'connecting'
+	| 'warming'
+	| 'capture'
+	| 'transcribe'
+	| 'dispatch'
+	| 'speak'
+	| 'loop';
 
 // Realtime Voice Mode (the immersive full-screen pipeline: local STT WS with
 // live partials -> streaming local reply -> per-sentence Chatterbox TTS ->

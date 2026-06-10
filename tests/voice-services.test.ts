@@ -108,6 +108,50 @@ describe('voice_services', () => {
 		});
 	});
 
+	it('fast-fails in <=3s with reason `unit_failed` when the STT unit is `failed`, NOT the 40s cap', async () => {
+		// LOS-181: a dead / crash-looping unit used to eat the full START_TIMEOUT_MS
+		// because the poll only watched the port. The is-active probe must catch the
+		// `failed` state and bail immediately. STT port 9 never opens, so the only
+		// escape from the poll is the fast-fail probe.
+		mockSystemctl({
+			'start:logueos-companion-stt.service': 'ok',
+			'is-active:logueos-companion-stt.service': 'failed'
+		});
+
+		const { startVoiceServices } = await loadVoiceServices(9, 'http://tts.test');
+		const startedAt = Date.now();
+		// Pass the real 40s cap — the test proves we return in <=3s without waiting it.
+		const result = await startVoiceServices(40000, { skipTts: true });
+		const elapsedMs = Date.now() - startedAt;
+
+		expect(result.ready).toBe(false);
+		expect(result.reason).toBe('unit_failed');
+		expect(elapsedMs).toBeLessThan(3000);
+		expect(execFileMock).toHaveBeenCalledWith(
+			'sudo',
+			['-n', '/usr/bin/systemctl', 'is-active', 'logueos-companion-stt.service'],
+			{ timeout: 15000 },
+			expect.any(Function)
+		);
+	});
+
+	it('does NOT fast-fail while the STT unit is still `activating` (genuine cold start)', async () => {
+		// The 40s cap stays ONLY for a real cold start: `activating` must keep
+		// polling, not be mistaken for a `failed` unit. Tiny cap + a port that never
+		// opens → it times out as a cold start, with no `unit_failed` verdict.
+		mockSystemctl({
+			'start:logueos-companion-stt.service': 'ok',
+			'is-active:logueos-companion-stt.service': 'activating'
+		});
+
+		const { startVoiceServices } = await loadVoiceServices(9, 'http://tts.test');
+		const result = await startVoiceServices(30, { skipTts: true });
+
+		expect(result.ready).toBe(false);
+		expect(result.reason).toBeUndefined();
+		expect(result.errors).toContain('speech services did not become ready in time');
+	});
+
 	it('skipTts:true only starts STT — TTS unit never started and health never probed', async () => {
 		const sttServer = createServer((socket) => socket.end());
 		const sttPort = await listenOnRandomPort(sttServer);

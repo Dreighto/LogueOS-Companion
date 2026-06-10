@@ -93,6 +93,17 @@ const TALKBACK_SILENCE_THRESHOLD = 0.01;
 const TALKBACK_SILENCE_GATE_MS = 2500;
 const TALKBACK_MAX_CAPTURE_MS = 30_000;
 
+// Readiness ack tuning (LOS-181). A bring-up still pending past this window is a
+// genuine GPU cold start (the server fast-fails a dead unit in <=3s), so we swap
+// the "connecting…" ack for distinct "warming up…" copy. Threshold sits just
+// under the server's 3s fast-fail cap so a dead unit shows the offline toast
+// rather than ever flashing "warming up…".
+const TALKBACK_WARMING_AFTER_MS = 2500;
+// How long a concluded "voice is offline" verdict is trusted. Repeat taps inside
+// this window get the offline toast instantly (no second bring-up attempt);
+// cleared early on app foreground or by a successful background re-probe.
+const TALKBACK_DOWN_CACHE_MS = 30_000;
+
 export function createVoiceController(deps: VoiceDeps): VoiceController {
 	// ── Reactive UI state ───────────────────────────────────────────────
 	let active = $state(false);
@@ -134,6 +145,18 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 	let talkbackFinalResolver: ((text: string) => void) | null = null;
 	let talkbackLastVoiceTs = 0; // timestamp of last non-empty utterance (silence auto-stop)
 
+	// Readiness ack + offline down-cache (LOS-181).
+	// `connecting` gates re-entrancy while a bring-up is in flight (the instant
+	// "connecting…"/"warming up…" window before the loop is armed). `bringUpGen`
+	// invalidates an in-flight bring-up when stop/destroy fires during it, so a
+	// late "ready" never revives a torn-down session. The down-cache short-circuits
+	// repeat taps once we've concluded the voice service is offline.
+	let connecting = false;
+	let bringUpGen = 0;
+	let warmingTimer: ReturnType<typeof setTimeout> | null = null;
+	let talkbackDownUntil = 0; // epoch ms the cached "offline" verdict expires
+	let talkbackDownMsg = ''; // the exact offline toast to replay on cached taps
+
 	// ── Audio iOS workaround ─────────────────────────────────────────────
 	function unlockAudio() {
 		const audioEl = deps.getAudioEl();
@@ -146,6 +169,56 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 		} catch {
 			/* best effort */
 		}
+	}
+
+	// ── Readiness ack helpers (LOS-181) ──────────────────────────────────
+	function clearWarmingTimer() {
+		if (warmingTimer) {
+			clearTimeout(warmingTimer);
+			warmingTimer = null;
+		}
+	}
+
+	// Surface an offline/unreachable toast AND remember it, so a cached repeat tap
+	// can replay the exact same message without re-attempting the bring-up.
+	function toastVoiceDown(message: string) {
+		talkbackDownMsg = message;
+		toasts.add(message, 'error');
+	}
+
+	// Lightweight, non-blocking liveness check fired on a cached "down" tap. Reads
+	// the service status WITHOUT starting the GPU unit; if it reports ready, drop
+	// the down-cache so the NEXT tap does a real bring-up. Best-effort — the cache
+	// also expires on its own and clears on foreground.
+	async function reprobeVoiceService() {
+		try {
+			const r = await fetch(resolve('/api/chat/voice-control'), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'status' })
+			});
+			if (!r.ok) return;
+			const body = (await r.json().catch(() => ({}))) as { ready?: boolean };
+			if (body.ready) {
+				talkbackDownUntil = 0;
+				talkbackDownMsg = '';
+			}
+		} catch {
+			/* best effort — the cache expires on its own */
+		}
+	}
+
+	// App returned to the foreground → a fresh chance the voice service recovered.
+	// Drop the down-cache so the next Talkback tap does a real bring-up instead of
+	// replaying the cached offline toast.
+	function onForeground() {
+		if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+			talkbackDownUntil = 0;
+			talkbackDownMsg = '';
+		}
+	}
+	if (typeof document !== 'undefined') {
+		document.addEventListener('visibilitychange', onForeground);
 	}
 
 	// ── Hands-free continuous Talkback loop ──────────────────────────────
@@ -223,6 +296,12 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 	}
 
 	async function stopTalkback(reason?: string) {
+		// Invalidate any bring-up still in flight — a late "ready" must not revive a
+		// session that's being stopped (manual Disconnect or page teardown). Also
+		// tear down the instant-ack window.
+		bringUpGen++;
+		connecting = false;
+		clearWarmingTimer();
 		active = false;
 		deps.setComposerMode('idle');
 		phase = null;
@@ -253,13 +332,43 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			await stopTalkback();
 			return;
 		}
+		// A bring-up is already in flight (the instant "connecting…"/"warming up…"
+		// window). Ignore the re-tap so we never kick off a second concurrent start.
+		if (connecting) return;
 		// Surface exclusion (T1b): never arm Talkback while the full-voice overlay
 		// owns the screen — it owns the mic. Toggling OFF above is unaffected.
 		// This is a surface guard only; the STT bridge transport is untouched.
 		if (deps.isFullVoiceActive?.()) return;
+
+		// Down-cache (LOS-181 req 3): a recent bring-up already concluded the voice
+		// service is offline. Replay the offline toast INSTANTLY instead of eating
+		// another bring-up attempt, and fire a background re-probe that clears the
+		// cache early if the service is back. Cleared on app foreground.
+		if (Date.now() < talkbackDownUntil) {
+			toasts.add(talkbackDownMsg || 'Voice service offline — you can still type.', 'error');
+			void reprobeVoiceService();
+			return;
+		}
+
 		unlockAudio();
 
 		if (TALKBACK_STT_VIA_BRIDGE) {
+			// Instant ack (req 2): flip to the Talkback surface with a "connecting…"
+			// status the moment the operator taps — <100ms, never silent dead air —
+			// BEFORE the async bring-up. If it fails we revert to idle below and the
+			// composer is fully usable again.
+			const gen = ++bringUpGen;
+			connecting = true;
+			deps.setComposerMode('talkback');
+			phase = 'connecting';
+			// Past the fast-fail window a still-pending bring-up is a genuine GPU cold
+			// start (the server fast-fails a dead unit in <=3s) — swap to distinct
+			// "warming up…" copy so progress reads differently from offline.
+			clearWarmingTimer();
+			warmingTimer = setTimeout(() => {
+				if (connecting && gen === bringUpGen) phase = 'warming';
+			}, TALKBACK_WARMING_AFTER_MS);
+
 			// Create the mic AudioContext IN the user gesture (synchronously) so iOS
 			// unlocks it — any post-await creation loses the gesture and iOS refuses
 			// to start audio. The mic/WS/service bring-up is async in
@@ -271,11 +380,21 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 				/* surfaced by startTalkbackBridge */
 			}
 			const ready = await startTalkbackBridge();
+			clearWarmingTimer();
+			// Stop/destroy fired during the bring-up — a late "ready" must not revive
+			// a torn-down session.
+			if (gen !== bringUpGen) return;
+			connecting = false;
 			// Jetson offline / mic denied / WS unreachable → an explicit error was
-			// already toasted and the bridge torn down. Do NOT enter talkback: the
-			// composer stays fully usable (no mode switch) and there is NO silent
-			// cloud fallback.
-			if (!ready) return;
+			// already toasted (and recorded) and the bridge torn down. Cache the
+			// "down" verdict, revert the instant-ack surface, and leave the composer
+			// fully usable. There is NO silent cloud fallback.
+			if (!ready) {
+				talkbackDownUntil = Date.now() + TALKBACK_DOWN_CACHE_MS;
+				phase = null;
+				deps.setComposerMode('idle');
+				return;
+			}
 		}
 
 		try {
@@ -311,7 +430,7 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			if (cfgResp.ok) {
 				const cfg = (await cfgResp.json()) as { voiceEnabled?: boolean; wsPath?: string };
 				if (cfg.voiceEnabled === false) {
-					toasts.add('Voice is disabled.', 'error');
+					toastVoiceDown('Voice is disabled.');
 					return false;
 				}
 				talkbackWsPath = cfg.wsPath || talkbackWsPath;
@@ -326,7 +445,7 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			});
 			const ctlBody = (await ctl.json().catch(() => ({}))) as { ready?: boolean };
 			if (!ctl.ok || !ctlBody.ready) {
-				toasts.add('Voice service offline — Talkback unavailable. You can still type.', 'error');
+				toastVoiceDown('Voice service offline — Talkback unavailable. You can still type.');
 				return false;
 			}
 			talkbackServicesStarted = true;
@@ -337,9 +456,8 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 			return true;
 		} catch (e) {
 			console.error('Talkback bridge start error:', e);
-			toasts.add(
-				'Could not reach the voice service — Talkback unavailable. You can still type.',
-				'error'
+			toastVoiceDown(
+				'Could not reach the voice service — Talkback unavailable. You can still type.'
 			);
 			await teardownTalkbackBridge();
 			return false;
@@ -869,6 +987,11 @@ export function createVoiceController(deps: VoiceDeps): VoiceController {
 		unlockAudio,
 		toggleTalkback,
 		stopTalkback,
-		destroy: () => stopTalkback()
+		destroy: () => {
+			if (typeof document !== 'undefined') {
+				document.removeEventListener('visibilitychange', onForeground);
+			}
+			return stopTalkback();
+		}
 	};
 }
