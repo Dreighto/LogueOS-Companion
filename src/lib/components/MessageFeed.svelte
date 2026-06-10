@@ -2,9 +2,9 @@
 	// Scrolling message-list region — extracted from chat/+page.svelte.
 	// Renders the entire `{#each messages}` block (operator pills + assistant
 	// flat replies via <Markdown> + the per-message action footer + timestamps
-	// + the per-message WorkingBubble for system sully-* rows), the thinking-dots
-	// indicator, the live tool-call rows, the scroll sentinel, and the
-	// "{n} new messages ↓" chip.
+	// + the collapsed WorkerPill for system sully-* dispatch rows), the
+	// thinking-dots indicator, the live tool-call rows, the scroll sentinel,
+	// and the "{n} new messages ↓" chip.
 	//
 	// Behavior + appearance are byte-for-byte identical to the inline original:
 	// every data-testid, aria-label, conditional, and SullyAvatar usage is

@@ -42,7 +42,7 @@
 	import ThreadsSidebar from '$lib/components/ThreadsSidebar.svelte';
 	import ChatHeader from '$lib/components/ChatHeader.svelte';
 	import Composer from '$lib/components/Composer.svelte';
-	import { spawnSurface, setStatus, type WorkSurfaceDockMode } from '$lib/work-surface';
+	import { spawnSurface, setStatus } from '$lib/work-surface';
 	import { buildInitialTaskFromProposal } from '$lib/work-surface/chatBridge.svelte';
 	import type { SurfaceStatus } from '$lib/types/workSurface';
 	import VoiceMode from '$lib/components/VoiceMode.svelte';
@@ -223,23 +223,17 @@
 	// Composer states
 	let composerMode = $state<ComposerMode>('idle');
 
-	// Work surface: badge (pill) → inline (card in chat) → sheet (full detail).
-	let dockMode = $state<WorkSurfaceDockMode>('badge');
-	let dockOpenSurfaceId = $state<string | null>(null);
-	let dockSheetReturnMode = $state<WorkSurfaceDockMode>('badge');
-
-	/** Open the work-surface card for `traceId` as an expanded sheet. Used by the
-	 *  notification deep-link (PR-0c): tap a "task done" push → land in the thread
-	 *  → focus that task's card. Idempotent + safe to no-op (returns quietly if the
-	 *  dispatch row for this trace isn't in the loaded thread, e.g. it was deleted). */
+	/** Focus the run for `traceId` after a notification deep-link (PR-0c): tap a
+	 *  "task done" push → land in the thread; the run's WorkerPill is in the feed.
+	 *  The old dock-sheet expansion is retired with the legacy chrome (LOS-192
+	 *  part 1) — the part-2 run sheet re-wires this to open it. Still ensures the
+	 *  surface exists so the part-2 sheet has state to open onto. Idempotent +
+	 *  safe to no-op (returns quietly if the dispatch row for this trace isn't in
+	 *  the loaded thread, e.g. it was deleted). */
 	function focusTraceCard(traceId: string) {
 		const t = (traceId || '').trim();
 		if (!t) return;
-		const surfaceId = ensureSurfaceForTrace(t);
-		if (!surfaceId) return;
-		dockOpenSurfaceId = surfaceId;
-		dockSheetReturnMode = 'badge';
-		dockMode = 'sheet';
+		ensureSurfaceForTrace(t);
 	}
 
 	/** Apply a notification deep-link URL: switch to its `thread` (if different)
