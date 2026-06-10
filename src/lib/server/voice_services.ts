@@ -45,6 +45,11 @@ export type VoiceServiceStatus = {
 export type VoiceServiceStartResult = {
 	ready: boolean;
 	errors: string[];
+	// Set only on the fast-fail path: a started unit reported `failed` (dead /
+	// crash-looping) during the readiness poll, so we returned in <=3s instead of
+	// burning the full `START_TIMEOUT_MS` cap. Absent on the ready, timeout, and
+	// start-command-error paths (callers that don't care can ignore it).
+	reason?: 'unit_failed';
 };
 
 export type VoiceServiceStopResult = {
@@ -112,6 +117,23 @@ export async function getVoiceServiceStatus(): Promise<VoiceServiceStatus> {
 	return { stt, tts, bothReady };
 }
 
+// Fast-fail probe: name the first unit we started that systemd reports as
+// `failed`. A healthy cold start sits in `activating` the whole time it loads
+// its model, so `failed` is an unambiguous "this is never coming up" signal —
+// the caller returns immediately instead of waiting out the 40s cap. A crash
+// loop (Restart=on-failure) flaps activating↔failed; the per-iteration poll
+// samples the `failed` phase within a cycle, so the worst case to a verdict is
+// ~3s. Only probes units we actually started locally: remote TTS (Jetson) has
+// no local systemd unit and is covered by the health probe instead.
+async function firstFailedLocalUnit(skipTtsStart: boolean): Promise<string | null> {
+	const units = [STT_UNIT];
+	if (!skipTtsStart) units.push(TTS_UNIT);
+	for (const unit of units) {
+		if ((await systemctl('is-active', unit)) === 'failed') return unit;
+	}
+	return null;
+}
+
 export async function startVoiceServices(
 	maxWaitMs = START_TIMEOUT_MS,
 	opts?: { skipTts?: boolean }
@@ -142,6 +164,14 @@ export async function startVoiceServices(
 		const ttsOk = skipTts || (await ttsHealthy(probeTimeout));
 		if (sttOk && ttsOk) {
 			return { ready: true, errors };
+		}
+		// Not ready yet — is this a slow-but-healthy cold start, or a dead /
+		// crash-looping unit eating the deadline? Probe `is-active` and bail in
+		// <=3s on a `failed` unit instead of waiting out the full cap.
+		const failedUnit = await firstFailedLocalUnit(skipTtsStart);
+		if (failedUnit) {
+			errors.push(`${failedUnit} failed to start (crash or start failure)`);
+			return { ready: false, reason: 'unit_failed', errors };
 		}
 		await sleep(Math.min(POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())));
 	}
