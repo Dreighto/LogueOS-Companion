@@ -69,6 +69,47 @@ describe('WorkerPill SSR (dispatched-run fixture)', () => {
 		}
 	});
 
+	// LOS-196 truth guards: stale state + reconcile-before-trust.
+	it('unreconciled run renders "checking…" instead of a live clock', () => {
+		const { body } = render(WorkerPill, { props: { ...liveRun, reconciled: false } });
+		expect(body).toContain('data-trust="unverified"');
+		expect(body).toContain('data-testid="worker-pill-stale"');
+		expect(body).toContain('checking…');
+		expect(body).not.toContain('data-testid="worker-pill-elapsed"');
+		expect(body).toContain('wpill--checking');
+	});
+
+	it('past the max-elapsed cap the pill renders the explicit stale state', () => {
+		const { body } = render(WorkerPill, {
+			props: {
+				...liveRun,
+				reconciled: true,
+				startedAtIso: new Date(Date.now() - 87 * 60 * 1000).toISOString() // the 1h27m case
+			}
+		});
+		expect(body).toContain('data-trust="stale"');
+		expect(body).toContain('stale — checking…');
+		expect(body).not.toContain('data-testid="worker-pill-elapsed"');
+		// Still truthfully non-terminal — stale must not fake done OR failed.
+		expect(body).toContain('data-aggr="running"');
+	});
+
+	it('terminal runs stay trusted even before any reconcile', () => {
+		const { body } = render(WorkerPill, {
+			props: { ...liveRun, status: 'failed', reconciled: false, durationLabel: '2h' }
+		});
+		expect(body).toContain('data-trust="trusted"');
+		expect(body).not.toContain('data-testid="worker-pill-stale"');
+		expect(body).toContain('data-aggr="failed"');
+	});
+
+	it('a reconciled under-cap run keeps the live clock (no behavior change)', () => {
+		const { body } = render(WorkerPill, { props: { ...liveRun, reconciled: true } });
+		expect(body).toContain('data-trust="trusted"');
+		expect(body).toContain('data-testid="worker-pill-elapsed"');
+		expect(body).not.toContain('data-testid="worker-pill-stale"');
+	});
+
 	it('falls back to trace sniffing + placeholder title before the job row arrives', () => {
 		const { body } = render(WorkerPill, {
 			props: {
@@ -97,6 +138,14 @@ describe('feed mount wiring (source-level)', () => {
 		for (const legacy of ['<HybridSurfaceMount', '<DispatchCard', '<WorkingBubble']) {
 			expect(src).not.toContain(legacy);
 		}
+	});
+
+	it('MessageFeed wires the LOS-196 truth guards into the pill', async () => {
+		const fs = await import('node:fs');
+		const src = fs.readFileSync('src/lib/components/MessageFeed.svelte', 'utf-8');
+		expect(src).toContain('reconciled={ctrl.reconciled}');
+		expect(src).toContain('onstalereconcile');
+		expect(src).toContain('ctrl.reconcile()');
 	});
 
 	it('chat page no longer mounts the legacy composer chrome', async () => {

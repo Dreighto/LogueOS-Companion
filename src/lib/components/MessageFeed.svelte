@@ -141,6 +141,8 @@
 						brief={ctrl.brief}
 						startedAtIso={ctrl.startedAtIso}
 						durationLabel={ctrl.durationLabel}
+						reconciled={ctrl.reconciled}
+						onstalereconcile={() => void ctrl.reconcile()}
 					/>
 				</div>
 			{:else}
