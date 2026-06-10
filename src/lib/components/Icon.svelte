@@ -26,7 +26,7 @@
   To use: import the SVG raw from @iconscout/unicons and render inline.
   Example in a consuming component:
 
-  import MicIcon from '@iconscout/unicons/icons/line/microphone.svg?raw';
+  import MicIcon from '@iconscout/unicons/svg/line/microphone.svg?raw';
   {@html MicIcon}
 
   Or import the React/Svelte components if using the component package.
