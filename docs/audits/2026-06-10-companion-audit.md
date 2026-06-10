@@ -74,6 +74,21 @@ Initial static counts from this worktree:
 - `src/lib/work-surface/**/*.svelte`: 12.
 - `src/routes/**/*.svelte`: 10.
 
+Build measurement, run in `/home/dreighto/dev/worktrees/LogueOS-Companion/w1`:
+
+- `npm run build` passed on 2026-06-10 22:16Z.
+- SSR transform count: 4,572 modules; client transform count: 4,622 modules.
+- Build time: client 3.80s, service worker 7ms, server 8.42s.
+- Largest client JS chunks: chat page node `nodes/5.CKiSSouk.js` 270.58 kB / 87.03 kB gzip, shared chunk `D-18c9KW.js` 193.56 kB / 48.12 kB gzip, work-surface hybrid route `nodes/10.DJNS5mNy.js` 85.64 kB / 25.14 kB gzip, chunk `wAoPiPo3.js` 63.25 kB / 24.09 kB gzip.
+- Largest client CSS assets: global/layout `0.DWCayra1.css` 97.69 kB / 19.53 kB gzip, `WorkSurfaceCard.B_JqjYK4.css` 42.83 kB / 6.61 kB gzip, work-surface hybrid route CSS `10._EH1ejB2.css` 20.70 kB / 3.83 kB gzip.
+- Largest server bundles: `entries/pages/chat/_page.svelte.js` 313.34 kB / 51.78 kB gzip, `entries/pages/work-surface-hybrid/_page.svelte.js` 133.64 kB / 29.06 kB gzip, `index.js` 123.19 kB / 31.21 kB gzip, `chunks/WorkSurfaceCard.js` 77.73 kB / 12.79 kB gzip.
+- Build warnings: deprecated `config.kit.csrf.checkOrigin`; Svelte warnings in `ImageLightbox.svelte:73`, `WorkSurfaceCard.svelte:129`, `WorkSurfaceCard.svelte:967`, and `WorkSurfaceCard.svelte:978`; circular dependency in `node_modules/zod/v4/classic/*`.
+
+Type-check measurement:
+
+- `npm run check` passed on 2026-06-10 22:16Z.
+- `svelte-check` found 0 errors and 8 warnings in 5 files: `WorkSurfaceCard.svelte`, `DispatchChips.svelte`, `Icon.svelte`, `ImageLightbox.svelte`, and `SurfaceProgressRing.svelte`.
+
 Largest source surfaces by bytes:
 
 | Size | File | Refactor signal |
@@ -125,8 +140,4 @@ Re-render and state hotspots from source reads:
 
 - Fix terminal reconciliation first; stale "live" worker pills make any performance or UX refactor hard to verify.
 - Add/keep focused tests around `dispatchActivityView`, `dispatchStream`, `WorkerPill`, and `MessageFeed` before moving components.
-- Measure build output and chunks from this worktree; do not claim the app is "heavy" without chunk and runtime evidence.
-
-## Open Measurement Items
-
-The early report pass was committed before the full measurement pass by design. Remaining work before PR: run `npm run build` in this `w1` worktree, capture the SvelteKit/Vite bundle output, run `npm run check`, and update this section with exact command output.
+- Treat the measured chat page, work-surface hybrid page, global CSS, and `WorkSurfaceCard` bundles as the first refactor targets; do not optimize smaller surfaces until these are isolated.
