@@ -2,7 +2,7 @@
 //
 // Every server module that needs a worker name, label, alias, or dispatchable
 // flag imports THIS module — values FLOW from here. Re-declaring the worker
-// universe locally (the old `'claude-code' | 'gemini'` union, per-file label
+// universe locally (the old two-name claude-code/gemini union, per-file label
 // maps) is the LOS-159 snapshot disease: the copy drifts, and "Dispatch DPSK"
 // silently becomes claude-code. The parity test (tests/worker-registry.test.ts)
 // asserts no consumer carries a local union.
@@ -136,8 +136,10 @@ export function getWorker(nameOrAlias: string): Entry | null {
 	return byKey.get(nameOrAlias.trim().toLowerCase()) ?? null;
 }
 
+/** Strict: true only for an EXACT dispatchable dispatch name (not an alias). */
 export function isDispatchableWorker(name: string): name is WorkerName {
-	return getWorker(name)?.dispatchable === true;
+	const entry = getWorker(name);
+	return entry?.dispatchable === true && entry.name === name;
 }
 
 /** Operator-facing label for any worker id/alias; tolerant of unknown ids. */
