@@ -30,7 +30,8 @@
 		deriveStageDots,
 		pillWorker,
 		fmtElapsed,
-		parsePillTs
+		parsePillTs,
+		derivePillTrust
 	} from './pillModel';
 
 	let {
@@ -40,7 +41,9 @@
 		worker,
 		brief,
 		startedAtIso,
-		durationLabel
+		durationLabel,
+		reconciled = true,
+		onstalereconcile = null
 	}: {
 		traceId: string;
 		rows: StreamRow[];
@@ -49,6 +52,13 @@
 		brief: string | null;
 		startedAtIso: string | null;
 		durationLabel: string | null;
+		/** Truth guard (LOS-196): false until the stream's first successful
+		 *  reconcile — a non-terminal status is rendered as "checking…" until
+		 *  server truth has confirmed it once. Defaults true so fixture-driven
+		 *  render call sites keep their existing behavior. */
+		reconciled?: boolean;
+		/** Fired when the stale guard wants a forced server-truth reconcile. */
+		onstalereconcile?: (() => void) | null;
 	} = $props();
 
 	const aggr = $derived(mapStreamStatusToAggr(status));
@@ -74,6 +84,26 @@
 		return () => clearInterval(t);
 	});
 
+	// Truth guard (LOS-196): trust derives from terminal/reconciled/elapsed.
+	// 'unverified' = no successful reconcile yet; 'stale' = non-terminal past
+	// the max-elapsed cap. Both render an explicit checking label instead of a
+	// confidently-live clock.
+	const trust = $derived(derivePillTrust({ terminal, reconciled, startedAtIso, nowMs }));
+	const checkLabel = $derived(
+		trust === 'stale' ? 'stale — checking…' : trust === 'unverified' ? 'checking…' : null
+	);
+
+	// Stale guard forces a server-truth reconcile: once on entering the stale
+	// state, then every 60s while it persists (covers an offline/failed fetch).
+	// `trust` is a memoized $derived, so the effect re-runs only on a real
+	// state change, not on every ticker advance.
+	$effect(() => {
+		if (trust !== 'stale') return;
+		onstalereconcile?.();
+		const t = setInterval(() => onstalereconcile?.(), 60_000);
+		return () => clearInterval(t);
+	});
+
 	const elapsedLabel = $derived.by(() => {
 		if (terminal) {
 			if (durationLabel) return durationLabel;
@@ -94,14 +124,16 @@
 		stopped: 'stopped'
 	};
 	const a11yLabel = $derived(
-		`${who.display} · ${title} · ${STATE_LABELS[aggr] ?? aggr}${elapsedLabel ? ` · ${elapsedLabel}` : ''}`
+		`${who.display} · ${title} · ${STATE_LABELS[aggr] ?? aggr}${checkLabel ? ` · ${checkLabel}` : elapsedLabel ? ` · ${elapsedLabel}` : ''}`
 	);
 </script>
 
 <div
 	class="wpill wpill--{aggr}"
+	class:wpill--checking={checkLabel !== null}
 	data-testid="worker-pill"
 	data-aggr={aggr}
+	data-trust={trust}
 	data-trace-id={traceId}
 	role="status"
 	aria-label={a11yLabel}
@@ -120,7 +152,13 @@
 			></span>
 		{/each}
 	</span>
-	{#if elapsedLabel}
+	{#if checkLabel}
+		<!-- Truth guard: the live clock is replaced by an explicit checking
+		     label whenever the status is unverified or past the stale cap. -->
+		<span class="wpill-stale" data-testid="worker-pill-stale" data-trust={trust}>
+			{checkLabel}
+		</span>
+	{:else if elapsedLabel}
 		<span class="wpill-elapsed" data-testid="worker-pill-elapsed">{elapsedLabel}</span>
 	{/if}
 </div>
@@ -162,6 +200,17 @@
 	}
 	.wpill--stopped {
 		opacity: 0.6;
+	}
+
+	/* Truth guard (LOS-196): an unverified/stale pill must not wear the live
+	   tint or pulse — neutral surface until server truth confirms the run.
+	   Locked tokens only (the same neutral pair as the base pill). */
+	.wpill--checking {
+		background: var(--surface-card);
+		border-color: var(--line2);
+	}
+	.wpill--checking .wpill-dot--active {
+		animation: none;
 	}
 
 	.wpill-worker {
@@ -236,6 +285,15 @@
 		font-size: var(--text-xs);
 		font-variant-numeric: tabular-nums;
 		color: var(--t3);
+	}
+
+	/* The checking label sits where the clock would — same quiet mono voice. */
+	.wpill-stale {
+		flex: none;
+		font-family: var(--font-mono);
+		font-size: var(--text-xs);
+		color: var(--t3);
+		white-space: nowrap;
 	}
 
 	/* transform/opacity only — no layout or paint properties animate. */

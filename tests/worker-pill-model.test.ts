@@ -8,7 +8,9 @@ import {
 	deriveStageDots,
 	pillWorker,
 	fmtElapsed,
-	parsePillTs
+	parsePillTs,
+	derivePillTrust,
+	PILL_STALE_CAP_MS
 } from '$lib/work-surface/pill/pillModel';
 import type { StreamRow } from '$lib/chat/dispatchReconcile';
 
@@ -170,5 +172,93 @@ describe('parsePillTs', () => {
 	it('is NaN for null/empty', () => {
 		expect(Number.isNaN(parsePillTs(null))).toBe(true);
 		expect(Number.isNaN(parsePillTs(''))).toBe(true);
+	});
+});
+
+// LOS-196 truth guards: no fake running on mount, no fake running after done.
+describe('derivePillTrust', () => {
+	const now = Date.parse('2026-06-10T22:00:00Z');
+	const startedAgo = (ms: number) => new Date(now - ms).toISOString();
+
+	it('always trusts a terminal status — reconciled or not', () => {
+		expect(
+			derivePillTrust({ terminal: true, reconciled: false, startedAtIso: null, nowMs: now })
+		).toBe('trusted');
+		expect(
+			derivePillTrust({
+				terminal: true,
+				reconciled: true,
+				startedAtIso: startedAgo(PILL_STALE_CAP_MS * 3),
+				nowMs: now
+			})
+		).toBe('trusted');
+	});
+
+	it('is unverified until the first successful reconcile', () => {
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: false,
+				startedAtIso: startedAgo(60_000),
+				nowMs: now
+			})
+		).toBe('unverified');
+	});
+
+	it('trusts a reconciled non-terminal run under the cap', () => {
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: true,
+				startedAtIso: startedAgo(60_000),
+				nowMs: now
+			})
+		).toBe('trusted');
+	});
+
+	it('goes stale past the max-elapsed cap (the 1h27m phantom-run case)', () => {
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: true,
+				startedAtIso: startedAgo(87 * 60 * 1000),
+				nowMs: now
+			})
+		).toBe('stale');
+		// Boundary: exactly at the cap is still trusted; just past it is stale.
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: true,
+				startedAtIso: startedAgo(PILL_STALE_CAP_MS),
+				nowMs: now
+			})
+		).toBe('trusted');
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: true,
+				startedAtIso: startedAgo(PILL_STALE_CAP_MS + 1000),
+				nowMs: now
+			})
+		).toBe('stale');
+	});
+
+	it('never goes stale without a parseable start timestamp', () => {
+		expect(
+			derivePillTrust({ terminal: false, reconciled: true, startedAtIso: null, nowMs: now })
+		).toBe('trusted');
+	});
+
+	it('honors a custom cap', () => {
+		expect(
+			derivePillTrust({
+				terminal: false,
+				reconciled: true,
+				startedAtIso: startedAgo(10_000),
+				nowMs: now,
+				capMs: 5_000
+			})
+		).toBe('stale');
 	});
 });
