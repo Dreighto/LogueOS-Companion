@@ -195,6 +195,9 @@
 	use:portal
 	onclick={requestClose}
 	onkeydown={(e) => {
+		// Only when the root itself has focus — bubbled Enter/Space from inner
+		// controls (log toggle, file rows) must not dismiss the sheet.
+		if (e.target !== e.currentTarget) return;
 		if (e.key === 'Enter' || e.key === ' ') requestClose();
 	}}
 >
