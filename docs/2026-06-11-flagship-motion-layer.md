@@ -1,12 +1,16 @@
-# Sully Flagship — Motion & Micro-Interactions Layer (AGY brief)
+# Sully Flagship — Motion & Micro-Interactions Layer (execution brief)
 
-> **What this is:** the **motion complement** to CUR's `2026-06-11-flagship-visual-pass-plan.md`.
-> That plan handles _materials, decluttering, layout_ (what the app looks like at rest).
-> This brief handles _motion_ (how it feels in your hand). They compose — same locked
-> tokens, same worktree discipline, same verification gate. Do **not** redo CUR's visual
-> work; add the motion layer on top of it.
+> **Authority:** `2026-06-11-flagship-hybrid-canon.md` is the source of truth. This brief is the
+> file/line-level **motion execution checklist** under it — where they overlap, the canon wins.
+> What this adds beyond the canon: the send⇄voice icon morph (M2), a **universal** reduced-motion
+> guard (the canon's are per-class), and the honest "screenshots can't verify motion" gate.
+> For the _why/how_ behind these moves, see the research pass `2026-06-11-flagship-feel-research.md`
+> (esp. the spring→`linear()` token upgrade — the highest-leverage feel change).
 >
-> **Author:** CC (VP Ops, second-eye review) · **For:** AGY (operator-driven) · **Date:** 2026-06-11
+> **What this is:** the **motion complement** to the visual decluttering — materials/layout are the
+> canon's Phases A/B; this is _how it feels in your hand_. Don't redo the visual work; layer motion on top.
+>
+> **Author:** CC (VP Ops, second-eye review) · **For:** the motion owner (CUR per canon Part 8) · **Date:** 2026-06-11
 > **Ticket:** fold under the flagship pass (LOS-204 family); reference this path in PR body.
 
 ---
@@ -25,8 +29,10 @@ moments that should already use them_, not inventing new motion.
 ## Hard rules (non-negotiable — a reviewer will reject violations)
 
 1. **Locked tokens only.** Every duration/easing comes from `src/app.css` (`--dur-*`, `--ease-*`).
-   No hardcoded `ms` or `cubic-bezier()` in components. (Note: `Composer.svelte:459/574` already
-   carry ad-hoc `cubicOut`/`180ms`/`200ms` — migrate those to tokens as part of this pass.)
+   No hardcoded `ms` or `cubic-bezier()` in NEW motion. (Note: the **sheet** transitions at
+   `Composer.svelte:459/471` carry ad-hoc `cubicOut`/`200ms` — token-align those. **EXCEPTION:**
+   the attach-reveal `fly` at `Composer.svelte:574` is what the hybrid canon calls "the best
+   micro-interaction in the app — keep it." Do NOT touch its feel; leave it as-is.)
 2. **Transform + opacity ONLY** on messages and any large/full-width surface. iOS WebView repaints
    the whole layer when you animate `background`/`box-shadow`/`height` on big elements — it drops
    frames. The locked spec already mandates this for `.sully-smooth`; obey it everywhere here.
@@ -103,10 +109,11 @@ Each: **where it is now → the change → the tokens → how to verify.**
 - **Verify:** every tap feels like it depresses. Pair with CUR's primitives (`SullyButton`/`SullyPill`) so
   it's defined once, not per-site.
 
-### M4 — Sheet / popover spring (migrate the ad-hoc transitions to the iOS-sheet token)
+### M4 — Sheet / popover spring (token-align the SHEET transitions only)
 
-- **Now:** `Composer.svelte:459/574` use `cubicOut` + hardcoded `180/200ms`. Functional but off-language.
-- **Change:** route all sheet/popover open-close through `--ease-sheet` (the token reserved _only_ for
+- **Now:** the sheet transitions at `Composer.svelte:459/471` use `cubicOut` + hardcoded `200ms` — off-language.
+  ⚠️ The attach-reveal `fly` at `:574` is canon-protected ("best micro-interaction in the app") — **leave it.**
+- **Change:** route sheet/popover open-close through `--ease-sheet` (the token reserved _only_ for
   iOS sheets) + `--dur-panel`. Slide-up + fade for sheets; quick fade + 4px rise for popovers.
 - **Tokens:** `--ease-sheet` + `--dur-panel` (sheets); `--ease-emphasized` + `--dur-med` (popovers).
 - **Verify:** the model sheet and any popover share one motion feel; nothing uses a raw `cubic-bezier`.
