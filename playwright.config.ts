@@ -78,7 +78,6 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	reporter: process.env.CI ? 'github' : 'list',
-	globalSetup: './tests/e2e/global-setup',
 	use: {
 		baseURL: BASE_URL,
 		trace: 'retain-on-failure',
@@ -107,10 +106,15 @@ export default defineConfig({
 	// Hermetic server: the adapter-node build with the per-run DB. Shell env
 	// beats --env-file (verified Node 22.22.3), so these overrides win over
 	// the worktree .env while provider keys/mode still come from it.
+	//
+	// prep-run-dir.mjs (preconditions + fresh run dir) runs as the first half
+	// of THIS command — not in globalSetup — because Playwright starts the
+	// webServer BEFORE globalSetup runs (proven 1.60.0, 2026-06-10): a run-dir
+	// wipe there deletes the schema the server's bootstrap just created.
 	webServer: EXTERNAL_URL
 		? undefined
 		: {
-				command: 'node --env-file=.env build/index.js',
+				command: 'node tests/e2e/prep-run-dir.mjs && node --env-file=.env build/index.js',
 				url: `${BASE_URL}/companion/chat`,
 				reuseExistingServer: false,
 				timeout: 30_000,

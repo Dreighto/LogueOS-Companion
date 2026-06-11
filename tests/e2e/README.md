@@ -44,7 +44,8 @@ npm run test:e2e:chromium  # full chromium suite
 npm run test:e2e           # both engines, SEQUENTIALLY (fresh DB each)
 ```
 
-- **Build first.** The webServer runs `node build/index.js`. Global setup
+- **Build first.** The webServer runs `node build/index.js`. The prep step
+  (`tests/e2e/prep-run-dir.mjs`, the first half of the webServer command)
   fails fast if `build/index.js` is missing or older than the newest file in
   `src/` (override with `PLAYWRIGHT_SKIP_BUILD_CHECK=1` only when you know the
   src change is build-irrelevant).
@@ -58,12 +59,22 @@ npm run test:e2e           # both engines, SEQUENTIALLY (fresh DB each)
   `npx playwright test --project=iphone-webkit-mutating`) is safe: Playwright
   project dependencies pull the earlier stages in automatically.
 - One suite invocation per worktree at a time (port 5188 enforces this; the
-  run-dir sweep in global setup assumes it).
+  run-dir sweep in the prep step assumes it).
+
+### Why the prep step lives in the webServer command
+
+Playwright (verified on 1.60.0) starts the webServer **before** `globalSetup`
+runs. An earlier draft prepared the run dir in globalSetup; the server's
+bootstrap created the schema first, then globalSetup's wipe deleted it, and
+every spec that touched chat state failed with `no such table:
+chat_user_state` (root-caused 2026-06-10). Running the prep as the first half
+of the webServer command is the only spot provably ordered before the
+server's first request. Don't move it back.
 
 ## Escape hatch: external server
 
-`PLAYWRIGHT_BASE_URL=<origin>` skips the managed webServer and global setup's
-preconditions, and targets a server you manage — e.g. a live diagnostic over
+`PLAYWRIGHT_BASE_URL=<origin>` skips the managed webServer (and with it the
+prep step's preconditions), and targets a server you manage — e.g. a live diagnostic over
 Tailscale. **Non-hermetic**: the empty-state trio will false-fail unless the
 target has a clean profile (no persisted threads). That is the exact failure
 mode this harness was built to kill, so prefer the default mode for anything
@@ -77,8 +88,8 @@ that gates a PR.
   chat turn through whatever `COMPANION_DEFAULT_MODEL` + provider keys the
   worktree `.env` configures (currently a cloud model). A provider outage or
   quota trip fails the run — that's an environment failure, not a regression.
-  The `.env` at the repo root is required (global setup fails fast without it)
-  and is never committed.
+  The `.env` at the repo root is required (the prep step fails fast without
+  it) and is never committed.
 - **`a11y-scan` "chat with messages" is weak on a fresh DB.** It deep-links a
   thread id that doesn't exist on a fresh DB, so the resolver falls through to
   an empty thread and the scan exercises the empty surface instead of the
