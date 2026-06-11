@@ -219,6 +219,187 @@ export const PILL_STALE_CAP_MS = 45 * 60 * 1000;
 
 export type PillTrust = 'trusted' | 'unverified' | 'stale';
 
+// ── Run-sheet selectors (LOS-193, part 2) ───────────────────────────────────
+// Pure derivations from the SAME deny-list-filtered stream rows the pill
+// consumes — no new verification plumbing. Each selector returns empty when
+// the stream carries no matching rows, and the sheet renders nothing for an
+// empty selector (truth guard: absent data = absent row).
+
+/** Client mirror of the server humanizer's JSON-vs-text target split
+ *  (surfaceAdapter.parseMaybeJson). A structured payload is never shown raw. */
+function parseSheetTarget(target: string | null): {
+	json: Record<string, unknown> | null;
+	text: string | null;
+} {
+	if (!target) return { json: null, text: null };
+	const t = target.trim();
+	if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+		try {
+			return { json: JSON.parse(t) as Record<string, unknown>, text: null };
+		} catch {
+			/* not valid JSON — treat as plain text below */
+		}
+	}
+	return { json: null, text: target };
+}
+
+function truncateSheetText(s: string, max: number): string {
+	if (s.length <= max) return s;
+	return s.slice(0, max - 1).trimEnd() + '…';
+}
+
+export interface GateBadge {
+	kind: 'verify' | 'adversary';
+	verdict: 'go' | 'warn' | 'no-go' | 'ran';
+	label: string;
+}
+
+/**
+ * Gate badges from the only gate vocabulary the stream actually delivers:
+ * verification_poll (overall GO / NO_GO / warn-ish) and adversary_reviewed
+ * (finding count). Rows arrive seq-ascending, so the LATEST result of each
+ * kind wins. No matching rows → empty array → the sheet renders no gate row.
+ */
+export function deriveGateBadges(rows: StreamRow[]): GateBadge[] {
+	let verify: GateBadge | null = null;
+	let adversary: GateBadge | null = null;
+	for (const row of rows) {
+		const action = row.action.toLowerCase().trim();
+		if (action === 'verification_poll') {
+			const { json } = parseSheetTarget(row.target);
+			const overall = typeof json?.overall === 'string' ? json.overall : null;
+			if (overall === 'GO') {
+				verify = { kind: 'verify', verdict: 'go', label: 'Verified — looks good' };
+			} else if (overall === 'NO_GO') {
+				verify = { kind: 'verify', verdict: 'no-go', label: 'Verified — flagged issues' };
+			} else if (overall) {
+				verify = { kind: 'verify', verdict: 'warn', label: 'Verified — closer look' };
+			} else {
+				verify = { kind: 'verify', verdict: 'ran', label: 'Verifying the work' };
+			}
+		} else if (action === 'adversary_reviewed') {
+			const { json } = parseSheetTarget(row.target);
+			const count = typeof json?.count === 'number' ? json.count : null;
+			if (count === null) {
+				adversary = { kind: 'adversary', verdict: 'ran', label: 'Adversarial review' };
+			} else if (count === 0) {
+				adversary = { kind: 'adversary', verdict: 'go', label: 'Adversary — no issues' };
+			} else {
+				adversary = {
+					kind: 'adversary',
+					verdict: 'warn',
+					label: `Adversary — ${count} finding${count === 1 ? '' : 's'}`
+				};
+			}
+		}
+	}
+	return [verify, adversary].filter((b): b is GateBadge => b !== null);
+}
+
+/** Actions whose target names a file the worker actually produced/changed. */
+const RESULT_FILE_ACTIONS = new Set(['edited', 'wrote_file', 'write_file', 'created_artifact']);
+
+/**
+ * Result files = unique plain-text targets of write-shaped actions, in first-
+ * seen order. Structured (JSON) targets are never treated as paths. Empty when
+ * the worker wrote nothing → the sheet renders no files row at all (operator-
+ * locked truth guard: result-files row only when files exist).
+ */
+export function deriveResultFiles(rows: StreamRow[]): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const row of rows) {
+		const action = row.action.toLowerCase().trim();
+		if (!RESULT_FILE_ACTIONS.has(action) && !action.startsWith('write_')) continue;
+		const { text } = parseSheetTarget(row.target);
+		const path = (text ?? '').trim();
+		if (!path || seen.has(path)) continue;
+		seen.add(path);
+		out.push(path);
+	}
+	return out;
+}
+
+export interface SheetLogEntry {
+	seq: number;
+	action: string;
+	text: string;
+}
+
+/**
+ * Plain-English log line for one stream row — client mirror of the server's
+ * humanizeActivity vocabulary (surfaceAdapter), covering the deny-list-
+ * filtered actions the stream actually delivers. A non-coder never sees a raw
+ * verb, raw snake_case, or a raw JSON payload: unknown actions Title-Case.
+ */
+export function sheetLogText(action: string, target: string | null): string {
+	const a = action.toLowerCase().trim();
+	const { json, text } = parseSheetTarget(target);
+	switch (a) {
+		case 'thinking':
+			return text ? `Thinking — ${truncateSheetText(text, 140)}` : 'Thinking it through';
+		case 'reading':
+		case 'read':
+			return text ? `Reading ${truncateSheetText(text, 140)}` : 'Reading files';
+		case 'edited':
+			return text ? `Edited ${truncateSheetText(text, 140)}` : 'Edited a file';
+		case 'wrote_file':
+		case 'write_file':
+			return text ? `Wrote ${truncateSheetText(text, 140)}` : 'Wrote a file';
+		case 'ran':
+		case 'shell':
+			return text ? `Ran: ${truncateSheetText(text, 120)}` : 'Running a command';
+		case 'running':
+		case 'testing':
+			return text ? `Running: ${truncateSheetText(text, 120)}` : 'Running a command';
+		case 'searching':
+			return 'Searching…';
+		case 'fetching':
+			return 'Looking something up…';
+		case 'building':
+			return 'Building…';
+		case 'finalizing':
+			return 'Wrapping up';
+		case 'verification_poll': {
+			const overall = typeof json?.overall === 'string' ? json.overall : null;
+			if (overall === 'GO') return 'Verified — looks good';
+			if (overall === 'NO_GO') return 'Verified — flagged issues';
+			if (overall) return 'Verified — wants a closer look';
+			return 'Verifying the work';
+		}
+		case 'adversary_reviewed': {
+			const count = typeof json?.count === 'number' ? json.count : null;
+			if (count === null) return 'Adversarial review';
+			return count === 0
+				? 'Adversarial review — no issues'
+				: `Adversarial review — ${count} finding${count === 1 ? '' : 's'}`;
+		}
+		case 'created_artifact':
+			return text ? `Created artifact ${truncateSheetText(text, 140)}` : 'Created an artifact';
+		case 'complete':
+		case 'completed':
+			return 'Done';
+		default:
+			// Unknown worker verb: readable Title Case, never raw snake_case.
+			return action
+				.replace(/_/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+				.replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+}
+
+/** Humanized chronological log — exactly what the stream provides (the rows
+ *  are already deny-list filtered server-side; no timestamps arrive, so none
+ *  are invented — seq is the only honest ordinal). */
+export function buildSheetLog(rows: StreamRow[]): SheetLogEntry[] {
+	return rows.map((row) => ({
+		seq: row.seq,
+		action: row.action,
+		text: sheetLogText(row.action, row.target)
+	}));
+}
+
 /**
  * Truth guard (LOS-196): how far the pill may trust a non-terminal status.
  *   - terminal statuses are always trusted — they only arrive as server truth

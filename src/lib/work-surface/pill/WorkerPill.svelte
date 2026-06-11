@@ -16,8 +16,9 @@
     - result-files row only when files exist — the collapsed pill renders no
       files row at all (that surface arrives with the part-2 sheet)
 
-  Tap is a deliberate no-op placeholder — the run sheet lands in part 2
-  (separate ticket). Locked tokens only (sully-locked-spec §5): --live for
+  Tap opens the run sheet (LOS-193, part 2): step timeline, gate badges,
+  collapsed log row, result files — all derived from the same stream props
+  this pill already consumes. Locked tokens only (sully-locked-spec §5): --live for
   live states, --*-bg/--*-line pairs for status tinting, --r-pill, mono
   tabular for elapsed. Zero orange, zero raw hexes. Animation is
   opacity-only; prefers-reduced-motion neutralizes it.
@@ -36,6 +37,7 @@
 		BRAND_REVEALS
 	} from './pillModel';
 	import WorkerStateAnim from './WorkerStateAnim.svelte';
+	import RunSheet from './RunSheet.svelte';
 
 	let {
 		traceId,
@@ -151,17 +153,24 @@
 	const introFile = $derived(introActive ? (BRAND_REVEALS[who.shortCode] ?? null) : null);
 	const animFile = $derived(introFile ?? anim?.file ?? null);
 	const animLoop = $derived(introFile ? false : (anim?.loop ?? true));
+
+	// Tap opens the run sheet (LOS-193). The sheet mounts on demand and asks
+	// to be unmounted via onclose after its exit choreography finishes.
+	let sheetOpen = $state(false);
 </script>
 
-<div
+<button
+	type="button"
 	class="wpill wpill--{aggr}"
 	class:wpill--checking={checkLabel !== null}
 	data-testid="worker-pill"
 	data-aggr={aggr}
 	data-trust={trust}
 	data-trace-id={traceId}
-	role="status"
-	aria-label={a11yLabel}
+	aria-label="{a11yLabel} · open run details"
+	aria-haspopup="dialog"
+	aria-expanded={sheetOpen}
+	onclick={() => (sheetOpen = true)}
 >
 	<WorkerStateAnim file={animFile} loop={animLoop} size={18} />
 	<span class="wpill-worker" data-testid="worker-pill-worker" title={who.display}>
@@ -187,7 +196,24 @@
 	{:else if elapsedLabel}
 		<span class="wpill-elapsed" data-testid="worker-pill-elapsed">{elapsedLabel}</span>
 	{/if}
-</div>
+	<!-- The old role="status" live region, preserved through the div→button
+	     change so state transitions keep announcing politely. -->
+	<span class="sr-only" role="status">{a11yLabel}</span>
+</button>
+
+{#if sheetOpen}
+	<RunSheet
+		{traceId}
+		{rows}
+		{status}
+		{worker}
+		{brief}
+		{startedAtIso}
+		{durationLabel}
+		{reconciled}
+		onclose={() => (sheetOpen = false)}
+	/>
+{/if}
 
 <style>
 	.wpill {
@@ -204,6 +230,14 @@
 		background: var(--surface-card);
 		border: 1px solid var(--line2);
 		animation: wpill-enter var(--dur-base) var(--ease-enter) both;
+		/* Button reset — the pill became the run-sheet trigger (LOS-193). */
+		appearance: none;
+		font: inherit;
+		text-align: left;
+		color: inherit;
+		cursor: pointer;
+		margin: 0;
+		-webkit-tap-highlight-color: transparent;
 	}
 
 	/* Status tinting — exclusively via the locked --*-bg / --*-line pairs. */
