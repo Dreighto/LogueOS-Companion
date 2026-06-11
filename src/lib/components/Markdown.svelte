@@ -80,7 +80,7 @@
 				}
 				const cls = lang ? `language-${lang}` : '';
 				const langLabel = lang ? lang : '';
-				return `<div class="md-codeblock-wrap" data-lang="${escapeHtml(lang)}"><div class="md-codeblock-bar"><span class="md-codeblock-lang">${langLabel}</span><div class="md-codeblock-actions"><button type="button" class="md-codeblock-canvas" aria-label="Open in canvas"><span class="md-canvas-icon" aria-hidden="true">⌧</span><span class="md-canvas-label">Canvas</span></button><button type="button" class="md-codeblock-copy" aria-label="Copy code"><span class="md-copy-icon" aria-hidden="true">📋</span><span class="md-copy-label">Copy</span></button></div></div><pre class="md-codeblock"><code class="hljs ${cls}">${body}</code></pre></div>`;
+				return `<div class="md-codeblock-wrap" data-lang="${escapeHtml(lang)}"><div class="md-codeblock-bar"><span class="md-codeblock-lang">${langLabel}</span><div class="md-codeblock-actions"><button type="button" class="md-codeblock-canvas" aria-label="Open in canvas"><span class="md-canvas-icon" aria-hidden="true">${ICON_CANVAS}</span><span class="md-canvas-label">Canvas</span></button><button type="button" class="md-codeblock-copy" aria-label="Copy code"><span class="md-copy-icon" aria-hidden="true">${ICON_COPY}</span><span class="md-copy-label">Copy</span></button></div></div><pre class="md-codeblock"><code class="hljs ${cls}">${body}</code></pre></div>`;
 			}
 		}
 	});
@@ -113,6 +113,15 @@
 	let mounted = $state(false);
 	let containerEl = $state<HTMLDivElement | null>(null);
 
+	// Icon-wiring pass: the renderer emits raw HTML, so the codeblock-bar glyphs
+	// are inline lucide SVG strings (tintable via currentColor), replacing the
+	// untintable 📋/✓/⌧ emoji. DOMPurify's allowlist admits exactly these shapes.
+	const SVG_ATTRS =
+		'width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+	const ICON_COPY = `<svg ${SVG_ATTRS}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+	const ICON_CHECK = `<svg ${SVG_ATTRS}><path d="M20 6 9 17l-5-5"/></svg>`;
+	const ICON_CANVAS = `<svg ${SVG_ATTRS}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>`;
+
 	onMount(() => {
 		mounted = true;
 	});
@@ -133,13 +142,12 @@
 			const label = btn.querySelector('.md-copy-label');
 			const icon = btn.querySelector('.md-copy-icon');
 			const prevLabel = label?.textContent ?? 'Copy';
-			const prevIcon = icon?.textContent ?? '📋';
 			if (label) label.textContent = 'Copied';
-			if (icon) icon.textContent = '✓';
+			if (icon) icon.innerHTML = ICON_CHECK;
 			btn.classList.add('md-copy-success');
 			setTimeout(() => {
 				if (label) label.textContent = prevLabel;
-				if (icon) icon.textContent = prevIcon;
+				if (icon) icon.innerHTML = ICON_COPY;
 				btn.classList.remove('md-copy-success');
 			}, 1500);
 		} catch {
@@ -213,7 +221,10 @@
 				'span',
 				'div',
 				'img',
-				'button'
+				'button',
+				'svg',
+				'path',
+				'rect'
 			],
 			ALLOWED_ATTR: [
 				'href',
@@ -226,7 +237,20 @@
 				'type',
 				'aria-label',
 				'aria-hidden',
-				'data-lang'
+				'data-lang',
+				'viewBox',
+				'fill',
+				'stroke',
+				'stroke-width',
+				'stroke-linecap',
+				'stroke-linejoin',
+				'width',
+				'height',
+				'd',
+				'x',
+				'y',
+				'rx',
+				'ry'
 			],
 			ADD_ATTR: ['target'],
 			// Force all links to open in a new tab safely.

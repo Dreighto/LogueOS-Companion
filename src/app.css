@@ -33,26 +33,33 @@
 	--color-brand-soft: #c3c8ff;
 	--color-brand-glow: #9aa1f0;
 
-	--color-status-green: #22c55e;
-	--color-status-amber: #f59e0b;
-	--color-status-red: #ef4444;
-	--color-status-blue: #3b82f6;
+	/* Status — repointed to the locked canon semantics (icon-wiring pass).
+	   These previously carried stale stock Tailwind-500 hexes, so even
+	   "semantic" usage rendered off the Indigo ramp. One decision, one place. */
+	--color-status-green: var(--green);
+	--color-status-amber: var(--amber);
+	--color-status-red: var(--red);
+	--color-status-blue: var(--blue);
 	--color-status-purple: #a855f7;
-	--color-status-grey: #6b7280;
+	--color-status-grey: var(--ui);
 
-	/* Work-surface status — zinc/white in flight; colour lives on worker brands. */
-	--color-st-run: #d4d4d8; /* in progress — neutral beam (Perplexity-style) */
-	--color-st-needs: #c9a34e; /* needs-you — muted amber */
-	--color-st-done: #71717a; /* complete / idle */
-	--color-st-fail: #c25b5b; /* failure */
-	--color-progress-beam: #f4f4f5; /* progress head / comet */
-	--color-progress-glow: rgb(255 255 255 / 0.35);
-	--color-edge: #2a2a2e;
-	--color-edge-active: #3f3f46;
+	/* Work-surface status — operator ruling 2026-06-11: running is INDIGO
+	   (--live), not the retired neutral-beam zinc. Idle/done sink to the gray
+	   ramp; needs/fail ride the canon semantics. */
+	--color-st-run: var(--live);
+	--color-st-needs: var(--amber);
+	--color-st-done: var(--t4);
+	--color-st-fail: var(--red);
+	--color-progress-beam: var(--accent);
+	--color-progress-glow: var(--accent-glow);
+	--color-edge: var(--line2);
+	--color-edge-active: var(--line3);
 
-	--color-worker-claude: #8b5cf6;
-	--color-worker-gemini: #3b82f6;
-	--color-worker-operator: #ef4444;
+	/* Worker identity tints — brand-TRUE per operator note 2026-06-11
+	   ("icon color should represent the actual color of the logo"). */
+	--color-worker-claude: #d97757;
+	--color-worker-gemini: #8e75b2;
+	--color-worker-operator: var(--red);
 
 	--color-on-brand: var(--on-accent);
 
@@ -62,20 +69,20 @@
 	--color-primary: var(--accent);
 	--color-primary-foreground: var(--on-accent);
 
-	--color-secondary: #18181b;
+	--color-secondary: var(--bg3);
 	--color-secondary-foreground: var(--on-accent);
 
-	--color-muted: #18181b;
-	--color-muted-foreground: #a1a1aa;
+	--color-muted: var(--bg3);
+	--color-muted-foreground: var(--t3);
 
-	--color-accent: #18181b;
+	--color-accent: var(--bg3);
 	--color-accent-foreground: var(--on-accent);
 
-	--color-destructive: #f85149;
+	--color-destructive: var(--red);
 	--color-destructive-foreground: var(--on-accent);
 
-	--color-border: #27272a;
-	--color-input: #27272a;
+	--color-border: var(--line2);
+	--color-input: var(--line2);
 	--color-hairline: rgb(255 255 255 / 0.09);
 	--color-ring: var(--accent);
 

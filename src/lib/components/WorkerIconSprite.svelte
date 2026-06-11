@@ -49,45 +49,17 @@
 			/>
 		</symbol>
 
-		<!-- Cursor (CUR) — 512→24 via scale -->
+		<!-- Cursor (CUR) — mono single-line cube (icon-wiring pass; replaces the
+		     baked multi-hex mark that ignored currentColor). Regular hexagon =
+		     true isometric, matches the approved cursor animations. -->
 		<symbol id="icon-cursor" viewBox="0 0 24 24">
-			<g transform="scale(0.046875)">
-				<path d="M256 76L410 165V344L256 433L102 344V165L256 76Z" fill="#F7F7F2" />
-				<path d="M256 76L410 165L256 254L102 165L256 76Z" fill="#FFFFFF" />
-				<path d="M102 165L256 254V433L102 344V165Z" fill="#DCDCD4" />
-				<path d="M410 165L256 254V433L410 344V165Z" fill="#BDBDB3" />
-				<path d="M256 254L410 165V232L256 321L102 232V165L256 254Z" fill="#1B1B18" />
-				<path d="M256 321L410 232V344L256 433V321Z" fill="#26261E" />
-				<path d="M256 321L102 232V344L256 433V321Z" fill="#323229" />
-				<path
-					d="M256 76L410 165L256 254L102 165L256 76Z"
-					fill="none"
-					stroke="#0F0F0D"
-					stroke-width="16"
-					stroke-linejoin="round"
-				/>
-				<path
-					d="M102 165V344L256 433L410 344V165"
-					fill="none"
-					stroke="#0F0F0D"
-					stroke-width="16"
-					stroke-linejoin="round"
-				/>
-				<path
-					d="M102 165L256 254L410 165"
-					fill="none"
-					stroke="#0F0F0D"
-					stroke-width="16"
-					stroke-linejoin="round"
-				/>
-				<path
-					d="M256 254V433"
-					fill="none"
-					stroke="#0F0F0D"
-					stroke-width="16"
-					stroke-linecap="round"
-				/>
-			</g>
+			<path
+				fill="none"
+				stroke="currentColor"
+				stroke-width="1.6"
+				stroke-linejoin="round"
+				d="M12 3l7.79 4.5v9L12 21l-7.79-4.5v-9L12 3zM4.21 7.5L12 12l7.79-4.5M12 12v9"
+			/>
 		</symbol>
 
 		<!-- Task focal — central work-surface mark. Four-point sparkle reads as

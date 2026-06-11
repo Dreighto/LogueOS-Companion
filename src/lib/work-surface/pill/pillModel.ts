@@ -122,6 +122,62 @@ export function pillWorker(workerId: string | null | undefined, traceId: string)
 	return { shortCode: template.shortCode, display: template.display };
 }
 
+/**
+ * Working-state Lottie selection (icon-wiring pass, operator-approved set —
+ * static/anim/manifest.json). Pure derivation, truth-guard aware:
+ *   - trust !== 'trusted' → no animation at all (an unverified/stale pill must
+ *     not wear live motion, same rule as the suppressed dot pulse);
+ *   - 'stopped' is neutral-terminal → deliberately animation-free;
+ *   - raw stream status picks the moment (planning/dispatched/retry...);
+ *   - while 'working', the stage frontier picks active vs verifying;
+ *   - done/failed play ONCE and hold (loop=false) — motion stops when work stops.
+ */
+export interface PillAnim {
+	file: string;
+	loop: boolean;
+}
+
+export function pillAnimFor(opts: {
+	status: string;
+	aggr: AggrStatus;
+	stages: PillStage[];
+	trust: PillTrust;
+}): PillAnim | null {
+	if (opts.trust !== 'trusted') return null;
+	switch (opts.status) {
+		case 'proposed':
+		case 'classified':
+		case 'decided':
+			return { file: 'state-planning-v4.json', loop: true };
+		case 'dispatched':
+			return { file: 'worker-dispatched-ping.json', loop: true };
+		case 'retry':
+			return { file: 'state-retry-elastic.json', loop: true };
+		case 'opening_pr':
+			return { file: 'state-opening-pr-v4.json', loop: true };
+		case 'merged':
+			return { file: 'state-merged-v4.json', loop: true };
+	}
+	switch (opts.aggr) {
+		case 'running': {
+			const active = opts.stages.find((s) => s.status === 'active');
+			const verifying = active?.key === 'check' || active?.key === 'approve';
+			return verifying
+				? { file: 'worker-verifying-scan.json', loop: true }
+				: { file: 'worker-active-orbit.json', loop: true };
+		}
+		case 'needs-you':
+		case 'blocked':
+			return { file: 'worker-waiting-breath.json', loop: true };
+		case 'done':
+			return { file: 'worker-done-check.json', loop: false };
+		case 'failed':
+			return { file: 'worker-failed-x.json', loop: false };
+		default:
+			return null; // 'stopped' — neutral, no motion
+	}
+}
+
 /** Compact mono elapsed: 42s → 3m12s → 1h04m. Tabular-nums friendly. */
 export function fmtElapsed(ms: number): string {
 	if (!Number.isFinite(ms) || ms < 0) return '';
