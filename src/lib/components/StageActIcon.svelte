@@ -34,11 +34,14 @@
 
 <span class="stage-act-icon" class:stage-act-icon--pulse={pulse} aria-hidden="true">
 	{#if IconCmp}
-		<IconCmp {size} strokeWidth={2.25} />
+		<IconCmp {size} strokeWidth={2} />
 	{/if}
 </span>
 
 <style lang="postcss">
+	/* Locked tokens (icon-wiring pass): quiet --t2 chrome at rest; the pulse is
+	   a LIVE moment, so it brightens to --t1 with the indigo glow per the
+	   operator's 2026-06-11 running-is-indigo ruling. */
 	.stage-act-icon {
 		display: inline-flex;
 		align-items: center;
@@ -46,10 +49,10 @@
 		width: 1.375rem;
 		height: 1.375rem;
 		border-radius: var(--r-xs);
-		border: 1px solid rgb(255 255 255 / 0.1);
-		background: rgb(255 255 255 / 0.04);
-		color: rgb(255 255 255 / 0.78);
-		box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+		border: 1px solid var(--line2);
+		background: var(--line);
+		color: var(--t2);
+		box-shadow: inset 0 1px 0 var(--line);
 		transition:
 			transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
 			box-shadow 0.28s ease,
@@ -59,11 +62,11 @@
 
 	.stage-act-icon--pulse {
 		animation: stage-act-pop 0.85s cubic-bezier(0.22, 1, 0.36, 1);
-		border-color: rgb(255 255 255 / 0.22);
-		color: rgb(255 255 255 / 0.96);
+		border-color: var(--live-line);
+		color: var(--t1);
 		box-shadow:
-			inset 0 1px 0 rgb(255 255 255 / 0.12),
-			0 0 16px rgb(255 255 255 / 0.14);
+			inset 0 1px 0 var(--line2),
+			0 0 16px var(--accent-glow);
 	}
 
 	@keyframes stage-act-pop {

@@ -31,8 +31,10 @@
 		pillWorker,
 		fmtElapsed,
 		parsePillTs,
-		derivePillTrust
+		derivePillTrust,
+		pillAnimFor
 	} from './pillModel';
+	import WorkerStateAnim from './WorkerStateAnim.svelte';
 
 	let {
 		traceId,
@@ -126,6 +128,13 @@
 	const a11yLabel = $derived(
 		`${who.display} · ${title} · ${STATE_LABELS[aggr] ?? aggr}${checkLabel ? ` · ${checkLabel}` : elapsedLabel ? ` · ${elapsedLabel}` : ''}`
 	);
+
+	// Working-state animation (operator-approved Lottie set). Primitives only:
+	// `anim` is a fresh object whenever `stages` recomputes (every stream row),
+	// so the component consumes file/loop strings to avoid player churn.
+	const anim = $derived(pillAnimFor({ status, aggr, stages, trust }));
+	const animFile = $derived(anim?.file ?? null);
+	const animLoop = $derived(anim?.loop ?? true);
 </script>
 
 <div
@@ -138,6 +147,7 @@
 	role="status"
 	aria-label={a11yLabel}
 >
+	<WorkerStateAnim file={animFile} loop={animLoop} size={18} />
 	<span class="wpill-worker" data-testid="worker-pill-worker" title={who.display}>
 		{who.shortCode}
 	</span>

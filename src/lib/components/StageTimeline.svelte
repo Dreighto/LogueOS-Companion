@@ -63,7 +63,7 @@
 							<polyline points="2.5,5 4.5,7 7.5,3"></polyline>
 						</svg>
 					{:else if IconCmp}
-						<IconCmp size={isReply ? 11 : 10} strokeWidth={2.25} aria-hidden="true" />
+						<IconCmp size={isReply ? 11 : 10} strokeWidth={2} aria-hidden="true" />
 					{/if}
 				</div>
 				<div class="label">{step.stage}</div>
@@ -140,9 +140,9 @@
 		width: 22px;
 		height: 22px;
 		border-radius: var(--r-pill);
-		border: 1px solid rgb(255 255 255 / 0.1);
-		background-color: rgb(255 255 255 / 0.03);
-		box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+		border: 1px solid var(--line2);
+		background-color: var(--line);
+		box-shadow: inset 0 1px 0 var(--line);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -171,12 +171,12 @@
 	}
 
 	.segment.active .icon-slot {
-		border-color: color-mix(in srgb, var(--color-st-run) 35%, rgb(255 255 255 / 0.1));
-		background-color: color-mix(in srgb, var(--color-st-run) 12%, rgb(255 255 255 / 0.03));
+		border-color: var(--live-line);
+		background-color: var(--live-bg);
 		color: var(--color-st-run);
 		box-shadow:
-			inset 0 1px 0 rgb(255 255 255 / 0.08),
-			0 0 12px color-mix(in srgb, var(--color-st-run) 32%, transparent);
+			inset 0 1px 0 var(--line2),
+			0 0 12px var(--accent-glow);
 		animation: pulse-soft 1.6s ease-in-out infinite alternate;
 	}
 
@@ -201,7 +201,7 @@
 	.segment.active .label {
 		font-weight: 600;
 		letter-spacing: 0.01em;
-		color: rgb(255 255 255 / 0.92);
+		color: var(--t1);
 	}
 	.segment.reply.active .label,
 	.segment.reply.done .label {

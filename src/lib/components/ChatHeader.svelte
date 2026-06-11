@@ -17,7 +17,7 @@
 	// icon's brand-pink active treatment while the modal is open.
 
 	import { base, resolve } from '$app/paths';
-	import { Menu, BookOpen } from 'lucide-svelte';
+	import { PanelLeft, BookOpen } from 'lucide-svelte';
 
 	let {
 		workspaceContextOpen = $bindable(false),
@@ -43,7 +43,7 @@
 			aria-label="Toggle Sessions Sidebar"
 			title="Toggle Sessions Sidebar"
 		>
-			<Menu size={16} />
+			<PanelLeft size={16} />
 		</button>
 
 		<a

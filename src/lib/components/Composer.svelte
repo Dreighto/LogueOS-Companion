@@ -46,7 +46,12 @@
 		AudioLines,
 		Plus,
 		ChevronUp,
-		Check
+		Check,
+		Mic,
+		RefreshCw,
+		Plug,
+		Flame,
+		Repeat
 	} from 'lucide-svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
@@ -124,14 +129,16 @@
 	// engaged on iOS because passive listeners + default touch-action let
 	// WebKit consume the downward drag as a scroll before it could arm.)
 
-	const TALKBACK_PHASE_LABELS: Record<TalkbackPhase, string> = {
-		connecting: '🔌 Connecting…',
-		warming: '🔥 Warming up…',
-		capture: '🔴 Capture',
-		transcribe: '🔄 Transcribe',
-		dispatch: '📤 Sending',
-		speak: '🔈 Reply',
-		loop: '↩ Ready'
+	// Icon-wiring pass: UI emoji retired for tintable lucide glyphs (the chat
+	// system-message emoji prefixes are NOT touched — those are load-bearing).
+	const TALKBACK_PHASE_LABELS: Record<TalkbackPhase, { icon: typeof Plug; text: string }> = {
+		connecting: { icon: Plug, text: 'Connecting…' },
+		warming: { icon: Flame, text: 'Warming up…' },
+		capture: { icon: Mic, text: 'Capture' },
+		transcribe: { icon: RefreshCw, text: 'Transcribe' },
+		dispatch: { icon: Send, text: 'Sending' },
+		speak: { icon: AudioLines, text: 'Reply' },
+		loop: { icon: Repeat, text: 'Ready' }
 	};
 
 	const COMPOSER_MIN_PX = 36;
@@ -242,12 +249,12 @@
      anywhere on the chat page, not just on the composer pill). -->
 {#if isDragging}
 	<div
-		class="pointer-events-none absolute inset-3 z-[60] flex flex-col items-center justify-center gap-2 rounded-[var(--r-xl)] border-2 border-dashed border-cyan-400/60 bg-cyan-500/10 backdrop-blur-md"
+		class="pointer-events-none absolute inset-3 z-[60] flex flex-col items-center justify-center gap-2 rounded-[var(--r-xl)] border-2 border-dashed border-[var(--live-line)] bg-[var(--live-bg)] backdrop-blur-md"
 		aria-hidden="true"
 	>
-		<Paperclip size={32} class="text-cyan-300" />
-		<span class="font-sans text-xs tracking-wider text-cyan-200 uppercase">Drop to attach</span>
-		<span class="px-4 text-center font-sans text-xs text-cyan-300/70"
+		<Paperclip size={32} class="text-[var(--live)]" />
+		<span class="font-sans text-xs tracking-wider text-[var(--t1)] uppercase">Drop to attach</span>
+		<span class="px-4 text-center font-sans text-xs text-[var(--t3)]"
 			>Images stage as chips above the composer</span
 		>
 	</div>
@@ -267,7 +274,7 @@
 			{composerMode === 'talkback'
 			? 'border-emerald-500/40 bg-emerald-500/[0.04] shadow-[var(--shadow-accent)]'
 			: imageMode
-				? 'border-cyan-500/40 bg-cyan-500/[0.04] shadow-[var(--shadow-accent)]'
+				? 'border-[var(--blue-line)] bg-[var(--blue-bg)] shadow-[var(--shadow-accent)]'
 				: sending
 					? 'composer-sending border-[var(--live-line)] bg-[var(--live-bg)]'
 					: 'border-white/[0.08] bg-[#0e0e11]/60 backdrop-blur-2xl focus-within:border-white/20'}"
@@ -278,15 +285,20 @@
 				class="flex items-center justify-between border-b border-white/5 px-2 pt-0.5 pb-1 font-sans text-[10px] select-none"
 			>
 				<div class="flex items-center gap-1.5">
-					<span class="h-2 w-2 animate-ping rounded-[var(--r-pill)] bg-emerald-400"></span>
-					<span class="font-semibold text-emerald-400">
+					<span class="h-2 w-2 animate-ping rounded-[var(--r-pill)] bg-[var(--green)]"></span>
+					<span class="flex items-center gap-1 font-semibold text-[var(--green)]">
+						<AudioLines size={11} aria-hidden="true" />
 						{talkbackPhase === 'connecting' || talkbackPhase === 'warming'
-							? '🔊 Talkback'
-							: '🔊 Walkie-Talkie Engaged'}
+							? 'Talkback'
+							: 'Walkie-Talkie Engaged'}
 					</span>
 					{#if composerMode === 'talkback' && talkbackPhase}
-						<span class="rounded border border-zinc-800 bg-black/40 px-1 text-zinc-500">
-							{TALKBACK_PHASE_LABELS[talkbackPhase]}
+						{@const phase = TALKBACK_PHASE_LABELS[talkbackPhase]}
+						<span
+							class="flex items-center gap-1 rounded border border-[var(--line2)] bg-black/40 px-1 text-[var(--t3)]"
+						>
+							<phase.icon size={10} aria-hidden="true" />
+							{phase.text}
 						</span>
 					{/if}
 				</div>
@@ -305,10 +317,10 @@
 			</div>
 		{:else if imageMode}
 			<div
-				class="flex items-center justify-between border-b border-white/5 px-2 pt-0.5 pb-1 font-sans text-[11px] font-medium text-cyan-300 select-none"
+				class="flex items-center justify-between border-b border-[var(--line)] px-2 pt-0.5 pb-1 font-sans text-[11px] font-medium text-[var(--blue)] select-none"
 			>
 				<div class="flex items-center gap-1.5">
-					<Sparkles size={12} class="shrink-0 text-cyan-300" />
+					<Sparkles size={12} class="shrink-0 text-[var(--blue)]" />
 					<span>Prompt routes to image generation</span>
 				</div>
 				<button
@@ -326,7 +338,7 @@
 		     intercepts the literal text and runs the command handler. -->
 		{#if slashMode}
 			<div
-				class="mb-1 flex flex-col gap-1 rounded-[var(--r-lg)] border border-cyan-500/20 bg-[#0a1416] p-1.5"
+				class="mb-1 flex flex-col gap-1 rounded-[var(--r-lg)] border border-[var(--blue-line)] bg-[var(--bg2)] p-1.5"
 				role="listbox"
 				aria-label="Slash commands"
 			>
@@ -334,12 +346,12 @@
 					<button
 						type="button"
 						onclick={() => onpickSlash(cmd)}
-						class="flex w-full items-center justify-between gap-3 rounded-[var(--r-sm)] px-2.5 py-1.5 text-left transition-colors hover:bg-cyan-500/10"
+						class="flex w-full items-center justify-between gap-3 rounded-[var(--r-sm)] px-2.5 py-1.5 text-left transition-colors hover:bg-[var(--blue-bg)]"
 						role="option"
 						aria-selected="false"
 					>
 						<span class="flex flex-col leading-tight">
-							<span class="font-sans text-xs text-cyan-300">{cmd.usage}</span>
+							<span class="font-sans text-xs text-[var(--blue)]">{cmd.usage}</span>
 							<span class="text-[10px] text-zinc-400">{cmd.description}</span>
 						</span>
 					</button>
@@ -585,10 +597,13 @@
 							actionsOpen = false;
 						}}
 						class="flex items-center gap-2.5 rounded-[var(--r-md)] px-2.5 py-2 text-left text-[13px] transition-colors hover:bg-white/[0.06] active:bg-white/[0.1] disabled:opacity-40 {imageMode
-							? 'text-cyan-300'
+							? 'text-[var(--blue)]'
 							: 'text-zinc-200'}"
 					>
-						<Sparkles size={15} class="shrink-0 {imageMode ? 'text-cyan-300' : 'text-zinc-400'}" />
+						<Sparkles
+							size={15}
+							class="shrink-0 {imageMode ? 'text-[var(--blue)]' : 'text-zinc-400'}"
+						/>
 						<span>{imageMode ? 'Image mode (on)' : 'Generate image'}</span>
 					</button>
 				</div>

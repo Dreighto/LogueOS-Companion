@@ -21,8 +21,9 @@
 		warning: 'bg-status-amber/[0.08] border-status-amber/40',
 		error: 'bg-status-red/[0.08] border-status-red/40'
 	};
+	// Approved status semantics (icon-wiring pass): info is --blue, not gray.
 	const iconColor = {
-		info: 'text-zinc-300',
+		info: 'text-status-blue',
 		success: 'text-status-green',
 		warning: 'text-status-amber',
 		error: 'text-status-red'

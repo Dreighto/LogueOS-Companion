@@ -1,16 +1,19 @@
 import type { TaskWorker } from '$lib/types/workSurface';
 
-/** Per-identity brand colour (operator-locked 2026-06-06). Identity, not role/status. */
+/** Per-identity brand colour — brand-TRUE per operator note 2026-06-11
+ *  ("icon color should represent the actual color of the logo"); supersedes
+ *  the 2026-06-06 assigned tints. Identity, not role/status. Unknown workers
+ *  fall back to neutral chrome (--ui), never a semantic colour. */
 export function workerBrandColor(identity?: string, shortCode?: string): string {
 	const id = (identity || '').toLowerCase();
 	const code = (shortCode || '').toUpperCase();
-	if (id === 'claude-code' || code === 'CC') return '#f97316';
+	if (id === 'claude-code' || code === 'CC') return '#d97757';
 	if (id === 'antigravity' || code === 'AGY') return '#a855f7';
 	if (id === 'codex' || code === 'CDX') return '#9ca3af';
-	if (id === 'deepseek' || code === 'DPSK') return '#3b82f6';
-	if (id === 'gemini' || code === 'GMI') return '#60a5fa';
+	if (id === 'deepseek' || code === 'DPSK') return '#4d6bfe';
+	if (id === 'gemini' || code === 'GMI') return '#8e75b2';
 	if (id === 'cursor' || code === 'CUR') return '#a8a29e';
-	return 'var(--color-status-blue)';
+	return 'var(--ui)';
 }
 
 /** Step text hints wrap-up — faster shared heartbeat across graph / row / registry. */
