@@ -10,6 +10,7 @@
 	// ($lib/chat/realtime-voice.svelte.ts); this component is presentation +
 	// gesture wiring.
 
+	import { dev } from '$app/environment';
 	import {
 		Mic,
 		MicOff,
@@ -24,7 +25,8 @@
 		Drama,
 		ChevronDown,
 		Check,
-		Infinity as InfinityIcon
+		Infinity as InfinityIcon,
+		MoreHorizontal
 	} from 'lucide-svelte';
 	import SullyAvatar from './SullyAvatar.svelte';
 	import type { RealtimeVoiceController } from '$lib/chat/realtime-voice.svelte';
@@ -32,11 +34,14 @@
 
 	let { voice }: { voice: RealtimeVoiceController } = $props();
 
+	const VOICE_STARTERS = [
+		{ label: "What's running?", text: "What's currently running on the system?" },
+		{ label: 'Summarize today', text: 'Summarize what happened today.' },
+		{ label: 'Check tasks', text: 'What tasks are active right now?' },
+		{ label: 'Quick status', text: 'Give me a quick status update.' }
+	] as const;
+
 	// ── Diagnostic: mic permission + PWA install state ──────────────────
-	// iOS PWA mic-permission behavior is famously inconsistent. This probes
-	// the actual state on entry so Captain can see what iOS REALLY thinks at
-	// any given moment (vs. inferring from the prompt's UI). Settles the
-	// "did the permission persist?" question with data instead of theory.
 	type MicProbe = {
 		permission: 'granted' | 'prompt' | 'denied' | 'unsupported' | 'pending';
 		standalone: boolean;
@@ -55,6 +60,13 @@
 	});
 	let showProbe = $state(false);
 	let showVoicePicker = $state(false);
+	let showSettings = $state(false);
+
+	const debugUnlocked = $derived(
+		dev ||
+			(typeof window !== 'undefined' &&
+				new URLSearchParams(window.location.search).get('debug') === '1')
+	);
 
 	async function runProbe(): Promise<void> {
 		const result: MicProbe = {
@@ -72,7 +84,6 @@
 		result.hostname = location.hostname;
 		result.userAgent = navigator.userAgent.slice(0, 80);
 		result.secureContext = window.isSecureContext;
-		// iOS Safari: navigator.standalone === true when launched from home-screen icon.
 		const std = (navigator as Navigator & { standalone?: boolean }).standalone;
 		result.standalone = std === true;
 		const modes = ['standalone', 'fullscreen', 'minimal-ui', 'browser'];
@@ -95,13 +106,10 @@
 		probe = result;
 	}
 
-	// Re-probe every time voice mode opens AND on visibility-change (so when
-	// Captain backgrounds + foregrounds, we see whether iOS re-evaluated state).
 	$effect(() => {
 		if (voice.open) void runProbe();
 	});
 
-	// iOS suspends AudioContexts when the tab/PWA backgrounds; resume on return.
 	$effect(() => {
 		const onVisible = () => {
 			if (document.visibilityState === 'visible') {
@@ -113,7 +121,6 @@
 		return () => document.removeEventListener('visibilitychange', onVisible);
 	});
 
-	// Escape closes Voice Mode.
 	$effect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') void voice.exit();
@@ -122,9 +129,6 @@
 		return () => window.removeEventListener('keydown', onKey);
 	});
 
-	// Push-to-talk gesture (PTT mode). Pointer events cover mouse + touch; we
-	// suppress the default so a long touch-press doesn't select text / fire the
-	// context menu.
 	function onPressDown(e: PointerEvent) {
 		e.preventDefault();
 		void voice.pressStart();
@@ -142,7 +146,6 @@
 		voice.voices.find((v) => v.id === voice.voiceId)?.label ?? voice.voiceId
 	);
 
-	// Mode-aware status line under the controls.
 	const statusLabel = $derived.by(() => {
 		if (voice.phase === 'error') return 'Something went wrong';
 		if (voice.phase === 'connecting') return 'Waking the voice…';
@@ -151,11 +154,9 @@
 		if (voice.phase === 'thinking') return 'Thinking…';
 		if (voice.phase === 'speaking')
 			return isContinuous ? 'Speaking — tap to interrupt' : 'Speaking — hold to interrupt';
-		// idle
 		return isContinuous ? 'Paused' : 'Hold to talk';
 	});
 
-	// Map the live voice phase to Sully's avatar state — she IS the orb now.
 	const voiceAvatarState = $derived(
 		voice.phase === 'speaking'
 			? 'speaking'
@@ -166,130 +167,152 @@
 					: 'idle'
 	);
 
-	// Named full-voice UI state (LOS-176 / T1b) — the overlay renders against the
-	// same surface state machine the page uses, so the transcript hierarchy is
-	// driven by the canonical IDLE/LISTENING/THINKING/SPEAKING vocabulary rather
-	// than re-derived from raw phase booleans here.
 	const uiState = $derived(mapVoicePhase(voice.phase));
 
-	// Operator's own words. Secondary + ephemeral: shown live WHILE listening,
-	// then faded out the moment Sully takes the floor (thinking/speaking). Her
-	// reply is the persistent primary (below) — this is just a transient echo of
-	// what you said, not a transcript line.
 	const operatorCaption = $derived(voice.partial || voice.userText);
 	const operatorCaptionVisible = $derived(uiState === 'LISTENING' && operatorCaption.length > 0);
+
+	const showIdleStarters = $derived(
+		uiState === 'IDLE' &&
+			!isConnecting &&
+			!isError &&
+			!voice.replyText &&
+			!operatorCaptionVisible
+	);
+
+	function closeMenus() {
+		showSettings = false;
+		showVoicePicker = false;
+	}
 </script>
 
 {#if voice.open}
 	<div
-		class="fixed inset-0 z-[100] flex flex-col bg-zinc-950/95 text-zinc-100 backdrop-blur-xl"
+		class="voice-mode-overlay fixed inset-0 z-[100] flex flex-col text-[var(--t1)]"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Voice mode"
 	>
-		<!-- Header -->
+		<!-- Header — quiet chrome, close always visible -->
 		<div
 			class="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2"
 		>
-			<div class="flex items-center gap-2 text-sm font-medium text-zinc-400">
-				<AudioLines size={16} class="text-orange-400" />
+			<div class="flex items-center gap-2 text-sm font-medium text-[var(--t3)]">
+				<AudioLines size={16} class="text-brand" />
 				<span>Voice</span>
 			</div>
 			<div class="flex items-center gap-1">
-				<!-- Voice picker: switch which voice Sully speaks in (Emma cloud / Sulley local) -->
-				{#if voice.voices.length > 1}
-					<div class="relative">
-						<button
-							type="button"
-							onclick={() => (showVoicePicker = !showVoicePicker)}
-							disabled={isConnecting || isError}
-							class="flex h-10 items-center gap-1.5 rounded-[var(--r-pill)] px-3 text-sm text-zinc-300 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-							aria-label="Change voice"
-							aria-expanded={showVoicePicker}
-							title="Change voice"
+				<div class="relative">
+					<button
+						type="button"
+						onclick={() => {
+							showSettings = !showSettings;
+							showVoicePicker = false;
+						}}
+						disabled={isConnecting || isError}
+						class="icon-btn text-[var(--t3)] disabled:opacity-40"
+						aria-label="Voice settings"
+						aria-expanded={showSettings}
+						title="Settings"
+					>
+						<MoreHorizontal size={20} />
+					</button>
+					{#if showSettings}
+						<div
+							class="popover-panel absolute top-12 right-0 z-20 w-56 p-1"
+							role="menu"
 						>
-							<Drama size={16} class="text-orange-400" />
-							<span class="max-w-[7rem] truncate">{activeVoiceLabel}</span>
-							<ChevronDown size={14} class={showVoicePicker ? 'rotate-180' : ''} />
-						</button>
-						{#if showVoicePicker}
-							<div
-								class="absolute top-12 right-0 z-10 w-64 rounded-[var(--r-md)] border border-zinc-800 bg-zinc-900/95 p-1 shadow-[var(--shadow-card)] backdrop-blur"
-								role="menu"
+							{#if voice.voices.length > 1}
+								<button
+									type="button"
+									role="menuitem"
+									onclick={() => {
+										showVoicePicker = !showVoicePicker;
+									}}
+									class="flex w-full items-center gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left text-sm text-[var(--t2)] transition hover:bg-[var(--bg3)]"
+								>
+									<Drama size={16} class="text-brand" />
+									<span class="flex-1 truncate">{activeVoiceLabel}</span>
+									<ChevronDown size={14} class={showVoicePicker ? 'rotate-180' : ''} />
+								</button>
+								{#if showVoicePicker}
+									<div class="mb-1 border-t border-[var(--line)] pt-1">
+										{#each voice.voices as v (v.id)}
+											<button
+												type="button"
+												role="menuitemradio"
+												aria-checked={v.id === voice.voiceId}
+												onclick={() => {
+													void voice.setVoice(v.id);
+													showVoicePicker = false;
+												}}
+												class="flex w-full items-start gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left transition hover:bg-[var(--bg3)]"
+											>
+												<Check
+													size={16}
+													class={v.id === voice.voiceId
+														? 'mt-0.5 shrink-0 text-[var(--green)]'
+														: 'mt-0.5 shrink-0 text-transparent'}
+												/>
+												<span class="flex flex-col">
+													<span class="text-sm text-[var(--t1)]">{v.label}</span>
+													<span class="text-[11px] text-[var(--t4)]">{v.blurb}</span>
+												</span>
+											</button>
+										{/each}
+									</div>
+								{/if}
+							{/if}
+							<button
+								type="button"
+								role="menuitem"
+								onclick={() => voice.toggleMode()}
+								disabled={isConnecting || isError}
+								class="flex w-full items-center gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left text-sm text-[var(--t2)] transition hover:bg-[var(--bg3)] disabled:opacity-40"
 							>
-								{#each voice.voices as v (v.id)}
-									<button
-										type="button"
-										role="menuitemradio"
-										aria-checked={v.id === voice.voiceId}
-										onclick={() => {
-											void voice.setVoice(v.id);
-											showVoicePicker = false;
-										}}
-										class="flex w-full items-start gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left transition hover:bg-zinc-800"
-									>
-										<Check
-											size={16}
-											class={v.id === voice.voiceId
-												? 'mt-0.5 shrink-0 text-emerald-400'
-												: 'mt-0.5 shrink-0 text-transparent'}
-										/>
-										<span class="flex flex-col">
-											<span class="text-sm text-zinc-100">{v.label}</span>
-											<span class="text-[11px] text-zinc-500">{v.blurb}</span>
-										</span>
-									</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-				<!-- Diagnostic probe (small ⓘ — toggles a permission + PWA state panel) -->
-				<button
-					type="button"
-					onclick={() => (showProbe = !showProbe)}
-					class="flex h-10 w-10 items-center justify-center rounded-[var(--r-pill)] text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100"
-					aria-label="Toggle mic permission + PWA diagnostic"
-					title="Mic permission + PWA diagnostic"
-				>
-					<Info size={18} />
-				</button>
-				<!-- Mode toggle: hands-free ⇄ push-to-talk -->
-				<button
-					type="button"
-					onclick={() => voice.toggleMode()}
-					disabled={isConnecting || isError}
-					class="flex h-10 w-10 items-center justify-center rounded-[var(--r-pill)] text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-					aria-label={isContinuous ? 'Switch to push-to-talk' : 'Switch to hands-free'}
-					title={isContinuous
-						? 'Hands-free (tap for push-to-talk)'
-						: 'Push-to-talk (tap for hands-free)'}
-				>
-					{#if isContinuous}
-						<InfinityIcon size={20} />
-					{:else}
-						<Hand size={18} />
+								{#if isContinuous}
+									<InfinityIcon size={16} class="text-brand" />
+									<span>Hands-free</span>
+								{:else}
+									<Hand size={16} class="text-brand" />
+									<span>Push to talk</span>
+								{/if}
+							</button>
+							<button
+								type="button"
+								role="menuitem"
+								onclick={() => voice.toggleCaptions()}
+								class="flex w-full items-center gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left text-sm text-[var(--t2)] transition hover:bg-[var(--bg3)]"
+							>
+								{#if voice.captions}
+									<Captions size={16} class="text-brand" />
+									<span>Captions on</span>
+								{:else}
+									<CaptionsOff size={16} class="text-brand" />
+									<span>Captions off</span>
+								{/if}
+							</button>
+							{#if debugUnlocked}
+								<button
+									type="button"
+									role="menuitem"
+									onclick={() => {
+										showProbe = !showProbe;
+										closeMenus();
+									}}
+									class="flex w-full items-center gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left text-sm text-[var(--t2)] transition hover:bg-[var(--bg3)]"
+								>
+									<Info size={16} class="text-brand" />
+									<span>Mic diagnostic</span>
+								</button>
+							{/if}
+						</div>
 					{/if}
-				</button>
-				<!-- Captions toggle -->
-				<button
-					type="button"
-					onclick={() => voice.toggleCaptions()}
-					class="flex h-10 w-10 items-center justify-center rounded-[var(--r-pill)] text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-					aria-label={voice.captions ? 'Hide captions (voice only)' : 'Show captions'}
-					title={voice.captions ? 'Hide captions (voice only)' : 'Show captions'}
-				>
-					{#if voice.captions}
-						<Captions size={20} />
-					{:else}
-						<CaptionsOff size={20} />
-					{/if}
-				</button>
-				<!-- Close -->
+				</div>
 				<button
 					type="button"
 					onclick={() => void voice.exit()}
-					class="flex h-10 w-10 items-center justify-center rounded-[var(--r-pill)] text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
+					class="icon-btn text-[var(--t3)]"
 					aria-label="Close voice mode"
 					title="Close voice mode"
 				>
@@ -298,74 +321,61 @@
 			</div>
 		</div>
 
-		{#if showProbe}
-			<!-- Diagnostic panel — shows what iOS *actually* reports about mic permission +
-			     PWA install state. Useful for confirming whether re-prompting is iOS
-			     dropping the grant vs. our code asking when it shouldn't. -->
+		{#if showProbe && debugUnlocked}
 			<div
-				class="mx-4 mb-2 rounded-[var(--r-sm)] border border-zinc-800 bg-zinc-900/70 px-3 py-2 font-sans text-[11px] text-zinc-300"
+				class="mx-4 mb-2 rounded-[var(--r-sm)] border border-[var(--line2)] bg-[var(--glass-bg)] px-3 py-2 font-sans text-[11px] text-[var(--t2)] backdrop-blur"
 			>
-				<div class="mb-1 flex items-center justify-between text-zinc-400">
+				<div class="mb-1 flex items-center justify-between text-[var(--t3)]">
 					<span>diagnostic</span>
 					<button
 						type="button"
 						onclick={() => void runProbe()}
-						class="rounded px-2 py-0.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100"
+						class="rounded px-2 py-0.5 text-[var(--t4)] transition hover:bg-[var(--bg3)] hover:text-[var(--t1)]"
 						>refresh</button
 					>
 				</div>
 				<div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-					<span class="text-zinc-500">mic permission:</span>
+					<span class="text-[var(--t4)]">mic permission:</span>
 					<span
 						class={probe.permission === 'granted'
-							? 'text-emerald-400'
+							? 'text-[var(--green)]'
 							: probe.permission === 'denied'
-								? 'text-red-400'
+								? 'text-[var(--red)]'
 								: probe.permission === 'prompt'
-									? 'text-amber-400'
-									: 'text-zinc-500'}>{probe.permission}</span
+									? 'text-[var(--amber)]'
+									: 'text-[var(--t4)]'}>{probe.permission}</span
 					>
-					<span class="text-zinc-500">standalone PWA:</span>
-					<span class={probe.standalone ? 'text-emerald-400' : 'text-amber-400'}>
+					<span class="text-[var(--t4)]">standalone PWA:</span>
+					<span class={probe.standalone ? 'text-[var(--green)]' : 'text-[var(--amber)]'}>
 						{probe.standalone ? 'yes' : 'no (in Safari?)'}
 					</span>
-					<span class="text-zinc-500">display mode:</span>
+					<span class="text-[var(--t4)]">display mode:</span>
 					<span>{probe.displayMode}</span>
-					<span class="text-zinc-500">secure context:</span>
-					<span class={probe.secureContext ? 'text-emerald-400' : 'text-red-400'}>
+					<span class="text-[var(--t4)]">secure context:</span>
+					<span class={probe.secureContext ? 'text-[var(--green)]' : 'text-[var(--red)]'}>
 						{probe.secureContext ? 'yes' : 'NO'}
 					</span>
-					<span class="text-zinc-500">hostname:</span>
+					<span class="text-[var(--t4)]">hostname:</span>
 					<span class="break-all">{probe.hostname}</span>
-				</div>
-				<div class="mt-2 border-t border-zinc-800 pt-2 leading-snug text-zinc-400">
-					<p class="mb-1 text-zinc-300">iOS note:</p>
-					<p>
-						If this keeps showing a one-time mic prompt in the Home Screen app, set the Safari
-						website permission manually: open this same domain in Safari, tap the page menu, open
-						Website Settings, then set Microphone to Allow. If iOS still prompts after a cold PWA
-						restart, that is a WebKit/iOS standalone-app limitation, not a Companion setting.
-					</p>
 				</div>
 			</div>
 		{/if}
 
 		<!-- Transcript region -->
-		<div class="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-4">
+		<div class="flex flex-1 flex-col items-center justify-center gap-5 overflow-y-auto px-6 py-4">
 			{#if isError}
 				<div class="flex max-w-md flex-col items-center gap-3 text-center">
-					<AlertCircle size={40} class="text-red-400" />
-					<p class="text-base text-zinc-200">{voice.errorMsg ?? 'Voice mode error.'}</p>
+					<AlertCircle size={40} class="text-[var(--red)]" />
+					<p class="text-base text-[var(--t2)]">{voice.errorMsg ?? 'Voice mode error.'}</p>
 					<button
 						type="button"
 						onclick={() => void voice.exit()}
-						class="mt-1 rounded-[var(--r-pill)] bg-zinc-800 px-5 py-2 text-sm font-medium text-zinc-100 transition hover:bg-zinc-700"
+						class="btn-tactile mt-1 px-5 py-2 text-sm font-medium text-[var(--t1)]"
 					>
 						Close
 					</button>
 				</div>
 			{:else}
-				<!-- Phase orb (tap to interrupt while the companion is thinking/speaking) -->
 				<button
 					type="button"
 					onclick={() => voice.interrupt()}
@@ -379,26 +389,37 @@
 					<SullyAvatar state={voiceAvatarState} size={128} />
 				</button>
 
-				<!-- PRIMARY: Sully's reply. The hero of the transcript now — large,
-				     high-contrast, and it stays put as the turn settles (it is also
-				     persisted to the chat feed server-side, so it survives closing the
-				     overlay). Hidden only when captions are off (voice-only) or she
-				     hasn't spoken yet this turn. -->
+				{#if showIdleStarters}
+					<div class="flex max-w-sm flex-col items-center gap-3 text-center">
+						<h2 class="font-display text-xl font-semibold tracking-[var(--disp-track)] text-[var(--t1)]">
+							Hey Captain — what's on your mind?
+						</h2>
+						<p class="text-sm text-[var(--t3)]">Talk out loud, or tap a starter.</p>
+						<div class="voice-starter-chips">
+							{#each VOICE_STARTERS as chip (chip.label)}
+								<button
+									type="button"
+									class="voice-starter-chip"
+									onclick={() => voice.submitPrompt(chip.text)}
+								>
+									{chip.label}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
 				{#if voice.captions && voice.replyText}
 					<div
-						class="max-h-[44vh] max-w-2xl overflow-y-auto text-center text-xl leading-relaxed font-medium whitespace-pre-wrap text-zinc-100"
+						class="max-h-[40vh] max-w-2xl overflow-y-auto text-center font-display text-xl leading-relaxed font-medium whitespace-pre-wrap text-[var(--t1)]"
 						aria-live="polite"
 					>
 						{voice.replyText}
 					</div>
 				{/if}
 
-				<!-- SECONDARY / ephemeral: the operator's own words. Small + dim, and it
-				     FADES out once Sully takes the floor. Opacity-only transition (never
-				     animates layout), height reserved so the feed doesn't jump as it
-				     fades, and prefers-reduced-motion disables the animation. -->
 				<div
-					class="min-h-[1.75rem] max-w-xl text-center text-sm text-zinc-500 transition-opacity duration-[var(--dur-long)] ease-out motion-reduce:transition-none {operatorCaptionVisible
+					class="min-h-[1.75rem] max-w-xl text-center text-sm text-[var(--t4)] transition-opacity duration-[var(--dur-long)] ease-out motion-reduce:transition-none {operatorCaptionVisible
 						? 'opacity-100'
 						: 'opacity-0'}"
 					aria-hidden={!operatorCaptionVisible}
@@ -408,35 +429,30 @@
 			{/if}
 		</div>
 
-		<!-- Bottom control -->
 		{#if !isError}
 			<div
 				class="flex flex-col items-center gap-3 px-6 pt-2 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
 			>
-				<p class="text-sm text-zinc-400">{statusLabel}</p>
+				<p class="text-sm text-[var(--t3)]">{statusLabel}</p>
 				{#if isContinuous}
-					<!-- Hands-free: the big button is MUTE/UNMUTE -->
 					<button
 						type="button"
 						onclick={() => voice.toggleMute()}
 						disabled={isConnecting}
-						class="flex h-20 w-20 items-center justify-center rounded-[var(--r-pill)] shadow-[var(--shadow-card)] transition-all duration-[var(--dur-fast)] select-none disabled:opacity-40
-							{voice.muted
-							? 'bg-zinc-800 ring-1 ring-zinc-700'
-							: 'bg-orange-500 ring-4 ring-orange-400/30 active:scale-105'}"
+						class="btn-tactile-brand flex h-20 w-20 select-none disabled:opacity-40
+							{voice.muted ? '!bg-[var(--bg3)] !shadow-none ring-1 ring-[var(--line2)]' : ''}"
 						aria-label={voice.muted ? 'Unmute microphone' : 'Mute microphone'}
 						aria-pressed={voice.muted}
 					>
 						{#if isConnecting}
-							<Loader2 size={30} class="animate-spin text-zinc-300" />
+							<Loader2 size={30} class="animate-spin text-[var(--t2)]" />
 						{:else if voice.muted}
-							<MicOff size={30} class="text-zinc-400" />
+							<MicOff size={30} class="text-[var(--t3)]" />
 						{:else}
-							<Mic size={30} class="text-white" />
+							<Mic size={30} />
 						{/if}
 					</button>
 				{:else}
-					<!-- Push-to-talk: press and hold -->
 					<button
 						type="button"
 						disabled={isConnecting}
@@ -445,17 +461,15 @@
 						onpointerleave={onPressUp}
 						onpointercancel={onPressUp}
 						oncontextmenu={(e) => e.preventDefault()}
-						class="flex h-20 w-20 items-center justify-center rounded-[var(--r-pill)] shadow-[var(--shadow-card)] transition-all duration-[var(--dur-fast)] select-none disabled:opacity-40
-							{voice.holding
-							? 'scale-110 bg-orange-500 ring-4 ring-orange-400/40'
-							: 'bg-zinc-100 hover:bg-white active:scale-105'}"
+						class="flex h-20 w-20 select-none items-center justify-center rounded-[var(--r-pill)] transition-all duration-[var(--dur-fast)]
+							{voice.holding ? 'btn-tactile-brand scale-105' : 'btn-tactile'}"
 						style="touch-action: none;"
 						aria-label="Push to talk"
 					>
 						{#if isConnecting}
-							<Loader2 size={30} class="animate-spin text-zinc-700" />
+							<Loader2 size={30} class="animate-spin text-[var(--t3)]" />
 						{:else}
-							<Mic size={30} class={voice.holding ? 'text-white' : 'text-zinc-900'} />
+							<Mic size={30} class={voice.holding ? '' : 'text-[var(--t1)]'} />
 						{/if}
 					</button>
 				{/if}
@@ -463,3 +477,41 @@
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.voice-mode-overlay {
+		background:
+			radial-gradient(ellipse 90% 55% at 50% 0%, var(--accent-glow), transparent 62%),
+			var(--bg0);
+		backdrop-filter: blur(24px);
+	}
+
+	.voice-starter-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		justify-content: center;
+		margin-top: 4px;
+	}
+
+	.voice-starter-chip {
+		padding: 10px 16px;
+		border-radius: var(--r-pill);
+		border: 1px solid var(--line2);
+		background: rgba(255, 255, 255, 0.04);
+		color: var(--t2);
+		font-size: 14px;
+		transition:
+			background var(--dur-fast) var(--ease-standard),
+			border-color var(--dur-fast) var(--ease-standard),
+			color var(--dur-fast) var(--ease-standard),
+			transform var(--dur-fast) var(--ease-emphasized);
+	}
+
+	.voice-starter-chip:active {
+		background: rgba(124, 132, 232, 0.12);
+		border-color: rgba(124, 132, 232, 0.28);
+		color: var(--t1);
+		transform: scale(0.97);
+	}
+</style>

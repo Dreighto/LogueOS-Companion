@@ -95,6 +95,8 @@ export interface RealtimeVoiceController {
 	resumeAudio: () => void;
 	/** Switch the active voice (persists + applies live to subsequent sentences). */
 	setVoice: (id: string) => Promise<void>;
+	/** Submit a typed starter prompt (idle chips) without mic capture. */
+	submitPrompt: (text: string) => void;
 	/** onDestroy hook — release everything. */
 	destroy: () => Promise<void>;
 }
@@ -772,6 +774,22 @@ export function createRealtimeVoiceController(deps: RealtimeVoiceDeps): Realtime
 		}
 	}
 
+	/** Typed starter (idle chips): skip STT and run a voice turn directly. */
+	function submitPrompt(text: string) {
+		if (!open || phase === 'connecting' || phase === 'error') return;
+		const trimmed = text.trim();
+		if (!trimmed) return;
+		if (phase === 'thinking' || phase === 'speaking') {
+			abortReply();
+			stopPlayback();
+		}
+		holding = false;
+		partial = '';
+		userText = trimmed;
+		currentTurnId = gate.begin();
+		void startReply(trimmed);
+	}
+
 	function toggleMute() {
 		muted = !muted;
 		if (muted) {
@@ -862,6 +880,7 @@ export function createRealtimeVoiceController(deps: RealtimeVoiceDeps): Realtime
 		interrupt,
 		resumeAudio,
 		setVoice,
+		submitPrompt,
 		destroy: () => exit()
 	};
 }
