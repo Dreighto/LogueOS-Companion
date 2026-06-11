@@ -141,10 +141,9 @@
 {/if}
 
 <aside
-	class="fixed top-0 bottom-0 left-0 z-[60] flex w-72 flex-col border-r border-zinc-800/60 bg-[#090909]/98 shadow-[var(--shadow-float)] backdrop-blur-2xl will-change-transform lg:static lg:z-auto lg:translate-x-0 lg:transform-none!"
-	style="transition: transform 320ms cubic-bezier(0.22,0.61,0.36,1), opacity var(--dur-slow) cubic-bezier(0.22,0.61,0.36,1), width var(--dur-slow) cubic-bezier(0.22,0.61,0.36,1); transform: {sidebarOpen
-		? 'translateX(0)'
-		: 'translateX(-100%)'}"
+	class="sidebar-panel-motion fixed top-0 bottom-0 left-0 z-[60] flex w-72 flex-col border-r border-zinc-800/60 bg-[#090909]/98 shadow-[var(--shadow-float)] backdrop-blur-2xl will-change-transform lg:static lg:z-auto lg:translate-x-0 {sidebarOpen
+		? 'translate-x-0'
+		: '-translate-x-full lg:translate-x-0'}"
 >
 	<!-- Safe-area spacer — a background-matched div that fills the exact height of
 	     env(safe-area-inset-top). Using a spacer instead of padding on the fixed
@@ -375,10 +374,7 @@
 						{/if}
 
 						{#if threadMenuOpenFor === t.thread_id}
-							<div
-								data-popover
-								class="absolute top-full right-0 z-50 mt-1 min-w-40 overflow-hidden rounded-[var(--r-lg)] border border-white/[0.08] bg-[#0e0e11]/85 py-1.5 shadow-[var(--shadow-float)] backdrop-blur-2xl"
-							>
+							<div data-popover class="sully-glass-popover absolute top-full right-0 z-50 mt-1 min-w-40 py-1.5">
 								<button
 									type="button"
 									onclick={() => ontogglePin(t)}
@@ -424,12 +420,11 @@
 		{/if}
 	</div>
 
-	<!-- Sidebar Footer info -->
+	<!-- Sidebar footer — settings entry (dev HOST line removed, Phase A) -->
 	<div
-		class="shrink-0 space-y-0.5 border-t border-zinc-800/50 bg-black/25 p-3 font-sans text-[9px] text-zinc-600 select-none"
+		class="shrink-0 border-t border-zinc-800/50 bg-black/25 p-3 font-sans text-[9px] text-zinc-600 select-none"
 		style="padding-bottom: max(0.75rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem));"
 	>
-		<div>CORE: {coreLabel}</div>
-		<div>HOST: 127.0.0.1:18080</div>
+		<div class="text-zinc-500">{coreLabel}</div>
 	</div>
 </aside>

@@ -807,6 +807,208 @@
 	}
 }
 
+/* ── Flagship Phase A: quiet conversation + motion (hybrid canon) ─────────── */
+
+@media (prefers-reduced-motion: reduce) {
+	.msg-enter,
+	.msg-actions {
+		animation: none !important;
+		transition-duration: 1ms !important;
+	}
+}
+
+@keyframes msg-enter {
+	from {
+		opacity: 0;
+		transform: translate3d(0, 8px, 0);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
+
+.msg-enter {
+	animation: msg-enter var(--dur-base) var(--ease-enter) both;
+}
+
+.msg-user-bubble {
+	max-width: 85%;
+	padding: 0.625rem 0.9375rem;
+	border-radius: var(--r-lg) var(--r-lg) 0 var(--r-lg);
+	border: 1px solid var(--glass-border);
+	background: rgba(255, 255, 255, 0.04);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+	font-size: 14px;
+	line-height: 1.625;
+	color: rgb(244 244 245);
+}
+
+@media (min-width: 640px) {
+	.msg-user-bubble {
+		max-width: 80%;
+	}
+}
+
+.msg-block {
+	position: relative;
+	width: 100%;
+	min-width: 0;
+	border-radius: var(--r-md);
+	outline: none;
+	-webkit-touch-callout: none;
+}
+
+.msg-block--focused {
+	box-shadow: 0 0 0 1px rgba(124, 132, 232, 0.22);
+	background: rgba(124, 132, 232, 0.04);
+}
+
+.msg-assistant-body {
+	width: 100%;
+	padding: 0 2px;
+	font-size: 14px;
+	line-height: 1.625;
+	letter-spacing: -0.005em;
+	color: rgb(244 244 245 / 0.95);
+}
+
+.msg-meta {
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 10px;
+	color: rgb(82 82 91);
+	letter-spacing: 0.02em;
+	font-variant-numeric: tabular-nums;
+}
+
+.msg-actions {
+	display: flex;
+	gap: 4px;
+	margin-top: 2px;
+	padding: 0 2px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity var(--dur-med) var(--ease-standard);
+}
+
+.msg-block--focused .msg-actions,
+.msg-block:focus-within .msg-actions {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.msg-actions .msg-act {
+	display: flex;
+	min-height: 44px;
+	min-width: 44px;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-sm);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: rgba(255, 255, 255, 0.03);
+	color: rgb(113 113 122);
+	transition:
+		transform var(--dur-fast) var(--ease-emphasized),
+		color var(--dur-fast) var(--ease-standard),
+		background-color var(--dur-fast) var(--ease-standard);
+}
+
+@media (min-width: 640px) {
+	.msg-actions .msg-act {
+		min-height: 32px;
+		min-width: 32px;
+	}
+}
+
+.msg-actions .msg-act:hover {
+	color: rgb(228 228 231);
+	background: rgba(255, 255, 255, 0.06);
+}
+
+.msg-actions .msg-act:active {
+	transform: scale(0.96);
+}
+
+.sully-glass-popover {
+	overflow: hidden;
+	border-radius: var(--r-lg);
+	border: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	backdrop-filter: blur(20px) saturate(1.35);
+	-webkit-backdrop-filter: blur(20px) saturate(1.35);
+	box-shadow: var(--shadow-float);
+}
+
+.ss-sheet-list {
+	display: flex;
+	flex-direction: column;
+	padding: 4px 12px 8px;
+}
+
+.ss-sheet-item {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 12px;
+	border-radius: var(--r-md);
+	padding: 14px 12px;
+	text-align: left;
+	font-size: 15px;
+	font-weight: 500;
+	color: rgb(228 228 231);
+	transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.ss-sheet-item:hover {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+.ss-sheet-item:active {
+	transform: scale(0.99);
+}
+
+.ss-sheet-item:disabled {
+	opacity: 0.45;
+}
+
+.ss-sheet-item-icon {
+	display: flex;
+	width: 28px;
+	height: 28px;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-sm);
+	background: rgba(255, 255, 255, 0.05);
+	color: rgb(161 161 170);
+}
+
+.ss-sheet-cancel {
+	margin: 4px 12px 0;
+	border-radius: var(--r-md);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: rgba(255, 255, 255, 0.04);
+	padding: 14px;
+	font-size: 15px;
+	font-weight: 600;
+	color: rgb(228 228 231);
+	transition:
+		transform var(--dur-fast) var(--ease-emphasized),
+		background-color var(--dur-fast) var(--ease-standard);
+}
+
+.ss-sheet-cancel:active {
+	transform: scale(0.98);
+}
+
+.sidebar-panel-motion {
+	transition:
+		transform var(--dur-panel) var(--ease-sheet),
+		opacity var(--dur-panel) var(--ease-sheet),
+		width var(--dur-panel) var(--ease-sheet);
+}
+
 /* Safe-area helpers (notch / home indicator). viewport-fit=cover is set in app.html. */
 @layer utilities {
 	.pt-safe {
