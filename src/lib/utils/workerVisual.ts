@@ -10,7 +10,10 @@ import type { TaskWorker } from '$lib/types/workSurface';
  *  a semantic colour. */
 export function workerBrandColor(identity?: string, shortCode?: string): string {
 	const id = (identity || '').toLowerCase();
-	const code = (shortCode || '').toUpperCase();
+	// shortCode is only a fallback signal when NO identity arrived at all — an
+	// id that resolved to honest-unknown must not pick up a brand colour via a
+	// shortCode collision (CR finding, PR #59).
+	const code = id ? '' : (shortCode || '').toUpperCase();
 	if (id === 'claude-code' || id === 'claude' || code === 'CC') return '#d97757';
 	if (id === 'agy' || id === 'antigravity' || code === 'AGY') return '#a855f7';
 	if (id === 'cdx' || id === 'codex' || code === 'CDX') return '#9ca3af';

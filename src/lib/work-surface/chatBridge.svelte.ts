@@ -114,13 +114,16 @@ export const WORKER_ALIASES: Record<string, string> = {
  * Claude Code masquerade.
  */
 export function resolveWorkerTemplate(rawId: string): Omit<TaskWorker, 'status' | 'step'> {
-	const id = rawId.trim().toLowerCase();
+	const raw = rawId.trim();
+	const id = raw.toLowerCase();
 	const template = WORKER_TEMPLATES[WORKER_ALIASES[id] ?? id];
 	if (template) return template;
+	// Display truth: render the id exactly as it arrived (CR finding, PR #59) —
+	// only the lookup key is case-folded.
 	return {
 		identity: id,
-		shortCode: id.toUpperCase().slice(0, 4) || '??',
-		display: id || 'unknown',
+		shortCode: raw.toUpperCase().slice(0, 4) || '??',
+		display: raw || 'unknown',
 		role: 'Build',
 		icon: 'icon-worker'
 	};
