@@ -84,7 +84,15 @@ export default defineConfig({
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure'
 	},
-	projects: ENGINES.flatMap(({ name, device }) => [
+	projects: [
+		// Instrumented motion verification — no stage dependencies (transform sampling
+		// can't be screenshot-verified; must run without waiting on visual baselines).
+		{
+			name: 'chromium-motion',
+			use: { ...devices['Desktop Chrome'] },
+			testMatch: ['**/motion-engine.spec.ts']
+		},
+		...ENGINES.flatMap(({ name, device }) => [
 		{
 			name,
 			use: { ...device },
@@ -102,7 +110,8 @@ export default defineConfig({
 			testMatch: MUTATING_SPECS,
 			dependencies: [`${name}-rest`]
 		}
-	]),
+	])
+	],
 	// Hermetic server: the adapter-node build with the per-run DB. Shell env
 	// beats --env-file (verified Node 22.22.3), so these overrides win over
 	// the worktree .env while provider keys/mode still come from it.
