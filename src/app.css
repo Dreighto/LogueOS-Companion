@@ -1016,10 +1016,11 @@
 }
 
 .sidebar-panel-motion {
-	transition:
-		transform var(--dur-panel) var(--ease-sheet),
-		opacity var(--dur-panel) var(--ease-sheet),
-		width var(--dur-panel) var(--ease-sheet);
+	/* transform/opacity removed from this transition: the spring engine writes
+	   transform inline per frame (springPanel attachSheet) and a CSS transition
+	   would re-ease every write — fighting the physics. Width stays for the
+	   desktop static layout. */
+	transition: width var(--dur-panel) var(--ease-sheet);
 }
 
 .empty-hero {

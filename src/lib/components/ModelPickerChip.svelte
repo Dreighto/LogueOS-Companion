@@ -167,7 +167,7 @@
 		>
 			<div
 				class="mpc-scrim"
-				style:opacity={panel.scrimOpacity}
+				use:panel.attachScrim
 				aria-hidden="true"
 				data-testid="model-picker-scrim"
 			></div>
@@ -181,8 +181,7 @@
 				aria-modal="true"
 				aria-label="Choose a model"
 				tabindex="-1"
-				style:transform={panel.transform}
-				style:will-change="transform"
+				use:panel.attachSheet
 				use:measureSheet
 				onclick={(e) => e.stopPropagation()}
 			>

@@ -38,25 +38,56 @@ describe('springValue (logic via module export)', () => {
 		expect(src).toContain('maxDtSec');
 		expect(src).not.toMatch(/function tick\(\)[\s\S]*const dt = 1 \/ 60/);
 	});
+
+	it('per-frame position is a plain number delivered via onFrame (no $state in hot path)', async () => {
+		const { readFileSync } = await import('node:fs');
+		const src = readFileSync('src/lib/motion/springValue.svelte.ts', 'utf8');
+		// 120Hz contract: position must NOT round-trip through Svelte reactivity.
+		expect(src).not.toMatch(/let pos = \$state/);
+		expect(src).toContain('setOnFrame');
+		expect(src).toContain('emitFrame');
+		// The mount gate stays reactive — start/rest only, not per frame.
+		expect(src).toMatch(/let animating = \$state/);
+	});
+});
+
+describe('springPanel drives the DOM imperatively', () => {
+	it('exposes attach actions instead of $derived transform/scrimOpacity', async () => {
+		const { readFileSync } = await import('node:fs');
+		const src = readFileSync('src/lib/motion/springPanel.svelte.ts', 'utf8');
+		expect(src).toContain('attachSheet');
+		expect(src).toContain('attachScrim');
+		expect(src).not.toMatch(/transform = \$derived/);
+		expect(src).not.toMatch(/scrimOpacity = \$derived/);
+		// will-change held during animation, dropped at rest.
+		expect(src).toContain('setWillChange');
+	});
 });
 
 describe('motion surfaces use spring engine not keyframes', () => {
-	it('ModelPickerChip has no mpc-sheet-out keyframes', async () => {
+	it('ModelPickerChip uses attach actions, no keyframes, no per-frame style bindings', async () => {
 		const { readFileSync } = await import('node:fs');
 		const src = readFileSync('src/lib/components/ModelPickerChip.svelte', 'utf8');
 		expect(src).not.toContain('mpc-closing');
 		expect(src).not.toContain('@keyframes mpc-sheet');
 		expect(src).toContain('createSpringPanel');
-		expect(src).toContain('panel.transform');
+		expect(src).toContain('use:panel.attachSheet');
+		expect(src).toContain('use:panel.attachScrim');
+		expect(src).not.toContain('style:transform={panel');
+		expect(src).not.toContain('style:opacity={panel');
 	});
 
-	it('ThreadsSidebar has no ts-sidebar-out keyframes', async () => {
+	it('ThreadsSidebar uses attach actions, no keyframes, no per-frame style bindings', async () => {
 		const { readFileSync } = await import('node:fs');
 		const src = readFileSync('src/lib/components/ThreadsSidebar.svelte', 'utf8');
 		expect(src).not.toContain('ts-closing');
 		expect(src).not.toContain('data-sidebar-state');
 		expect(src).not.toContain('ts-sidebar-out');
 		expect(src).toContain('createSpringPanel');
+		expect(src).toContain('use:panel.attachSheet');
+		expect(src).toContain('use:panel.attachScrim');
+		expect(src).not.toContain('style:transform={');
+		expect(src).not.toContain('style:opacity={panel');
 	});
 
 	it('sheetDrag supports motion bridge without externalExit', async () => {

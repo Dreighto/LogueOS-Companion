@@ -77,7 +77,10 @@
 		getOpen: () => sidebarOpen,
 		setOpen: (v) => (sidebarOpen = v),
 		axis: 'x',
-		fallbackClosedSize: 288
+		fallbackClosedSize: 288,
+		// Desktop (lg+) renders the sidebar static — no inline transform so the
+		// lg:static / lg:translate-x-0 classes win.
+		isEnabled: () => isMobileDrawer()
 	});
 
 	const drawerDrag = createSheetDrag({
@@ -157,7 +160,7 @@
 		type="button"
 		onclick={requestClose}
 		class="ts-sidebar-scrim fixed inset-0 z-[55] bg-black/60 backdrop-blur-sm lg:hidden"
-		style:opacity={panel.scrimOpacity}
+		use:panel.attachScrim
 		aria-label="Close sidebar"
 		data-testid="threads-sidebar-scrim"
 	></button>
@@ -167,8 +170,7 @@
 	data-sheet
 	data-testid="threads-sidebar-panel"
 	class="sidebar-panel-motion fixed top-0 bottom-0 left-0 z-[60] flex w-72 flex-col border-r border-zinc-800/60 bg-[#090909]/98 shadow-[var(--shadow-float)] backdrop-blur-2xl lg:static lg:z-auto lg:translate-x-0"
-	style:transform={isMobileDrawer() ? panel.transform : undefined}
-	style:will-change={isMobileDrawer() ? 'transform' : undefined}
+	use:panel.attachSheet
 	use:measureDrawer
 >
 	<div class="shrink-0" style="height: env(safe-area-inset-top, 0px);"></div>
