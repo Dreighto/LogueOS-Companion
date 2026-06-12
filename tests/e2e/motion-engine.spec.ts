@@ -162,6 +162,84 @@ test.describe('spring motion engine', () => {
 		expect(ty).toBeGreaterThan(0);
 	});
 
+	test('spring frames write transforms directly without Svelte reactive flushes', async ({
+		page
+	}) => {
+		await setupMobileChat(page);
+
+		// Sanity: the springPanel flush sentinel is installed (it increments on
+		// mount + open/close flips — i.e. on reactive flushes that touch motion state).
+		const sentinelInstalled = await page.evaluate(
+			() =>
+				typeof (window as unknown as { __motionReactiveFlushes?: number })
+					.__motionReactiveFlushes === 'number'
+		);
+		expect(sentinelInstalled).toBe(true);
+
+		// Open the picker, then sample mid-animation: the transform must change
+		// across rAF frames while the reactive flush counter stays flat. The
+		// sentinel $effect reads spring.value — if the per-frame position ever
+		// becomes $state again, it re-runs every frame and flushDelta explodes.
+		await page.evaluate(() => {
+			const chip = document.querySelector(
+				'header [data-popover-trigger]'
+			) as HTMLButtonElement | null;
+			chip?.click();
+		});
+		await expect(page.getByTestId('model-picker-sheet')).toBeAttached({ timeout: 3000 });
+
+		const result = await page.evaluate(
+			() =>
+				new Promise<{ flushDelta: number; distinctTransforms: number; willChangeMid: string }>(
+					(resolve) => {
+						const w = window as unknown as { __motionReactiveFlushes?: number };
+						const el = document.querySelector(
+							'[data-testid="model-picker-sheet"]'
+						) as HTMLElement;
+						const flush0 = w.__motionReactiveFlushes ?? 0;
+						const transforms: string[] = [];
+						let willChangeMid = '';
+						let frames = 0;
+						function sample() {
+							transforms.push(getComputedStyle(el).transform);
+							if (frames === 4) willChangeMid = getComputedStyle(el).willChange;
+							if (++frames < 10) {
+								requestAnimationFrame(sample);
+							} else {
+								resolve({
+									flushDelta: (w.__motionReactiveFlushes ?? 0) - flush0,
+									distinctTransforms: new Set(transforms).size,
+									willChangeMid
+								});
+							}
+						}
+						requestAnimationFrame(sample);
+					}
+				)
+		);
+
+		// Spring is animating: transform progressed across sampled frames.
+		expect(result.distinctTransforms).toBeGreaterThanOrEqual(4);
+		// will-change held during the animation.
+		expect(result.willChangeMid).toBe('transform');
+		// No Svelte reactive flush in the frame loop (the open-flip flush
+		// happened before sampling started; allow at most one stray).
+		expect(result.flushDelta).toBeLessThanOrEqual(1);
+
+		// After the spring rests, will-change is released.
+		await expect.poll(() => readSheetTranslateY(page), { timeout: 8000 }).toBeLessThan(1);
+		await expect
+			.poll(() =>
+				page.evaluate(() => {
+					const el = document.querySelector(
+						'[data-testid="model-picker-sheet"]'
+					) as HTMLElement | null;
+					return el ? getComputedStyle(el).willChange : 'gone';
+				})
+			)
+			.toBe('auto');
+	});
+
 	test('sidebar uses spring transform when opened on mobile', async ({ page }) => {
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.emulateMedia({ reducedMotion: 'no-preference' });

@@ -1,5 +1,12 @@
 // Single-axis mass-spring-damper — one transform value as source of truth.
 // Velocity is injected on release (px/s). Unmount on onRest, never setTimeout.
+//
+// HOT-PATH CONTRACT (120Hz): the per-frame position is a PLAIN number, not
+// $state. Each frame delivers the value through `onFrame(value)` so the
+// consumer writes el.style directly — no $derived recompute, no Svelte
+// scheduler flush inside the rAF loop. The ONLY reactive surface is
+// `isAnimating`, which flips twice per interaction (start/rest) and gates
+// mount/unmount.
 
 export type SpringConfig = {
 	stiffness?: number;
@@ -15,6 +22,12 @@ export type SpringValue = {
 	readonly value: number;
 	readonly target: number;
 	readonly isAnimating: boolean;
+	/**
+	 * Per-frame sink — called with the new position from every tick(), set()
+	 * (drag path), and reduced-motion snap. Write el.style here; do NOT route
+	 * the value back into $state.
+	 */
+	setOnFrame: (cb: ((value: number) => void) | null) => void;
 	/** Direct position during drag — stops physics, no interpolation */
 	set: (position: number) => void;
 	/** Animate toward target; velocity in px/s */
@@ -39,18 +52,25 @@ export function createSpringValue(initial: number, config: SpringConfig = {}): S
 
 	const maxDtSec = 1 / 30;
 
-	let pos = $state(initial);
+	// Plain number on purpose — see hot-path contract above.
+	let pos = initial;
 	let target = initial;
 	let vel = 0;
 	let rafId = 0;
 	let lastTs: number | null = null;
 	let onRestCb: (() => void) | null = null;
+	let onFrame: ((value: number) => void) | null = null;
 	let animating = $state(false);
+
+	function emitFrame() {
+		onFrame?.(pos);
+	}
 
 	function finishAtRest() {
 		pos = target;
 		vel = 0;
 		rafId = 0;
+		emitFrame();
 		animating = false;
 		const cb = onRestCb;
 		onRestCb = null;
@@ -72,6 +92,7 @@ export function createSpringValue(initial: number, config: SpringConfig = {}): S
 			finishAtRest();
 			return;
 		}
+		emitFrame();
 		rafId = requestAnimationFrame(tick);
 	}
 
@@ -91,6 +112,9 @@ export function createSpringValue(initial: number, config: SpringConfig = {}): S
 		get isAnimating() {
 			return animating;
 		},
+		setOnFrame(cb: ((value: number) => void) | null) {
+			onFrame = cb;
+		},
 		set(position: number) {
 			if (rafId) {
 				cancelAnimationFrame(rafId);
@@ -102,6 +126,7 @@ export function createSpringValue(initial: number, config: SpringConfig = {}): S
 			pos = position;
 			target = position;
 			vel = 0;
+			emitFrame();
 		},
 		animateTo(nextTarget: number, velocityPxPerSec = 0, onRest?: () => void) {
 			if (prefersReducedMotion()) {
@@ -109,6 +134,7 @@ export function createSpringValue(initial: number, config: SpringConfig = {}): S
 				target = nextTarget;
 				vel = 0;
 				animating = false;
+				emitFrame();
 				onRest?.();
 				return;
 			}
