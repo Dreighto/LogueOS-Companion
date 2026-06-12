@@ -811,10 +811,22 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.msg-enter,
-	.msg-actions {
+	.msg-actions,
+	.sidebar-panel-motion,
+	.msg-actions .msg-act,
+	.starter-chip,
+	.pwa-update-toast,
+	.pwa-update-badge,
+	.model-picker-chip {
 		animation: none !important;
 		transition-duration: 1ms !important;
 	}
+}
+
+.msg-body-text {
+	font-size: var(--text-base);
+	line-height: var(--leading-base);
+	letter-spacing: -0.005em;
 }
 
 @keyframes msg-enter {
@@ -841,8 +853,6 @@
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
 	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-	font-size: 14px;
-	line-height: 1.625;
 	color: rgb(244 244 245);
 }
 
@@ -869,9 +879,6 @@
 .msg-assistant-body {
 	width: 100%;
 	padding: 0 2px;
-	font-size: 14px;
-	line-height: 1.625;
-	letter-spacing: -0.005em;
 	color: rgb(244 244 245 / 0.95);
 }
 
@@ -1007,6 +1014,154 @@
 		transform var(--dur-panel) var(--ease-sheet),
 		opacity var(--dur-panel) var(--ease-sheet),
 		width var(--dur-panel) var(--ease-sheet);
+}
+
+.empty-hero {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	padding: 24px 20px;
+	gap: 8px;
+}
+
+.empty-hero-title {
+	margin: 0;
+	max-width: 18rem;
+	font-family: var(--font-display);
+	font-size: var(--text-xl);
+	font-weight: 550;
+	line-height: var(--leading-xl);
+	letter-spacing: -0.015em;
+	color: rgb(244 244 245);
+}
+
+.empty-hero-sub {
+	margin: 0 0 10px;
+	font-size: var(--text-sm);
+	line-height: var(--leading-sm);
+	color: rgb(113 113 122);
+}
+
+.starter-chips {
+	display: flex;
+	width: min(100%, 22rem);
+	flex-direction: column;
+	gap: 8px;
+}
+
+.starter-chip {
+	width: 100%;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--glass-border);
+	background: rgba(255, 255, 255, 0.03);
+	padding: 12px 16px;
+	text-align: left;
+	font-size: var(--text-sm);
+	line-height: var(--leading-sm);
+	color: rgb(228 228 231);
+	transition:
+		transform var(--dur-med) var(--ease-emphasized),
+		background-color var(--dur-fast) var(--ease-standard),
+		border-color var(--dur-fast) var(--ease-standard);
+}
+
+.starter-chip:hover {
+	background: rgba(255, 255, 255, 0.06);
+	border-color: rgba(124, 132, 232, 0.22);
+}
+
+.starter-chip:active {
+	transform: scale(0.98);
+}
+
+.model-picker-chip {
+	transition:
+		transform var(--dur-fast) var(--ease-emphasized),
+		background-color var(--dur-fast) var(--ease-standard),
+		border-color var(--dur-fast) var(--ease-standard),
+		color var(--dur-fast) var(--ease-standard);
+}
+
+.pwa-update-toast {
+	position: fixed;
+	left: max(0.75rem, env(safe-area-inset-left, 0px));
+	z-index: 45;
+	display: flex;
+	max-width: min(calc(100vw - 1.5rem), 18rem);
+	align-items: center;
+	gap: 8px;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	padding: 8px 10px;
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	box-shadow: var(--shadow-soft);
+	pointer-events: auto;
+}
+
+.pwa-update-toast-btn {
+	flex-shrink: 0;
+	border-radius: var(--r-pill);
+	background: linear-gradient(180deg, var(--color-brand-bright), var(--color-brand));
+	padding: 6px 12px;
+	font-size: 11px;
+	font-weight: 600;
+	color: #fff;
+	transition: transform var(--dur-fast) var(--ease-emphasized);
+}
+
+.pwa-update-toast-btn:active {
+	transform: scale(0.96);
+}
+
+.pwa-update-toast-dismiss {
+	display: flex;
+	height: 28px;
+	width: 28px;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-sm);
+	color: rgb(161 161 170);
+	transition:
+		background-color var(--dur-fast) var(--ease-standard),
+		color var(--dur-fast) var(--ease-standard);
+}
+
+.pwa-update-toast-dismiss:hover {
+	background: rgba(255, 255, 255, 0.06);
+	color: rgb(228 228 231);
+}
+
+.pwa-update-badge {
+	position: fixed;
+	left: max(0.75rem, env(safe-area-inset-left, 0px));
+	z-index: 45;
+	display: flex;
+	height: 36px;
+	width: 36px;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--live-line);
+	background: var(--live-bg);
+	color: var(--accent);
+	box-shadow: var(--shadow-soft);
+}
+
+.pwa-update-badge-dot {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	height: 7px;
+	width: 7px;
+	border-radius: var(--r-pill);
+	background: var(--accent);
+	box-shadow: 0 0 8px var(--accent-glow);
 }
 
 /* Safe-area helpers (notch / home indicator). viewport-fit=cover is set in app.html. */

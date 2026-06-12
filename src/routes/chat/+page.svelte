@@ -1131,8 +1131,15 @@
 		     ═════════════════════════════════════════════════════════════════ -->
 		<ChatHeader
 			bind:workspaceContextOpen
+			bind:showModelOverrideModal
+			{selectedModelChoice}
+			modelChoices={MODEL_CHOICES}
+			{pickerProvider}
+			{lastModelUsed}
 			ontoggleSidebar={() => (sidebarOpen = !sidebarOpen)}
 			onopenWorkspaceContext={() => void openWorkspaceContextEditor()}
+			onsetModelChoice={(choice) => void setModelChoice(choice)}
+			oncloseAllPopovers={closeAllPopovers}
 		/>
 
 		<!-- ═════════════════════════════════════════════════════════════════
@@ -1192,6 +1199,14 @@
 				}}
 				{ensureDispatchStream}
 				{fmtTime}
+				onstarterprompt={(text) => {
+					composerCtrl.textDraft = text;
+					textareaEl?.focus();
+				}}
+				onstarteraction={(action) => {
+					if (action === 'new-thread') void threadsCtrl.newThread();
+					else if (action === 'voice-mode') void voiceMode.enterFullVoice();
+				}}
 			/>
 		</div>
 
@@ -1216,17 +1231,12 @@
 				bind:imageMode
 				bind:isDragging={() => composerCtrl.isDragging, (v) => (composerCtrl.isDragging = v)}
 				bind:textareaEl
-				bind:showModelOverrideModal
 				attachments={composerCtrl.attachments}
 				{composerMode}
 				{sending}
 				talkbackPhase={voice.phase}
 				{slashMode}
 				{slashMatches}
-				{selectedModelChoice}
-				{MODEL_CHOICES}
-				{pickerProvider}
-				{lastModelUsed}
 				onsend={() => void sendMessage()}
 				onabort={abortSend}
 				onpaste={composerCtrl.handlePaste}
@@ -1239,7 +1249,6 @@
 				onvoiceMode={() => void voiceMode.enterFullVoice()}
 				onpickSlash={(cmd) => void pickSlash(cmd)}
 				onremoveAttachment={composerCtrl.removeAttachment}
-				onsetModelChoice={(choice) => void setModelChoice(choice)}
 				oncloseAllPopovers={closeAllPopovers}
 			/>
 		{/snippet}

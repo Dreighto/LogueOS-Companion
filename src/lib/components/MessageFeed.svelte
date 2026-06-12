@@ -53,7 +53,9 @@
 		openCanvas,
 		onimagepreview,
 		ensureDispatchStream,
-		fmtTime
+		fmtTime,
+		onstarterprompt,
+		onstarteraction
 	}: {
 		messages: ChatMessage[];
 		streamState: StreamState;
@@ -77,6 +79,8 @@
 			traceId: string
 		) => ReturnType<typeof import('$lib/chat/dispatchStream.svelte').createDispatchStream>;
 		fmtTime: (iso: string) => string;
+		onstarterprompt: (text: string) => void;
+		onstarteraction: (action: 'new-thread' | 'voice-mode') => void;
 	} = $props();
 
 	let focusedMessageId = $state<number | null>(null);
@@ -167,6 +171,16 @@
 			closeActionSheet();
 		};
 	}
+
+	const STARTER_CHIPS: Array<
+		| { kind: 'prompt'; label: string; text: string }
+		| { kind: 'action'; label: string; action: 'new-thread' | 'voice-mode' }
+	> = [
+		{ kind: 'prompt', label: "What's running?", text: "What's running on the machine right now?" },
+		{ kind: 'prompt', label: 'Summarize today', text: 'Summarize what we shipped today.' },
+		{ kind: 'action', label: 'New thread', action: 'new-thread' },
+		{ kind: 'action', label: 'Voice mode', action: 'voice-mode' }
+	];
 </script>
 
 <svelte:window
@@ -176,15 +190,27 @@
 />
 
 {#if messages.length === 0}
-	<div class="flex flex-1 items-center justify-center text-center select-none">
-		<div class="flex max-w-xs flex-col items-center gap-3">
-			<img
-				src="{base}/sully-mark.png"
-				alt="Sully"
-				class="h-16 w-16 drop-shadow-[0_0_22px_var(--accent-glow)]"
-			/>
-			<div class="font-sans text-base text-zinc-200">Hey Captain — what's on your mind?</div>
-			<div class="font-sans text-xs text-zinc-500">Sully's here. Think out loud.</div>
+	<div class="empty-hero flex flex-1 select-none">
+		<img
+			src="{base}/sully-mark.png"
+			alt="Sully"
+			class="empty-hero-orb h-16 w-16 drop-shadow-[0_0_22px_var(--accent-glow)]"
+		/>
+		<h2 class="empty-hero-title">Hey Captain — what's on your mind?</h2>
+		<p class="empty-hero-sub">Sully's here. Think out loud.</p>
+		<div class="starter-chips">
+			{#each STARTER_CHIPS as chip (chip.label)}
+				<button
+					type="button"
+					class="starter-chip"
+					onclick={() => {
+						if (chip.kind === 'prompt') onstarterprompt(chip.text);
+						else onstarteraction(chip.action);
+					}}
+				>
+					{chip.label}
+				</button>
+			{/each}
 		</div>
 	</div>
 {:else}
@@ -207,7 +233,7 @@
 				</div>
 			{:else if m.sender === 'operator'}
 				<div class="msg-enter flex flex-col items-end gap-1">
-					<div class="msg-user-bubble font-sans antialiased selection:bg-brand/40 selection:text-white">
+					<div class="msg-user-bubble msg-body-text font-sans antialiased selection:bg-brand/40 selection:text-white">
 						<span class="whitespace-pre-wrap">{m.message}</span>
 					</div>
 					<div class="msg-meta px-1">{fmtTime(m.timestamp)}</div>
@@ -236,7 +262,7 @@
 						label={m.sender === 'system' ? 'LOGUEOS' : (appIdentity?.coreLabel ?? 'Sully')}
 					/>
 
-					<div class="msg-assistant-body font-sans antialiased selection:bg-brand/40 selection:text-white">
+					<div class="msg-assistant-body msg-body-text font-sans antialiased selection:bg-brand/40 selection:text-white">
 						<Markdown
 							content={m.message}
 							streaming={streamState?.placeholderId === m.id}

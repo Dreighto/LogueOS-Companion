@@ -1,44 +1,46 @@
 <script lang="ts">
-	// Chat header — sidebar-toggle + home-anchor logo + workspace-context
-	// icon button on the right.
+	// Chat header — sidebar toggle + Sully identity (left), model picker (center),
+	// workspace-context entry (right).
 	//
-	// History:
-	//   - 2026-06-01: relocated model picker + context chips OUT of header
-	//     into the composer (operator: "closer to the sheet").
-	//   - 2026-06-02 (later): operator wanted model picker INSIDE the pill
-	//     and context "moved somewhere else" — context moves BACK to the
-	//     header as a small BookOpen icon on the right, the model picker
-	//     stays in the composer pill. Header now reads as identity (left)
-	//     + workspace settings entry (right).
-	//
-	// The context icon is a single tap to the same WorkspaceContextModal
-	// the old footer entry used to open. `workspaceContextOpen` is bindable
-	// so the parent's global popover-close $effect can null it; drives the
-	// icon's brand-pink active treatment while the modal is open.
+	// Phase B (flagship pass): model chip relocated from composer pill to header
+	// center (hybrid canon B1).
 
 	import { base, resolve } from '$app/paths';
 	import { PanelLeft, NotebookPen } from 'lucide-svelte';
 	import SullyButton from './sully/SullyButton.svelte';
+	import ModelPickerChip from './ModelPickerChip.svelte';
+	import type { ModelChoice, ProviderPref } from '$lib/types/chat-ui';
 
 	let {
 		workspaceContextOpen = $bindable(false),
+		showModelOverrideModal = $bindable(false),
+		selectedModelChoice,
+		modelChoices,
+		pickerProvider,
+		lastModelUsed,
 		ontoggleSidebar,
-		onopenWorkspaceContext
+		onopenWorkspaceContext,
+		onsetModelChoice,
+		oncloseAllPopovers
 	}: {
 		workspaceContextOpen?: boolean;
+		showModelOverrideModal?: boolean;
+		selectedModelChoice: ModelChoice;
+		modelChoices: ModelChoice[];
+		pickerProvider: ProviderPref;
+		lastModelUsed: string;
 		ontoggleSidebar: () => void;
 		onopenWorkspaceContext: () => void;
+		onsetModelChoice: (choice: ModelChoice) => void;
+		oncloseAllPopovers: () => void;
 	} = $props();
 </script>
 
 <header
-	class="relative z-50 flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.05] bg-[#0b0b0d]/55 px-4 pt-3 pb-2 backdrop-blur-2xl select-none"
+	class="relative z-50 grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-white/[0.05] bg-[#0b0b0d]/55 px-4 pt-3 pb-2 backdrop-blur-2xl select-none"
 	style="padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));"
 >
-	<!-- Left cluster: sidebar toggle (mobile-only) + Sully identity. -->
-	<div class="flex shrink-0 items-center gap-1.5">
-		<!-- LOS-204 leaf-site proof: SullyButton quiet variant, round via the
-		     --sully-btn-r escape hatch (locked tokens only). -->
+	<div class="flex min-w-0 items-center gap-1.5 justify-self-start">
 		<SullyButton
 			variant="quiet"
 			size="sm"
@@ -61,18 +63,28 @@
 				alt=""
 				class="h-8 w-8 shrink-0 drop-shadow-[0_0_10px_var(--accent-glow)]"
 			/>
-			<span class="font-sans text-sm font-semibold tracking-tight text-zinc-100">Sully</span>
+			<span class="hidden font-sans text-sm font-semibold tracking-tight text-zinc-100 sm:inline"
+				>Sully</span
+			>
 		</a>
 	</div>
 
-	<!-- Right: workspace-context entry. Icon-only on both viewports —
-	     reads as a settings affordance rather than a primary action.
-	     Active state mirrors the model-picker open recipe so when the
-	     modal is open the icon glows in the same idiom. -->
+	<div class="justify-self-center">
+		<ModelPickerChip
+			bind:open={showModelOverrideModal}
+			{selectedModelChoice}
+			modelChoices={modelChoices}
+			{pickerProvider}
+			{lastModelUsed}
+			{onsetModelChoice}
+			{oncloseAllPopovers}
+		/>
+	</div>
+
 	<button
 		type="button"
 		onclick={() => onopenWorkspaceContext()}
-		class="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--r-pill)] transition-all active:scale-90 sm:h-9 sm:w-9 {workspaceContextOpen
+		class="flex h-11 w-11 shrink-0 items-center justify-center justify-self-end rounded-[var(--r-pill)] transition-all active:scale-90 sm:h-9 sm:w-9 {workspaceContextOpen
 			? 'bg-white/10 text-white'
 			: 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200'}"
 		aria-label="Sully's workspace context"
