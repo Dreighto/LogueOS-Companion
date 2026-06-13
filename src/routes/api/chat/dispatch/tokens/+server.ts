@@ -149,7 +149,7 @@ function emptyResponse(window: WindowParam) {
 	};
 }
 
-export function buildTokenSpendResponse(rows: TokenRunRow[], window: WindowParam) {
+function buildTokenSpendResponse(rows: TokenRunRow[], window: WindowParam) {
 	const runs = rows.map(normalizeRun);
 	const measuredRuns = runs.filter((r) => r.tokensTotal !== null);
 	const sum = (
