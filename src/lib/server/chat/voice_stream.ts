@@ -232,6 +232,10 @@ export async function runVoiceStreamingSpeak(
 	let transcript = '';
 	let decided: 'speak' | null = null;
 	let toolMode = false;
+	// Diagnostics: time-to-first-token and Ollama's reported prompt_eval cost.
+	let firstTokenMs: number | null = null;
+	let promptEvalCount: number | null = null;
+	let promptEvalMs: number | null = null;
 
 	try {
 		readLoop: for (;;) {
@@ -243,13 +247,24 @@ export async function runVoiceStreamingSpeak(
 				const line = lineBuf.slice(0, nl).trim();
 				lineBuf = lineBuf.slice(nl + 1);
 				if (!line) continue;
-				let obj: { message?: { content?: string; tool_calls?: unknown[] }; done?: boolean };
+				let obj: {
+					message?: { content?: string; tool_calls?: unknown[] };
+					done?: boolean;
+					prompt_eval_count?: number;
+					prompt_eval_duration?: number;
+				};
 				try {
 					obj = JSON.parse(line);
 				} catch {
 					continue;
 				}
 				const msg = obj.message;
+				if (firstTokenMs === null && msg?.content) firstTokenMs = rel();
+				if (obj.done) {
+					promptEvalCount = obj.prompt_eval_count ?? null;
+					promptEvalMs =
+						obj.prompt_eval_duration != null ? Math.round(obj.prompt_eval_duration / 1e6) : null;
+				}
 				// Early decision — before emitting any sentence.
 				if (!decided) {
 					if (msg?.tool_calls && msg.tool_calls.length) {
@@ -300,6 +315,9 @@ export async function runVoiceStreamingSpeak(
 			generation_complete_ms: generationCompleteMs,
 			first_tts_dispatch_ms: firstDispatchMs,
 			first_audio_ms: firstAudioMs,
+			first_token_ms: firstTokenMs,
+			prompt_eval_count: promptEvalCount,
+			prompt_eval_ms: promptEvalMs,
 			sentences: idx
 		});
 		return { toolTurn: toolMode, transcript: transcript.trim() };
