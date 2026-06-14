@@ -85,6 +85,21 @@ export function extractSentences(buf: string): { sentences: string[]; rest: stri
 				i++;
 				continue;
 			}
+			// List enumerator like "9." / "10." at the START of a line/fragment — the
+			// dot follows digits that are the first non-whitespace token on the line,
+			// so it's a list marker, not a sentence end. Keep it with the item text so
+			// Kokoro never says a bare "nine." / "ten." (PRO-967). (Mid-sentence "3.5"
+			// is the decimal guard above; a mid-line "Section 5." is NOT a line-start
+			// enumerator and still splits.)
+			if (c === '.') {
+				let ns = i - 1;
+				while (ns >= 0 && /\d/.test(buf[ns])) ns--;
+				ns++; // first digit of the run
+				if (ns < i && buf.slice(buf.lastIndexOf('\n', i) + 1, ns).trim() === '') {
+					i++;
+					continue;
+				}
+			}
 			// Boundary only if the next char is whitespace or a closing quote/bracket.
 			if (/[\s"'’”)\]]/.test(next)) {
 				// Abbreviation guard: look at the word ending right before the dot.
