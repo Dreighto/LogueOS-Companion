@@ -161,6 +161,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		target_repo?: string;
 		provider?: Provider;
 		model?: string;
+		/** True when the reply will be SPOKEN aloud — dictation/voice turns.
+		 * Forwarded to buildSystemPrompt as a voice-mode addendum. */
+		spoken?: boolean;
 	};
 	try {
 		body = await request.json();
@@ -199,7 +202,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		provider: body.provider,
 		model: body.model,
 		targetRepoHint: body.target_repo,
-		headers: request.headers
+		headers: request.headers,
+		spoken: body.spoken === true
 	});
 	const {
 		taskId,

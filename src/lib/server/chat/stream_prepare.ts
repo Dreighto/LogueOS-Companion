@@ -162,6 +162,13 @@ export interface PrepareArgs {
 	 * the two pipelines diverging. Defaults to 'chat'.
 	 */
 	source?: string;
+	/**
+	 * True when the client signals the reply will be SPOKEN aloud (dictation /
+	 * voice mode). Forwarded to buildSystemPrompt so the model gets a
+	 * voice-mode addendum (conversational tone, no markdown tables/lists). The
+	 * dispatch + journal pipelines don't change.
+	 */
+	spoken?: boolean;
 }
 
 export interface PreparedStreamContext {
@@ -221,8 +228,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 	const normalizationMode = sourceToNormalizationMode(args.source);
 	const messages = normalizeLatestUserMessage(args.messages, normalizationMode);
 	const { threadId } = args;
-	const userText =
-		args.userText || latestUserText(messages);
+	const userText = args.userText || latestUserText(messages);
 
 	// Shared turn-lifecycle preamble: mint Task id, persist operator turn,
 	// classify + touch thread, resolve target repo. Both text + voice call this
@@ -337,7 +343,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 			.join(' ')
 			.trim() || '';
 	const systemPrompt = await buildSystemPrompt(
-		{ targetRepo, currentTier, threadId, allowSensitive },
+		{ targetRepo, currentTier, threadId, allowSensitive, spoken: args.spoken === true },
 		userMessageText
 	);
 

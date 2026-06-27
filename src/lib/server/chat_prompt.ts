@@ -27,6 +27,10 @@ export interface SystemPromptCtx {
 	threadId: string;
 	/** True iff the sensitive read_file/web_search tools are attached this turn. */
 	allowSensitive?: boolean;
+	/** True when the current turn arrived via dictation/voice and the reply will be
+	 * spoken aloud — appends a voice-mode addendum (no markdown tables/lists, short
+	 * conversational tone). */
+	spoken?: boolean;
 }
 
 const COMPANION_BASE = (
@@ -115,6 +119,20 @@ function factClause(userMessage?: string, allowSensitive = true): string {
  * `userMessage` is optional — omit it to skip semantic recall (e.g. utility
  * calls that aren't a real turn).
  */
+
+const VOICE_MODE_ADDENDUM = `
+
+## VOICE-MODE TURN
+
+The user is speaking to you — this reply will be **spoken aloud**, not read on a screen.
+
+- Sound like you're **talking**, not narrating a report. Use the cadence of a conversation: contractions, brief pauses, natural phrasing.
+- **No markdown tables, no bullet lists, no headers, no code blocks.** Tables don't survive being read aloud.
+- Keep it **short** by default — 2 to 4 sentences for ordinary questions. Only go longer when the question genuinely needs it, and even then break it into spoken paragraphs rather than structured lists.
+- If you need to compare options, do it in prose: "Option A gives you X but costs more battery; Option B is the opposite." NOT a side-by-side table.
+- If you need follow-up info, ask **one** clarifying question — don't enumerate.
+- **Do not** narrate the structure of your answer ("First I'll explain X, then Y, then Z"). Just talk.`;
+
 export async function buildSystemPrompt(
 	ctx: SystemPromptCtx,
 	userMessage?: string
@@ -149,7 +167,8 @@ export async function buildSystemPrompt(
 		}
 	}
 
-	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}`;
+	const voice = ctx.spoken ? VOICE_MODE_ADDENDUM : '';
+	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}`;
 	if (!addendum) return head;
 	return `${head}
 
