@@ -47,6 +47,7 @@ import { upsertThreadTier } from '$lib/server/thread_state';
 import { touchLastActivity } from '$lib/server/thread_meta';
 import { getSensitiveTools } from '$lib/server/companion_tools';
 import { persistAssistantTurn } from '$lib/server/chat_turn';
+import { logEscalation } from '$lib/server/escalation_telemetry';
 import { resolveChatModel } from '$lib/server/model_catalog';
 import { baseTools } from '$lib/server/chat/base_tools';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
@@ -242,11 +243,25 @@ export const POST: RequestHandler = async ({ request }) => {
 		// D2.1: decision is now ctx.shadowDecision (deterministic). No GATE_INSTRUCTION
 		// injected — the model emits a plain reply; stream + persist it directly.
 		const cliSystemPrompt = systemPrompt;
+		const escalationStartedAt = Date.now();
 		const stream = createUIMessageStream({
 			execute: async ({ writer }) => {
 				const messageId = generateId();
 				const textId = '0';
 				writer.write({ type: 'start', messageId });
+				// Specialist lane signal — Sonnet/Opus via CLI bridge IS the SDK
+				// escalation path. Client uses this to flip the model-pill +
+				// voice-orb chrome to the Warm Sand accent. Emitted BEFORE any
+				// text-delta so the UI flips before the reply starts landing.
+				//
+				// Uses the `data-${string}` custom channel that the Vercel AI SDK
+				// stream protocol reserves for app-specific metadata — clients
+				// that don't know the type can safely ignore. iOS UIPart enum
+				// has an `.unknown(type:)` fallback so old builds won't crash.
+				writer.write({
+					type: 'data-sully-routing',
+					data: { handled_by: 'sdk', model: resolvedModelId }
+				});
 				writer.write({ type: 'start-step' });
 				writer.write({ type: 'text-start', id: textId });
 
@@ -288,6 +303,25 @@ export const POST: RequestHandler = async ({ request }) => {
 				writer.write({ type: 'text-end', id: textId });
 				writer.write({ type: 'finish-step' });
 				writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
+
+				// Specialist-lane telemetry — append-only escalation corpus.
+				// Captures the prompt/reply pair plus latency so the next pass
+				// (model-selection learner / Hermes shadow) can reason about
+				// the heavy-lane firing without touching chat_messages.
+				logEscalation({
+					at: new Date().toISOString(),
+					thread_id: threadId,
+					task_id: taskId ?? null,
+					user_prompt: userMessageText,
+					system_prompt_head: cliSystemPrompt.slice(0, 800),
+					provider,
+					model: resolvedModelId,
+					current_tier: currentTier,
+					target_repo: targetRepo,
+					reply_text: collected,
+					latency_ms: Date.now() - escalationStartedAt,
+					error: errored ? 'cli_stream_error' : undefined
+				});
 
 				// Persist the full reply — never a half/failed gen.
 				if (collected && !errored) {
