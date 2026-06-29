@@ -330,10 +330,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				// each to the durable store (→ library + cards, source_worker=teacher)
 				// and persist the prose with the blocks stripped.
 				if (collected && !errored) {
-					const { strippedText } = extractAndPromoteArtifacts(collected, {
-						threadId,
-						taskId: taskId ?? undefined
-					});
+					const { strippedText, artifacts: teacherArtifacts } = extractAndPromoteArtifacts(
+						collected,
+						{ threadId, taskId: taskId ?? undefined }
+					);
 					persistAssistantTurn({
 						text: strippedText || collected,
 						sender: senderLabel,
@@ -341,6 +341,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						model: resolvedModelId,
 						tier: currentTier,
 						taskId,
+						// Stamp the reply with the teacher artifact's trace → inline card.
+						traceId: teacherArtifacts[0]?.trace_id ?? null,
 						provider
 					});
 					// Auto-name the thread off the first exchange (fire-and-forget).
@@ -512,10 +514,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			// Promote any inline <<<SULLY_ARTIFACT…>>> blocks to the durable store
 			// and strip them from the persisted prose (local/SDK path; the CLI-bridge
 			// path above does the same on `collected`).
-			const finalText = rawFinalText
+			const promoted = rawFinalText
 				? extractAndPromoteArtifacts(rawFinalText, { threadId, taskId: taskId ?? undefined })
-						.strippedText || rawFinalText
-				: rawFinalText;
+				: { strippedText: rawFinalText, artifacts: [] };
+			const finalText = promoted.strippedText || rawFinalText;
 
 			if (finalText) {
 				const senderLabel: 'cc' | 'agy' | 'local' =
@@ -538,6 +540,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					model: modelHandle.modelId,
 					tier: currentTier,
 					taskId,
+					// Stamp the reply with the teacher artifact's trace → inline card.
+					traceId: promoted.artifacts[0]?.trace_id ?? null,
 					provider,
 					promptTokens,
 					completionTokens,

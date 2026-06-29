@@ -149,6 +149,9 @@ export function persistAssistantTurn(args: {
 	// Phase 1 forensics — task_id links the reply to its Task; provider/tokens/
 	// latency/error make the turn auditable from the DB (turn_replay reads them).
 	taskId?: string;
+	// Links the reply row to an artifact trace (e.g. a teacher-created
+	// SULLY_ARTIFACT) so the render layer mounts an inline card for it.
+	traceId?: string | null;
 	provider?: string | null;
 	promptTokens?: number | null;
 	completionTokens?: number | null;
@@ -176,7 +179,7 @@ export function persistAssistantTurn(args: {
 	addChatMessage(
 		args.sender,
 		args.text,
-		null,
+		args.traceId ?? null,
 		null,
 		null,
 		args.status ?? 'sent',
