@@ -16,6 +16,7 @@
 // query — both are best-effort and never throw out of here.
 
 import { runMode } from './config';
+import { GATE_INSTRUCTION } from './decisionGate';
 import { getWorkspaceContext } from './workspace_context';
 import { getThreadMeta } from './thread_meta';
 import { getRelevantFacts } from './semantic';
@@ -218,7 +219,11 @@ export async function buildSystemPrompt(
 	const voice = ctx.spoken ? VOICE_MODE_ADDENDUM : '';
 	// Artifact protocol is text-chat only — never in spoken/voice replies.
 	const artifact = ctx.spoken ? '' : ARTIFACT_INSTRUCTION;
-	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}${artifact}${WRITING_STYLE}`;
+	// Dispatch self-assessment: lets the teacher raise its hand to send a codable
+	// task to a worker (the SULLY_GATE block, extracted + acted on post-stream).
+	// Text chat only — voice dispatch is handled on the voice path.
+	const gate = ctx.spoken ? '' : `\n\n${GATE_INSTRUCTION}`;
+	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}${artifact}${WRITING_STYLE}${gate}`;
 	if (!addendum) return head;
 	return `${head}
 

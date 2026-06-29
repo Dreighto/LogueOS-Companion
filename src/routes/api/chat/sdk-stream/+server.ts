@@ -52,6 +52,8 @@ import { resolveChatModel } from '$lib/server/model_catalog';
 import { baseTools } from '$lib/server/chat/base_tools';
 import { extractAndPromoteArtifacts } from '$lib/server/chat/artifact_sentinel';
 import { maybeAutoTitle } from '$lib/server/auto_title';
+import { extractGateBlock, validateGate } from '$lib/server/decisionGate';
+import type { TurnDecision } from '$lib/server/routing/turn_decision';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
 import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
@@ -155,6 +157,31 @@ function latestUserText(messages: UIMessage[]): string {
 		if (txt) return txt;
 	}
 	return '';
+}
+
+// Pull the teacher's SULLY_GATE self-assessment out of the reply: strip the block
+// from the displayed prose, and if it validates with escalate:true, return a
+// DISPATCH decision that OVERRIDES the deterministic decision (the teacher raising
+// its hand to send a codable task to a worker). Otherwise keep the base decision.
+function applyGateEscalation(
+	replyText: string,
+	baseDecision: TurnDecision
+): { visible: string; decision: TurnDecision } {
+	const { visible, block } = extractGateBlock(replyText);
+	const gate = validateGate(block);
+	if (gate.ok && gate.gate.escalate) {
+		return {
+			visible,
+			decision: {
+				kind: 'DISPATCH',
+				worker: gate.gate.worker,
+				category: gate.gate.category,
+				brief: gate.gate.brief,
+				reason: `gate: ${gate.gate.brief}`
+			}
+		};
+	}
+	return { visible, decision: baseDecision };
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -329,13 +356,18 @@ export const POST: RequestHandler = async ({ request }) => {
 				// inline <<<SULLY_ARTIFACT…>>> blocks the teacher emitted: promote
 				// each to the durable store (→ library + cards, source_worker=teacher)
 				// and persist the prose with the blocks stripped.
+				let effectiveDecision = decision;
 				if (collected && !errored) {
 					const { strippedText, artifacts: teacherArtifacts } = extractAndPromoteArtifacts(
 						collected,
 						{ threadId, taskId: taskId ?? undefined }
 					);
+					// Teacher dispatch self-assessment: strip the SULLY_GATE block; if
+					// it validates with escalate:true, override to a real DISPATCH.
+					const gateResult = applyGateEscalation(strippedText, decision);
+					effectiveDecision = gateResult.decision;
 					persistAssistantTurn({
-						text: strippedText || collected,
+						text: gateResult.visible || strippedText || collected,
 						sender: senderLabel,
 						threadId,
 						model: resolvedModelId,
@@ -352,11 +384,10 @@ export const POST: RequestHandler = async ({ request }) => {
 					touchLastActivity(threadId);
 				}
 
-				// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
-				// decision is ANSWER_NOW/CONVERSATIONAL_ONLY here (work turns already
-				// short-circuited above) → journals Talk + markSelfHandled.
+				// applyTurnDecision runs the (possibly gate-escalated) decision:
+				// DISPATCH a worker, PROPOSE, or journal Talk + markSelfHandled.
 				if (!errored) {
-					await applyTurnDecision(decision, {
+					await applyTurnDecision(effectiveDecision, {
 						taskId,
 						threadId,
 						targetRepo,
@@ -518,6 +549,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				? extractAndPromoteArtifacts(rawFinalText, { threadId, taskId: taskId ?? undefined })
 				: { strippedText: rawFinalText, artifacts: [] };
 			const finalText = promoted.strippedText || rawFinalText;
+				// Teacher dispatch self-assessment: strip the SULLY_GATE block; if it
+				// validates with escalate:true, override to a real DISPATCH.
+				const gateResult = applyGateEscalation(finalText, decision);
+				const effectiveDecision = gateResult.decision;
 
 			if (finalText) {
 				const senderLabel: 'cc' | 'agy' | 'local' =
@@ -534,7 +569,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					/* usage unavailable — leave null */
 				}
 				persistAssistantTurn({
-					text: finalText,
+					text: gateResult.visible || finalText,
 					sender: senderLabel,
 					threadId,
 					model: modelHandle.modelId,
@@ -562,7 +597,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			// short-circuited above) → journals Talk + markSelfHandled.
 			// FIRE-AND-FORGET: same pattern as before — avoids coupling stream close
 			// to the dispatch listener's roundtrip. Observable via next pollMessages.
-			void applyTurnDecision(decision, {
+			void applyTurnDecision(effectiveDecision, {
 				taskId,
 				threadId,
 				targetRepo,
