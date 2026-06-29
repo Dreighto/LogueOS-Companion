@@ -152,6 +152,16 @@ export async function* streamViaClaudeCLI(
 		'--system-prompt-file',
 		systemPromptPath,
 		'--disable-slash-commands',
+		// Ack-only teacher: disable ALL built-in tools (`--tools ""`). The CLI
+		// teacher runs in a sandbox (cwd: BARE_HOME = /tmp), so any inline tool
+		// work (Bash/Read) either fails ("couldn't see your repos") or narrates
+		// a sandbox result that abuts its ack into one bubble ("dig.Worker's
+		// back" — thread B7BB0D39). Operator decision 2026-06-28: the teacher
+		// only converses + acknowledges; REAL work routes through the SULLY_GATE
+		// → autonomous_dispatch → a dispatched worker whose result lands as its
+		// own `sender='local'` row via completionClose.closeOutTask.
+		'--tools',
+		'',
 		'--output-format',
 		'stream-json',
 		'--include-partial-messages',
