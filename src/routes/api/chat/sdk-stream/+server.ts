@@ -51,6 +51,7 @@ import { logEscalation } from '$lib/server/escalation_telemetry';
 import { resolveChatModel } from '$lib/server/model_catalog';
 import { baseTools } from '$lib/server/chat/base_tools';
 import { extractAndPromoteArtifacts } from '$lib/server/chat/artifact_sentinel';
+import { maybeAutoTitle } from '$lib/server/auto_title';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
 import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
@@ -342,6 +343,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						taskId,
 						provider
 					});
+					// Auto-name the thread off the first exchange (fire-and-forget).
+					void maybeAutoTitle(threadId);
 				} else if (!errored) {
 					upsertThreadTier(threadId, currentTier, resolvedModelId);
 					touchLastActivity(threadId);
@@ -541,6 +544,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					latencyMs: Date.now() - turnStartedAt,
 					error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
 				});
+				// Auto-name the thread off the first exchange (fire-and-forget).
+				void maybeAutoTitle(threadId);
 			} else {
 				// No reply text but the SDK call still finished — advance state so
 				// the picker chip can show "Claude Haiku 4.5" instead of "Auto".
