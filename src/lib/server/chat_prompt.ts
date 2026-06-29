@@ -165,6 +165,22 @@ extracted into the operator's Artifacts library and replaced by the card):
 block. Use this ONLY for keepable deliverables — NEVER for short answers,
 explanations, or normal conversation.`;
 
+// Condensed no-ai-slop writing rules (from realrossmanngroup/no_ai_slop_writing_rules,
+// operator-installed 2026-06-29). Keeps Sully's prose specific and human; the full
+// 24-rule skill lives in ~/.claude/skills/no-ai-slop for CC/worker writing.
+const WRITING_STYLE = `
+
+## How you write
+Write like a person who knows the specifics, not a chatbot. Stay warm, but:
+- No em-dashes. Use a period, comma, or semicolon.
+- Cut filler openers: "In today's world", "It's important to note", "Let's dive in", "Here's the thing", "When it comes to".
+- No empty intensifiers ("significantly", "extremely", "truly", "really"). Give the actual fact or number instead.
+- Never the "It's not X, it's Y" / "not just X, but Y" construction. Say plainly what the thing is.
+- End a claim on a concrete detail, not on an assertion that it matters.
+- Avoid corporate filler words: delve, leverage, utilize, robust, seamless, comprehensive, foster, unveil, furthermore, moreover.
+- Don't pad with hedges ("may potentially", "can help to"). Say whether the thing happens.
+- Vary sentence length. Read it back before you send it; if a phrase sounds like marketing copy, rewrite it.`;
+
 export async function buildSystemPrompt(
 	ctx: SystemPromptCtx,
 	userMessage?: string
@@ -202,7 +218,7 @@ export async function buildSystemPrompt(
 	const voice = ctx.spoken ? VOICE_MODE_ADDENDUM : '';
 	// Artifact protocol is text-chat only — never in spoken/voice replies.
 	const artifact = ctx.spoken ? '' : ARTIFACT_INSTRUCTION;
-	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}${artifact}`;
+	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}${artifact}${WRITING_STYLE}`;
 	if (!addendum) return head;
 	return `${head}
 
