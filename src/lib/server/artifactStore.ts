@@ -234,3 +234,87 @@ const ORDER = { primary: 0, secondary: 1, supporting: 2 } as const;
 function sortByImportance(m: ArtifactMetadata[]): ArtifactMetadata[] {
 	return [...m].sort((a, b) => ORDER[a.importance] - ORDER[b.importance]);
 }
+
+// ---------------------------------------------------------------------------
+// Teacher-produced (inline) artifacts — Sully writes a plan/snippet/doc in chat
+// via a <<<SULLY_ARTIFACT …>>> sentinel; we promote that INLINE CONTENT to the
+// same durable store as worker files, so it shows in the library + cards with
+// provenance source_worker="teacher". One pipeline, two producers (workers
+// promote files; the teacher promotes inline content). MVP of the artifact-
+// generation plan; versioning (same artifact_id → new version) is the next step.
+// ---------------------------------------------------------------------------
+
+function extForInlineType(artifactType: string, language?: string): string {
+	if (language) {
+		const l = language.toLowerCase();
+		const map: Record<string, string> = {
+			python: '.py', py: '.py', javascript: '.js', js: '.js', typescript: '.ts',
+			ts: '.ts', swift: '.swift', bash: '.sh', sh: '.sh', json: '.json',
+			yaml: '.yaml', yml: '.yml', html: '.html', css: '.css', sql: '.sql',
+			markdown: '.md', md: '.md'
+		};
+		if (map[l]) return map[l];
+	}
+	switch (artifactType) {
+		case 'code':
+			return '.txt';
+		case 'data':
+			return '.json';
+		case 'doc':
+		case 'plan':
+		default:
+			return '.md';
+	}
+}
+
+function slugifyTitle(title: string): string {
+	const s = title
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 48);
+	return s || 'artifact';
+}
+
+export interface InlineArtifactInput {
+	content: string;
+	/** "doc" | "plan" | "code" | "data" */
+	artifactType: string;
+	title: string;
+	language?: string;
+	threadId?: string;
+	taskId?: string;
+}
+
+/** Promote a single piece of inline (teacher-written) content to the durable
+ *  store under its own synthetic trace, and return its manifest metadata. */
+export function promoteInlineArtifact(input: InlineArtifactInput): ArtifactMetadata | null {
+	try {
+		const repoRoot = artifactRepoRoot();
+		const stamp = Date.now();
+		const rand = Math.floor(stamp % 1_000_000).toString(16);
+		const traceId = `sully-teacher-${stamp}-${rand}`;
+		const date = new Date().toISOString().slice(0, 10);
+		const dir = storeDirFor(repoRoot, traceId, date);
+		fs.mkdirSync(dir, { recursive: true });
+		const filename = slugifyTitle(input.title) + extForInlineType(input.artifactType, input.language);
+		fs.writeFileSync(path.join(dir, filename), input.content, 'utf8');
+		const meta: ArtifactMetadata = {
+			created_by: 'Sully',
+			task_id: input.taskId ?? traceId,
+			trace_id: traceId,
+			timestamp: new Date().toISOString(),
+			source_worker: 'teacher',
+			workspace_path: dir,
+			artifact_type: input.artifactType,
+			original_path: filename,
+			artifact_url: `/companion/api/artifacts/${encodeURIComponent(traceId)}/${encodeURIComponent(filename)}`,
+			label: input.title.trim() || filename,
+			importance: 'primary'
+		};
+		writeManifestAtomic(dir, [meta]);
+		return meta;
+	} catch {
+		return null;
+	}
+}

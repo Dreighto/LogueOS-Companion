@@ -143,6 +143,28 @@ If the user's question would normally call for a table or a bulleted comparison,
 
 Re-read this section before you generate. These rules override anything in the base prompt that suggested it was OK to use markdown structure.`;
 
+// Teacher inline-artifact protocol (text chat only — voice replies are spoken,
+// never artifacts). Parsed + promoted by artifact_sentinel.ts. Mirrors the
+// SULLY_GATE sentinel shape so it's consistent with the CLI-bridge (no-tools)
+// teacher. Copies the Claude/ChatGPT "substantial+reusable → artifact" heuristic.
+const ARTIFACT_INSTRUCTION = `
+
+## Artifacts
+When you produce a SUBSTANTIAL, REUSABLE, self-contained deliverable the operator
+will want to keep / revisit / hand off — a plan, a checklist, a code snippet, a
+document, a structured config — emit it as an ARTIFACT instead of burying it in
+prose. Wrap it EXACTLY like this (do NOT wrap it in code fences; the block is
+extracted into the operator's Artifacts library and replaced by the card):
+
+<<<SULLY_ARTIFACT {"type":"doc","title":"Short title","language":"markdown"}>>>
+…the full artifact content…
+<<<END_SULLY_ARTIFACT>>>
+
+\`type\` ∈ "doc" | "plan" | "code" | "data". \`language\` optional (e.g. "python",
+"swift","json","markdown"). Give a one-line conversational lead-in before the
+block. Use this ONLY for keepable deliverables — NEVER for short answers,
+explanations, or normal conversation.`;
+
 export async function buildSystemPrompt(
 	ctx: SystemPromptCtx,
 	userMessage?: string
@@ -178,7 +200,9 @@ export async function buildSystemPrompt(
 	}
 
 	const voice = ctx.spoken ? VOICE_MODE_ADDENDUM : '';
-	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}`;
+	// Artifact protocol is text-chat only — never in spoken/voice replies.
+	const artifact = ctx.spoken ? '' : ARTIFACT_INSTRUCTION;
+	const head = `${base}${working}${semantic}${tools}${factClause(userMessage, ctx.allowSensitive)}${voice}${artifact}`;
 	if (!addendum) return head;
 	return `${head}
 

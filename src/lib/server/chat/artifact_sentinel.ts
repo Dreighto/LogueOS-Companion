@@ -1,0 +1,93 @@
+// artifact_sentinel.ts — the teacher's inline-artifact protocol.
+//
+// Mirrors the SULLY_GATE pattern (decisionGate.ts): the teacher emits a sentinel
+// block in its reply, and the backend extracts it, promotes the inline content
+// to the durable artifact store (so it shows in the library + cards with
+// provenance source_worker="teacher"), and strips the block from the displayed/
+// persisted text. This is the consistent path for the CLI-bridge teacher (which
+// has --tools "" — no callable tools), and works for the local/SDK path too.
+//
+// Format the teacher emits (taught in the system prompt):
+//   <<<SULLY_ARTIFACT {"type":"doc|plan|code|data","title":"…","language":"…"}>>>
+//   …the artifact content…
+//   <<<END_SULLY_ARTIFACT>>>
+
+import { promoteInlineArtifact, type ArtifactMetadata } from '$lib/server/artifactStore';
+
+// Opening sentinel (self-delimited by `>>>`, like SULLY_GATE). The CLOSE tag is
+// OPTIONAL — LLMs are unreliable with paired delimiters, so we treat content as
+// running to the close tag, the next opening sentinel, or end-of-message.
+const OPEN_RE = /<<<SULLY_ARTIFACT\s*(\{[\s\S]*?\})\s*>>>/g;
+const CLOSE_TAG = '<<<END_SULLY_ARTIFACT>>>';
+
+/** True if the text contains an artifact sentinel — cheap pre-check. */
+export function hasArtifactSentinel(text: string): boolean {
+	return text.includes('<<<SULLY_ARTIFACT');
+}
+
+/**
+ * Extract every SULLY_ARTIFACT block from `text`, promote each to the durable
+ * store, and return the prose with the blocks stripped. Lenient: a block runs
+ * from its opening sentinel to (whichever comes first) the close tag, the next
+ * opening sentinel, or end-of-text — so a forgotten close tag doesn't drop the
+ * artifact or leak the raw block.
+ */
+export function extractAndPromoteArtifacts(
+	text: string,
+	ctx: { threadId?: string; taskId?: string } = {}
+): { strippedText: string; artifacts: ArtifactMetadata[] } {
+	if (!hasArtifactSentinel(text)) return { strippedText: text, artifacts: [] };
+
+	// Collect opening sentinels with their header + body span.
+	type Block = { start: number; end: number; header: string; content: string };
+	const blocks: Block[] = [];
+	const opens: { index: number; header: string; bodyStart: number }[] = [];
+	let m: RegExpExecArray | null;
+	OPEN_RE.lastIndex = 0;
+	while ((m = OPEN_RE.exec(text)) !== null) {
+		opens.push({ index: m.index, header: m[1], bodyStart: m.index + m[0].length });
+	}
+	for (let i = 0; i < opens.length; i++) {
+		const o = opens[i];
+		const nextOpen = i + 1 < opens.length ? opens[i + 1].index : text.length;
+		const closeIdx = text.indexOf(CLOSE_TAG, o.bodyStart);
+		const bodyEnd = closeIdx !== -1 && closeIdx < nextOpen ? closeIdx : nextOpen;
+		const end = closeIdx !== -1 && closeIdx < nextOpen ? closeIdx + CLOSE_TAG.length : nextOpen;
+		blocks.push({
+			start: o.index,
+			end,
+			header: o.header,
+			content: text.slice(o.bodyStart, bodyEnd).replace(/^\n+|\n+$/g, '')
+		});
+	}
+
+	const artifacts: ArtifactMetadata[] = [];
+	let stripped = '';
+	let cursor = 0;
+	for (const b of blocks) {
+		stripped += text.slice(cursor, b.start);
+		cursor = b.end;
+		let meta: { type?: unknown; title?: unknown; language?: unknown };
+		try {
+			meta = JSON.parse(b.header);
+		} catch {
+			// malformed header — keep the raw block rather than lose the content
+			stripped += text.slice(b.start, b.end);
+			continue;
+		}
+		if (!b.content.trim()) continue;
+		const promoted = promoteInlineArtifact({
+			content: b.content,
+			artifactType: typeof meta.type === 'string' ? meta.type : 'doc',
+			title: typeof meta.title === 'string' ? meta.title : 'Artifact',
+			language: typeof meta.language === 'string' ? meta.language : undefined,
+			threadId: ctx.threadId,
+			taskId: ctx.taskId
+		});
+		if (promoted) artifacts.push(promoted);
+	}
+	stripped += text.slice(cursor);
+
+	const strippedText = stripped.replace(/\n{3,}/g, '\n\n').trim();
+	return { strippedText, artifacts };
+}

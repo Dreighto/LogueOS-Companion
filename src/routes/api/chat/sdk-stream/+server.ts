@@ -50,6 +50,7 @@ import { persistAssistantTurn } from '$lib/server/chat_turn';
 import { logEscalation } from '$lib/server/escalation_telemetry';
 import { resolveChatModel } from '$lib/server/model_catalog';
 import { baseTools } from '$lib/server/chat/base_tools';
+import { extractAndPromoteArtifacts } from '$lib/server/chat/artifact_sentinel';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
 import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
@@ -323,10 +324,17 @@ export const POST: RequestHandler = async ({ request }) => {
 					error: errored ? 'cli_stream_error' : undefined
 				});
 
-				// Persist the full reply — never a half/failed gen.
+				// Persist the full reply — never a half/failed gen. First, extract any
+				// inline <<<SULLY_ARTIFACT…>>> blocks the teacher emitted: promote
+				// each to the durable store (→ library + cards, source_worker=teacher)
+				// and persist the prose with the blocks stripped.
 				if (collected && !errored) {
+					const { strippedText } = extractAndPromoteArtifacts(collected, {
+						threadId,
+						taskId: taskId ?? undefined
+					});
 					persistAssistantTurn({
-						text: collected,
+						text: strippedText || collected,
 						sender: senderLabel,
 						threadId,
 						model: resolvedModelId,
@@ -496,8 +504,15 @@ export const POST: RequestHandler = async ({ request }) => {
 					}`;
 				});
 
-			const finalText =
+			const rawFinalText =
 				toolErrors.length > 0 ? [replyText, ...toolErrors].filter(Boolean).join('\n\n') : replyText;
+			// Promote any inline <<<SULLY_ARTIFACT…>>> blocks to the durable store
+			// and strip them from the persisted prose (local/SDK path; the CLI-bridge
+			// path above does the same on `collected`).
+			const finalText = rawFinalText
+				? extractAndPromoteArtifacts(rawFinalText, { threadId, taskId: taskId ?? undefined })
+						.strippedText || rawFinalText
+				: rawFinalText;
 
 			if (finalText) {
 				const senderLabel: 'cc' | 'agy' | 'local' =
