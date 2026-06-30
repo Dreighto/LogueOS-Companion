@@ -28,6 +28,8 @@ export interface ArtifactMetadata {
 	thumb_url?: string | null;
 	preview_text?: string | null;
 	language?: string | null;
+	thread_id?: string | null;
+	thread_title?: string | null;
 }
 
 export interface ArtifactListResponse {

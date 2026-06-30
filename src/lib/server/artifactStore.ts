@@ -144,6 +144,10 @@ export interface ArtifactMetadata {
 	preview_text?: string | null;
 	/** Programming language for code artifacts (drives the tile badge), else null. */
 	language?: string | null;
+	/** The conversation that produced this artifact (library grouping). */
+	thread_id?: string | null;
+	/** Source thread title, resolved at index time (not stored). */
+	thread_title?: string | null;
 }
 
 const ARTIFACT_TYPE: Record<string, string> = {
@@ -275,7 +279,8 @@ export function promoteArtifactsForTask(input: PromoteInput): PromoteResult {
 				importance: c.importance ?? 'secondary',
 				thumb_url: thumbUrlFor(aUrl, e),
 				preview_text: PREVIEW_TYPES.has(aType) ? previewFromFile(dest) : null,
-				language: aType === 'code' ? languageForExt(e) : null
+				language: aType === 'code' ? languageForExt(e) : null,
+				thread_id: null
 			});
 		} catch {
 			failed.push({ path: c.path });
@@ -409,7 +414,8 @@ export function promoteInlineArtifacts(
 				importance: metas.length === 0 ? 'primary' : 'secondary',
 				thumb_url: null,
 				preview_text: previewFromText(input.content),
-				language: input.artifactType === 'code' ? (input.language ?? null) : null
+				language: input.artifactType === 'code' ? (input.language ?? null) : null,
+				thread_id: input.threadId ?? null
 			});
 		}
 		writeManifestAtomic(dir, metas);
