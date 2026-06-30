@@ -54,6 +54,7 @@ import { extractAndPromoteArtifacts } from '$lib/server/chat/artifact_sentinel';
 import { maybeAutoTitle } from '$lib/server/auto_title';
 import { extractGateBlock, validateGate } from '$lib/server/decisionGate';
 import type { TurnDecision } from '$lib/server/routing/turn_decision';
+import { generateGeminiImage } from '$lib/server/gemini';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
 import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
@@ -184,6 +185,65 @@ function applyGateEscalation(
 	return { visible, decision: baseDecision };
 }
 
+// "generate an image of X" → the direct Gemini image model, NOT a coding-worker
+// dispatch. Requires a generation verb AND an image noun close together so it
+// doesn't fire on "I have an image problem in my code".
+const IMAGE_INTENT_RE =
+	/\b(generate|create|make|draw|render|paint|design|sketch|illustrate|whip up|cook up)\b[\s\S]{0,30}\b(image|picture|photo|pic|illustration|drawing|artwork|logo|icon|portrait|wallpaper|painting)\b/i;
+
+function isImageRequest(text: string): boolean {
+	return IMAGE_INTENT_RE.test(text);
+}
+
+// Strip a worker-routing prefix ("@agy ", "dispatch agy to ") so it doesn't
+// pollute the image prompt; keep the actual description.
+function imagePromptFrom(text: string): string {
+	return text
+		.replace(/^\s*@\w+[\s,:]+/i, '')
+		.replace(/^\s*dispatch\s+\w+\s+to\s+/i, '')
+		.replace(/^\s*(please|hey|can you|could you)\b[\s,]*/i, '')
+		.trim();
+}
+
+// Generate the image directly (~7s) and stream it back as an inline markdown
+// image the app renders. Persists the reply as an 'agy' turn. Opens the stream
+// immediately so the app shows a thinking row during generation.
+function generateImageReply(opts: { prompt: string; threadId: string; taskId: string | null }): Response {
+	const { prompt, threadId, taskId } = opts;
+	const stream = createUIMessageStream({
+		execute: async ({ writer }) => {
+			const messageId = generateId();
+			const textId = '0';
+			writer.write({ type: 'start', messageId });
+			let md: string;
+			try {
+				const { url } = await generateGeminiImage(prompt);
+				md = `![${prompt.slice(0, 80)}](${url})`;
+			} catch (e) {
+				const msg = e instanceof Error ? e.message : 'unknown error';
+				md = `⚠️ No image generated. ${msg.slice(0, 300)}`;
+			}
+			persistAssistantTurn({
+				text: md,
+				sender: 'agy',
+				threadId,
+				model: 'gemini-2.5-flash-image',
+				tier: 'chat',
+				taskId: taskId ?? undefined,
+				provider: 'gemini'
+			});
+			void maybeAutoTitle(threadId);
+			writer.write({ type: 'start-step' });
+			writer.write({ type: 'text-start', id: textId });
+			writer.write({ type: 'text-delta', id: textId, delta: md });
+			writer.write({ type: 'text-end', id: textId });
+			writer.write({ type: 'finish-step' });
+			writer.write({ type: 'finish', finishReason: 'stop' });
+		}
+	});
+	return createUIMessageStreamResponse({ stream });
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	let body: {
 		messages?: UIMessage[];
@@ -248,6 +308,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		userText: userMessageText,
 		shadowDecision
 	} = ctx;
+
+	// Image generation short-circuit: route "generate an image of X" straight to
+	// the direct Gemini image model (~7s) instead of the AGY coding worker
+	// (minutes, often aborts). Runs BEFORE the dispatch gate, so even
+	// "@agy generate an image" takes the fast path.
+	if (isImageRequest(userMessageText)) {
+		return generateImageReply({
+			prompt: imagePromptFrom(userMessageText),
+			threadId,
+			taskId
+		});
+	}
 
 	// D2.1: Classify-before-answer gate. A work turn produces NO conversational
 	// reply — applyTurnDecision writes the proposal/dispatch/routing-ask and the
