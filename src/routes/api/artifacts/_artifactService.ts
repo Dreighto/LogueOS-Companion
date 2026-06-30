@@ -11,12 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { serverConfig } from '$lib/server/config';
 import { resolveWorkerTemplate } from '$lib/work-surface/chatBridge.svelte';
-import {
-	findStoreDir,
-	readManifest,
-	artifactRepoRoot,
-	storeRoot
-} from '$lib/server/artifactStore';
+import { findStoreDir, readManifest, artifactRepoRoot, storeRoot } from '$lib/server/artifactStore';
 
 const FILE_ACTIONS = new Set(['wrote_file', 'created_artifact', 'write_file']);
 
@@ -30,6 +25,9 @@ export interface ArtifactMetadata {
 	artifact_type: string;
 	original_path: string;
 	artifact_url: string;
+	thumb_url?: string | null;
+	preview_text?: string | null;
+	language?: string | null;
 }
 
 export interface ArtifactListResponse {
@@ -60,6 +58,7 @@ const MIME: Record<string, string> = {
 	jpg: 'image/jpeg',
 	jpeg: 'image/jpeg',
 	svg: 'image/svg+xml',
+	webp: 'image/webp',
 	json: 'application/json',
 	txt: 'text/plain; charset=utf-8',
 	log: 'text/plain; charset=utf-8',
@@ -97,9 +96,31 @@ const ARTIFACT_TYPE: Record<string, string> = {
 	patch: 'log'
 };
 
+const THUMBABLE_EXT = new Set(['png', 'jpg', 'jpeg', 'webp', 'svg']);
+
+/** Lazily generate (and cache) a 240px webp thumbnail next to an image/svg
+ *  artifact, returning its path. Generated on the first ?thumb=1 request; later
+ *  requests serve the cached sibling. Returns null for non-thumbable types or on
+ *  failure (the caller then falls back to serving the full file). sharp is
+ *  dynamically imported so vite keeps it external (native libvips module). */
+export async function ensureThumb(absolutePath: string, ext: string): Promise<string | null> {
+	if (!THUMBABLE_EXT.has(ext.toLowerCase())) return null;
+	const thumbPath = `${absolutePath}.thumb.webp`;
+	if (fs.existsSync(thumbPath)) return thumbPath;
+	try {
+		const sharp = (await import('sharp')).default;
+		await sharp(absolutePath)
+			.resize(240, 240, { fit: 'inside', withoutEnlargement: true })
+			.webp({ quality: 72 })
+			.toFile(thumbPath);
+		return fs.existsSync(thumbPath) ? thumbPath : null;
+	} catch {
+		return null;
+	}
+}
+
 const DEFAULT_WORKSPACE =
-	process.env.LOGUEOS_ARTIFACT_WORKSPACE_DEFAULT ||
-	'/home/dreighto/dev/sully-backend';
+	process.env.LOGUEOS_ARTIFACT_WORKSPACE_DEFAULT || '/home/dreighto/dev/sully-backend';
 
 const APP_BASE = '/companion';
 

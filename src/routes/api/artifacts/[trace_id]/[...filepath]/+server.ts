@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+	ensureThumb,
 	findArtifactMetadata,
 	getTraceWorkspacePath,
 	listArtifactsForTrace,
@@ -51,6 +52,31 @@ export const GET: RequestHandler = async ({ params, url, request }) => {
 
 	if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
 		return error(404, 'not found');
+	}
+
+	// ?thumb=1 → serve a cached 240px webp thumbnail of an image/svg artifact,
+	// generated lazily on first request. Non-thumbable types fall through to the
+	// full file so the client always gets something.
+	if (url.searchParams.get('thumb') === '1') {
+		const thumbExt = path.extname(absolutePath).slice(1).toLowerCase();
+		const thumbPath = await ensureThumb(absolutePath, thumbExt);
+		if (thumbPath) {
+			const tstat = fs.statSync(thumbPath);
+			const tbuf = fs.readFileSync(thumbPath);
+			const tbody = tbuf.buffer.slice(
+				tbuf.byteOffset,
+				tbuf.byteOffset + tbuf.byteLength
+			) as ArrayBuffer;
+			return new Response(tbody, {
+				status: 200,
+				headers: {
+					'content-type': 'image/webp',
+					'content-length': String(tstat.size),
+					'cache-control': 'public, max-age=31536000, immutable',
+					'x-content-type-options': 'nosniff'
+				}
+			});
+		}
 	}
 
 	if (url.searchParams.get('meta') === '1') {
