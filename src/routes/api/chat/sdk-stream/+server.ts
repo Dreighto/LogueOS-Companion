@@ -177,6 +177,61 @@ function applyGateEscalation(
 	return { visible, decision: baseDecision };
 }
 
+async function finalizeReply(opts: {
+	rawText: string;
+	decision: TurnDecision;
+	threadId: string;
+	taskId: string | null;
+	targetRepo: string | null;
+	userText: string;
+	sender: 'cc' | 'agy' | 'local';
+	model: string;
+	tier: Tier;
+	provider: Provider;
+	forcedTraceId?: string;
+	promptTokens?: number | null;
+	completionTokens?: number | null;
+	latencyMs?: number | null;
+	error?: string | null;
+}): Promise<TurnDecision> {
+	let effectiveDecision = opts.decision;
+	if (opts.rawText) {
+		const { strippedText, artifacts } = extractAndPromoteArtifacts(
+			opts.rawText,
+			{ threadId: opts.threadId, taskId: opts.taskId ?? undefined },
+			opts.forcedTraceId
+		);
+		const gateResult = applyGateEscalation(strippedText, opts.decision);
+		effectiveDecision = gateResult.decision;
+		persistAssistantTurn({
+			text: gateResult.visible || strippedText || opts.rawText,
+			sender: opts.sender,
+			threadId: opts.threadId,
+			model: opts.model,
+			tier: opts.tier,
+			taskId: opts.taskId ?? undefined,
+			traceId: artifacts[0]?.trace_id ?? null,
+			provider: opts.provider,
+			promptTokens: opts.promptTokens ?? null,
+			completionTokens: opts.completionTokens ?? null,
+			latencyMs: opts.latencyMs ?? null,
+			error: opts.error ?? null
+		});
+		void maybeAutoTitle(opts.threadId);
+	} else {
+		upsertThreadTier(opts.threadId, opts.tier, opts.model);
+		touchLastActivity(opts.threadId);
+	}
+
+	await applyTurnDecision(effectiveDecision, {
+		taskId: opts.taskId,
+		threadId: opts.threadId,
+		targetRepo: opts.targetRepo,
+		userText: opts.userText
+	});
+	return effectiveDecision;
+}
+
 // "generate an image of X" → the direct Gemini image model, NOT a coding-worker
 // dispatch. Requires a generation verb AND an image noun close together so it
 // doesn't fire on "I have an image problem in my code".
@@ -420,46 +475,20 @@ export const POST: RequestHandler = async ({ request }) => {
 					error: errored ? 'cli_stream_error' : undefined
 				});
 
-				// Persist the full reply — never a half/failed gen. First, extract any
-				// inline <<<SULLY_ARTIFACT…>>> blocks the teacher emitted: promote
-				// each to the durable store (→ library + cards, source_worker=teacher)
-				// and persist the prose with the blocks stripped.
-				let effectiveDecision = decision;
-				if (collected && !errored) {
-					const { strippedText, artifacts: teacherArtifacts } = extractAndPromoteArtifacts(
-						collected,
-						{ threadId, taskId: taskId ?? undefined }
-					);
-					// Teacher dispatch self-assessment: strip the SULLY_GATE block; if
-					// it validates with escalate:true, override to a real DISPATCH.
-					const gateResult = applyGateEscalation(strippedText, decision);
-					effectiveDecision = gateResult.decision;
-					persistAssistantTurn({
-						text: gateResult.visible || strippedText || collected,
-						sender: senderLabel,
+				if (!errored) {
+					// Persist the full reply and run the (possibly gate-escalated)
+					// decision: DISPATCH a worker, PROPOSE, or journal Talk + markSelfHandled.
+					await finalizeReply({
+						rawText: collected,
+						decision,
 						threadId,
+						taskId,
+						targetRepo,
+						userText: userMessageText,
+						sender: senderLabel,
 						model: resolvedModelId,
 						tier: currentTier,
-						taskId,
-						// Stamp the reply with the teacher artifact's trace → inline card.
-						traceId: teacherArtifacts[0]?.trace_id ?? null,
 						provider
-					});
-					// Auto-name the thread off the first exchange (fire-and-forget).
-					void maybeAutoTitle(threadId);
-				} else if (!errored) {
-					upsertThreadTier(threadId, currentTier, resolvedModelId);
-					touchLastActivity(threadId);
-				}
-
-				// applyTurnDecision runs the (possibly gate-escalated) decision:
-				// DISPATCH a worker, PROPOSE, or journal Talk + markSelfHandled.
-				if (!errored) {
-					await applyTurnDecision(effectiveDecision, {
-						taskId,
-						threadId,
-						targetRepo,
-						userText: userMessageText
 					});
 				}
 			},
@@ -630,29 +659,13 @@ export const POST: RequestHandler = async ({ request }) => {
 							toolErrors.length > 0
 								? [replyText, ...toolErrors].filter(Boolean).join('\n\n')
 								: replyText;
-						// Promote any inline <<<SULLY_ARTIFACT…>>> blocks to the durable store
-						// and strip them from the persisted prose (local/SDK path; the CLI-bridge
-						// path above does the same on `collected`).
-						const promoted = rawFinalText
-							? extractAndPromoteArtifacts(
-									rawFinalText,
-									{ threadId, taskId: taskId ?? undefined },
-									artifactTrace
-								)
-							: { strippedText: rawFinalText, artifacts: [] };
-						const finalText = promoted.strippedText || rawFinalText;
-						// Teacher dispatch self-assessment: strip the SULLY_GATE block; if it
-						// validates with escalate:true, override to a real DISPATCH.
-						const gateResult = applyGateEscalation(finalText, decision);
-						const effectiveDecision = gateResult.decision;
-
-						if (finalText) {
-							const senderLabel: 'cc' | 'agy' | 'local' =
-								provider === 'anthropic' ? 'cc' : provider === 'local' ? 'local' : 'agy';
-							// Best-effort token capture — result.usage is resolved by onFinish.
-							// Never block or throw on it; forensic columns are nullable.
-							let promptTokens: number | null = null;
-							let completionTokens: number | null = null;
+						const senderLabel: 'cc' | 'agy' | 'local' =
+							provider === 'anthropic' ? 'cc' : provider === 'local' ? 'local' : 'agy';
+						// Best-effort token capture — result.usage is resolved by onFinish.
+						// Never block or throw on it; forensic columns are nullable.
+						let promptTokens: number | null = null;
+						let completionTokens: number | null = null;
+						if (rawFinalText) {
 							try {
 								const usage = await result.usage;
 								promptTokens = usage?.inputTokens ?? null;
@@ -660,40 +673,26 @@ export const POST: RequestHandler = async ({ request }) => {
 							} catch {
 								/* usage unavailable — leave null */
 							}
-							persistAssistantTurn({
-								text: gateResult.visible || finalText,
-								sender: senderLabel,
-								threadId,
-								model: modelHandle.modelId,
-								tier: currentTier,
-								taskId,
-								// Stamp the reply with the teacher artifact's trace → inline card.
-								traceId: promoted.artifacts[0]?.trace_id ?? null,
-								provider,
-								promptTokens,
-								completionTokens,
-								latencyMs: Date.now() - turnStartedAt,
-								error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
-							});
-							// Auto-name the thread off the first exchange (fire-and-forget).
-							void maybeAutoTitle(threadId);
-						} else {
-							// No reply text but the SDK call still finished — advance state so
-							// the picker chip can show "Claude Haiku 4.5" instead of "Auto".
-							upsertThreadTier(threadId, currentTier, modelHandle.modelId);
-							touchLastActivity(threadId);
 						}
 
-						// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
-						// decision is ANSWER_NOW/CONVERSATIONAL_ONLY here (work turns already
-						// short-circuited above) → journals Talk + markSelfHandled.
 						// FIRE-AND-FORGET: same pattern as before — avoids coupling stream close
 						// to the dispatch listener's roundtrip. Observable via next pollMessages.
-						void applyTurnDecision(effectiveDecision, {
-							taskId,
+						void finalizeReply({
+							rawText: rawFinalText,
+							decision,
 							threadId,
+							taskId,
 							targetRepo,
-							userText: userMessageText
+							userText: userMessageText,
+							sender: senderLabel,
+							model: modelHandle.modelId,
+							tier: currentTier,
+							provider,
+							forcedTraceId: artifactTrace,
+							promptTokens,
+							completionTokens,
+							latencyMs: rawFinalText ? Date.now() - turnStartedAt : null,
+							error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
 						}).catch((e) => {
 							console.error('[sdk-stream] autonomous-dispatch failed', e);
 						});
