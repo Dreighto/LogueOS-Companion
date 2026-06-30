@@ -1,29 +1,20 @@
-// SDK-native streaming endpoint — Vercel AI SDK 6 / `streamText` +
-// `toUIMessageStreamResponse()`. Feature-parity replacement for the legacy
-// custom-SSE `/api/chat/stream` route, ready for PR 2b client cutover.
+// SDK-native streaming chat endpoint — Vercel AI SDK 6 / streamText, wrapped in a
+// createUIMessageStream writer so the server can push custom data events mid-reply
+// (data-sully-artifact for the Claude-style artifact card; data-sully-routing on the
+// CLI bridge). THE chat path the iOS app uses.
 //
-// PR 2b.1 (this file): the endpoint accepts the SDK 6 client shape
-// (`{ messages: UIMessage[], thread, target_repo, provider?, model? }`)
-// AND handles all the legacy responsibilities:
+// Accepts { messages: UIMessage[], thread, target_repo, provider?, model? } and:
 //   - persist operator message + assistant reply to chat_messages
-//   - upsert chat_thread_meta + chat_thread_state
-//   - classify tier from the latest user message
-//   - pick provider via thread_state.provider_override OR explicit body
-//   - default to Gemini for chat tier (matches legacy AGY-chat-lock UX)
+//   - upsert chat_thread_meta + chat_thread_state, classify tier from latest user msg
+//   - pick provider (thread_state override OR body), default Gemini for chat tier
+//   - short-circuit image requests to the direct Gemini image model (isImageRequest)
+//   - run the dispatch decision after replying (applyTurnDecision + SULLY_GATE escalation)
 //   - emit the SDK Data Stream Protocol so useChat() consumes natively
 //
-// The shared preamble (persist → classify → hot-window → provider/model
-// resolution → CLI-vs-direct decision → tool gating → system prompt) lives in
-// $lib/server/chat/stream_prepare.ts. The autonomous-dispatch decision both
-// paths run after replying lives in $lib/server/chat/autonomous_dispatch.ts.
-// This handler stays a thin orchestrator: parse → prepare → branch.
-//
-// What's intentionally NOT here yet (PR 2b.2 / 2b.3 / PR 4):
-//   - multi-provider fall-forward (SDK middleware can add later)
-//   - image-gen mode (separate dispatch path)
-//   - @cc / @agy dispatch routing (separate non-streaming path)
-//   - slash commands (client-side intercept before send)
-//   - Ollama / local routing (task #11)
+// Shared preamble (persist → classify → hot-window → provider/model → CLI-vs-direct →
+// tool gating → system prompt) lives in $lib/server/chat/stream_prepare.ts; the
+// dispatch decision in $lib/server/chat/autonomous_dispatch.ts. Thin orchestrator:
+// parse → prepare → branch (image short-circuit / CLI bridge / streamText).
 //
 // Auth: no app-level gate. The Tailscale Funnel + undisclosed *.ts.net
 // hostname is the security boundary; the cookie gate was removed (broken on

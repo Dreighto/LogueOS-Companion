@@ -354,8 +354,3 @@ export function promoteInlineArtifacts(
 		return [];
 	}
 }
-
-/** Single-artifact convenience wrapper over promoteInlineArtifacts. */
-export function promoteInlineArtifact(input: InlineArtifactInput): ArtifactMetadata | null {
-	return promoteInlineArtifacts([input])[0] ?? null;
-}
