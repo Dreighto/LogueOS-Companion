@@ -248,10 +248,23 @@ function extForInlineType(artifactType: string, language?: string): string {
 	if (language) {
 		const l = language.toLowerCase();
 		const map: Record<string, string> = {
-			python: '.py', py: '.py', javascript: '.js', js: '.js', typescript: '.ts',
-			ts: '.ts', swift: '.swift', bash: '.sh', sh: '.sh', json: '.json',
-			yaml: '.yaml', yml: '.yml', html: '.html', css: '.css', sql: '.sql',
-			markdown: '.md', md: '.md'
+			python: '.py',
+			py: '.py',
+			javascript: '.js',
+			js: '.js',
+			typescript: '.ts',
+			ts: '.ts',
+			swift: '.swift',
+			bash: '.sh',
+			sh: '.sh',
+			json: '.json',
+			yaml: '.yaml',
+			yml: '.yml',
+			html: '.html',
+			css: '.css',
+			sql: '.sql',
+			markdown: '.md',
+			md: '.md'
 		};
 		if (map[l]) return map[l];
 	}
@@ -290,13 +303,23 @@ export interface InlineArtifactInput {
  *  the durable store under ONE shared synthetic trace, so they group into a
  *  single inline card (and one bundle.zip). Returns all manifest metadata.
  *  Empty input → []. The whole batch fails closed to [] on any error. */
-export function promoteInlineArtifacts(inputs: InlineArtifactInput[]): ArtifactMetadata[] {
+/** Mint a teacher artifact trace id. Exposed so the stream can pre-mint one,
+ *  push it to the client mid-reply (data-sully-artifact), then promote the
+ *  turn's artifacts under the SAME id so the live card resolves. */
+export function mintTeacherTraceId(): string {
+	const stamp = Date.now();
+	const rand = Math.floor(stamp % 1_000_000).toString(16);
+	return `sully-teacher-${stamp}-${rand}`;
+}
+
+export function promoteInlineArtifacts(
+	inputs: InlineArtifactInput[],
+	forcedTraceId?: string
+): ArtifactMetadata[] {
 	if (!inputs.length) return [];
 	try {
 		const repoRoot = artifactRepoRoot();
-		const stamp = Date.now();
-		const rand = Math.floor(stamp % 1_000_000).toString(16);
-		const traceId = `sully-teacher-${stamp}-${rand}`;
+		const traceId = forcedTraceId ?? mintTeacherTraceId();
 		const date = new Date().toISOString().slice(0, 10);
 		const dir = storeDirFor(repoRoot, traceId, date);
 		fs.mkdirSync(dir, { recursive: true });

@@ -38,7 +38,8 @@ export function hasArtifactSentinel(text: string): boolean {
  */
 export function extractAndPromoteArtifacts(
 	text: string,
-	ctx: { threadId?: string; taskId?: string } = {}
+	ctx: { threadId?: string; taskId?: string } = {},
+	forcedTraceId?: string
 ): { strippedText: string; artifacts: ArtifactMetadata[] } {
 	if (!hasArtifactSentinel(text)) return { strippedText: text, artifacts: [] };
 
@@ -94,7 +95,7 @@ export function extractAndPromoteArtifacts(
 	}
 	stripped += text.slice(cursor);
 
-	const artifacts = promoteInlineArtifacts(inputs);
+	const artifacts = promoteInlineArtifacts(inputs, forcedTraceId);
 	const strippedText = stripped.replace(/\n{3,}/g, '\n\n').trim();
 	return { strippedText, artifacts };
 }

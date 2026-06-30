@@ -55,6 +55,7 @@ import { maybeAutoTitle } from '$lib/server/auto_title';
 import { extractGateBlock, validateGate } from '$lib/server/decisionGate';
 import type { TurnDecision } from '$lib/server/routing/turn_decision';
 import { generateGeminiImage } from '$lib/server/gemini';
+import { mintTeacherTraceId } from '$lib/server/artifactStore';
 import { prepareStream, type Provider } from '$lib/server/chat/stream_prepare';
 import { factGate } from '$lib/server/routing/factGate';
 import { applyTurnDecision } from '$lib/server/chat/autonomous_dispatch';
@@ -208,7 +209,11 @@ function imagePromptFrom(text: string): string {
 // Generate the image directly (~7s) and stream it back as an inline markdown
 // image the app renders. Persists the reply as an 'agy' turn. Opens the stream
 // immediately so the app shows a thinking row during generation.
-function generateImageReply(opts: { prompt: string; threadId: string; taskId: string | null }): Response {
+function generateImageReply(opts: {
+	prompt: string;
+	threadId: string;
+	taskId: string | null;
+}): Response {
 	const { prompt, threadId, taskId } = opts;
 	const stream = createUIMessageStream({
 		execute: async ({ writer }) => {
@@ -510,173 +515,202 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Turn start — used to stamp latency_ms on the assistant row's forensics.
 	const turnStartedAt = Date.now();
-	const result = streamText({
-		model: modelHandle.model,
-		system: systemPrompt,
-		messages: await convertToModelMessages(modelMessages),
-		tools,
-		// Cap multi-step tool loops — keeps a runaway "call → reflect → call"
-		// chain from consuming Max quota / API budget. Raised to 8 so a
-		// search → fetch → read → answer chain has room.
-		stopWhen: ({ steps }) => steps.length >= 8
-	});
-
-	return result.toUIMessageStreamResponse({
-		originalMessages: messages,
-		generateMessageId: () => generateId(),
-		// Convert SDK error objects to actionable strings so the client can
-		// classify them. Without this, the stream emits
-		// `{"type":"error","errorText":"Failed after 3 attempts. Last error: Error"}`
-		// for everything — operator can't tell rate-limit from outage from auth.
-		// Audit 2026-05-27 caught Sonnet rate_limit_error surfacing as "Error".
-		//
-		// AI_RetryError wraps the final AI_APICallError; the upstream HTTP
-		// response body lives on `errors[last].responseBody`. Walk the chain
-		// to find it.
-		onError: (error: unknown) => {
-			type ApiCallError = {
-				message?: string;
-				responseBody?: string;
-				statusCode?: number;
-				url?: string;
-			};
-			type RetryError = ApiCallError & {
-				errors?: ApiCallError[];
-				lastError?: ApiCallError;
-				cause?: ApiCallError;
-			};
-			const err = error as RetryError;
-			// Surface the deepest API error we can find.
-			const apiErr: ApiCallError =
-				(err.errors && err.errors.length ? err.errors[err.errors.length - 1] : undefined) ??
-				err.lastError ??
-				err.cause ??
-				err;
-
-			const body = apiErr.responseBody;
-			if (body) {
-				try {
-					const parsed = JSON.parse(body) as { error?: { type?: string; message?: string } };
-					if (parsed.error?.type) {
-						const t = parsed.error.type;
-						const m = parsed.error.message;
-						if (t === 'rate_limit_error') {
-							return `Rate limited on ${modelHandle.modelId}. Wait ~30s or switch model (Haiku, Gemini, Local).`;
+	const artifactTrace = mintTeacherTraceId();
+	const stream = createUIMessageStream({
+		execute: async ({ writer }) => {
+			let artifactAcc = '';
+			let artifactSignaled = false;
+			const result = streamText({
+				model: modelHandle.model,
+				system: systemPrompt,
+				messages: await convertToModelMessages(modelMessages),
+				tools,
+				// Cap multi-step tool loops — keeps a runaway "call → reflect → call"
+				// chain from consuming Max quota / API budget. Raised to 8 so a
+				// search → fetch → read → answer chain has room.
+				stopWhen: ({ steps }) => steps.length >= 8,
+				onChunk: ({ chunk }) => {
+					const ck = chunk as { type?: string; text?: string; textDelta?: string; delta?: string };
+					if (ck.type === 'text-delta') {
+						artifactAcc += ck.text ?? ck.textDelta ?? ck.delta ?? '';
+						if (!artifactSignaled && artifactAcc.includes('<<<SULLY_ARTIFACT')) {
+							artifactSignaled = true;
+							writer.write({ type: 'data-sully-artifact', data: { traceId: artifactTrace } });
 						}
-						if (t === 'invalid_request_error') {
-							return `Invalid request to ${modelHandle.modelId}: ${m || t}`;
-						}
-						if (t === 'authentication_error' || t === 'permission_error') {
-							return `Auth failed for ${modelHandle.modelId} (${t}). Token expired or lacks access. ${m || ''}`;
-						}
-						if (t === 'not_found_error') {
-							return `Model not found: ${modelHandle.modelId}. ${m || ''}`;
-						}
-						if (t === 'overloaded_error') {
-							return `Provider overloaded (${modelHandle.modelId}). Try again in a moment or switch model.`;
-						}
-						return `${t}${m ? ': ' + m : ''} (${modelHandle.modelId})`;
 					}
-				} catch {
-					/* fall through */
 				}
-			}
-			if (apiErr.statusCode) {
-				return `HTTP ${apiErr.statusCode} from ${modelHandle.modelId}: ${apiErr.message || 'no detail'}`;
-			}
-			return apiErr.message || (err as { message?: string }).message || 'unknown_stream_error';
-		},
-		onFinish: async ({ responseMessage }) => {
-			// Concatenate every text part of the response into a single string
-			// for the chat_messages row. Matches the legacy `addChatMessage`
-			// call shape for backwards compatibility with existing readers.
-			const parts = responseMessage.parts || [];
-			const replyText = parts
-				.filter((p) => p.type === 'text')
-				.map((p) => (p as { type: 'text'; text: string }).text)
-				.join('');
-
-			// Capture tool errors that fired mid-stream. The streaming UI shows
-			// these as ephemeral chips that vanish when sdkChat.messages resets,
-			// so without persisting them here the operator never finds out a
-			// tool failed silently. Audit 2026-05-27.
-			const toolErrors = parts
-				.filter((p) => {
-					const t = p as { type?: string; state?: string };
-					return t.type?.startsWith('tool-') && t.state === 'output-error';
-				})
-				.map((p) => {
-					const t = p as { type?: string; errorText?: string };
-					return `⚠️ Tool '${t.type?.replace(/^tool-/, '') ?? 'unknown'}' failed: ${
-						t.errorText ?? 'unknown error'
-					}`;
-				});
-
-			const rawFinalText =
-				toolErrors.length > 0 ? [replyText, ...toolErrors].filter(Boolean).join('\n\n') : replyText;
-			// Promote any inline <<<SULLY_ARTIFACT…>>> blocks to the durable store
-			// and strip them from the persisted prose (local/SDK path; the CLI-bridge
-			// path above does the same on `collected`).
-			const promoted = rawFinalText
-				? extractAndPromoteArtifacts(rawFinalText, { threadId, taskId: taskId ?? undefined })
-				: { strippedText: rawFinalText, artifacts: [] };
-			const finalText = promoted.strippedText || rawFinalText;
-				// Teacher dispatch self-assessment: strip the SULLY_GATE block; if it
-				// validates with escalate:true, override to a real DISPATCH.
-				const gateResult = applyGateEscalation(finalText, decision);
-				const effectiveDecision = gateResult.decision;
-
-			if (finalText) {
-				const senderLabel: 'cc' | 'agy' | 'local' =
-					provider === 'anthropic' ? 'cc' : provider === 'local' ? 'local' : 'agy';
-				// Best-effort token capture — result.usage is resolved by onFinish.
-				// Never block or throw on it; forensic columns are nullable.
-				let promptTokens: number | null = null;
-				let completionTokens: number | null = null;
-				try {
-					const usage = await result.usage;
-					promptTokens = usage?.inputTokens ?? null;
-					completionTokens = usage?.outputTokens ?? null;
-				} catch {
-					/* usage unavailable — leave null */
-				}
-				persistAssistantTurn({
-					text: gateResult.visible || finalText,
-					sender: senderLabel,
-					threadId,
-					model: modelHandle.modelId,
-					tier: currentTier,
-					taskId,
-					// Stamp the reply with the teacher artifact's trace → inline card.
-					traceId: promoted.artifacts[0]?.trace_id ?? null,
-					provider,
-					promptTokens,
-					completionTokens,
-					latencyMs: Date.now() - turnStartedAt,
-					error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
-				});
-				// Auto-name the thread off the first exchange (fire-and-forget).
-				void maybeAutoTitle(threadId);
-			} else {
-				// No reply text but the SDK call still finished — advance state so
-				// the picker chip can show "Claude Haiku 4.5" instead of "Auto".
-				upsertThreadTier(threadId, currentTier, modelHandle.modelId);
-				touchLastActivity(threadId);
-			}
-
-			// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
-			// decision is ANSWER_NOW/CONVERSATIONAL_ONLY here (work turns already
-			// short-circuited above) → journals Talk + markSelfHandled.
-			// FIRE-AND-FORGET: same pattern as before — avoids coupling stream close
-			// to the dispatch listener's roundtrip. Observable via next pollMessages.
-			void applyTurnDecision(effectiveDecision, {
-				taskId,
-				threadId,
-				targetRepo,
-				userText: userMessageText
-			}).catch((e) => {
-				console.error('[sdk-stream] autonomous-dispatch failed', e);
 			});
+
+			writer.merge(
+				result.toUIMessageStream({
+					originalMessages: messages,
+					generateMessageId: () => generateId(),
+					// Convert SDK error objects to actionable strings so the client can
+					// classify them. Without this, the stream emits
+					// `{"type":"error","errorText":"Failed after 3 attempts. Last error: Error"}`
+					// for everything — operator can't tell rate-limit from outage from auth.
+					// Audit 2026-05-27 caught Sonnet rate_limit_error surfacing as "Error".
+					//
+					// AI_RetryError wraps the final AI_APICallError; the upstream HTTP
+					// response body lives on `errors[last].responseBody`. Walk the chain
+					// to find it.
+					onError: (error: unknown) => {
+						type ApiCallError = {
+							message?: string;
+							responseBody?: string;
+							statusCode?: number;
+							url?: string;
+						};
+						type RetryError = ApiCallError & {
+							errors?: ApiCallError[];
+							lastError?: ApiCallError;
+							cause?: ApiCallError;
+						};
+						const err = error as RetryError;
+						// Surface the deepest API error we can find.
+						const apiErr: ApiCallError =
+							(err.errors && err.errors.length ? err.errors[err.errors.length - 1] : undefined) ??
+							err.lastError ??
+							err.cause ??
+							err;
+
+						const body = apiErr.responseBody;
+						if (body) {
+							try {
+								const parsed = JSON.parse(body) as { error?: { type?: string; message?: string } };
+								if (parsed.error?.type) {
+									const t = parsed.error.type;
+									const m = parsed.error.message;
+									if (t === 'rate_limit_error') {
+										return `Rate limited on ${modelHandle.modelId}. Wait ~30s or switch model (Haiku, Gemini, Local).`;
+									}
+									if (t === 'invalid_request_error') {
+										return `Invalid request to ${modelHandle.modelId}: ${m || t}`;
+									}
+									if (t === 'authentication_error' || t === 'permission_error') {
+										return `Auth failed for ${modelHandle.modelId} (${t}). Token expired or lacks access. ${m || ''}`;
+									}
+									if (t === 'not_found_error') {
+										return `Model not found: ${modelHandle.modelId}. ${m || ''}`;
+									}
+									if (t === 'overloaded_error') {
+										return `Provider overloaded (${modelHandle.modelId}). Try again in a moment or switch model.`;
+									}
+									return `${t}${m ? ': ' + m : ''} (${modelHandle.modelId})`;
+								}
+							} catch {
+								/* fall through */
+							}
+						}
+						if (apiErr.statusCode) {
+							return `HTTP ${apiErr.statusCode} from ${modelHandle.modelId}: ${apiErr.message || 'no detail'}`;
+						}
+						return (
+							apiErr.message || (err as { message?: string }).message || 'unknown_stream_error'
+						);
+					},
+					onFinish: async ({ responseMessage }) => {
+						// Concatenate every text part of the response into a single string
+						// for the chat_messages row. Matches the legacy `addChatMessage`
+						// call shape for backwards compatibility with existing readers.
+						const parts = responseMessage.parts || [];
+						const replyText = parts
+							.filter((p) => p.type === 'text')
+							.map((p) => (p as { type: 'text'; text: string }).text)
+							.join('');
+
+						// Capture tool errors that fired mid-stream. The streaming UI shows
+						// these as ephemeral chips that vanish when sdkChat.messages resets,
+						// so without persisting them here the operator never finds out a
+						// tool failed silently. Audit 2026-05-27.
+						const toolErrors = parts
+							.filter((p) => {
+								const t = p as { type?: string; state?: string };
+								return t.type?.startsWith('tool-') && t.state === 'output-error';
+							})
+							.map((p) => {
+								const t = p as { type?: string; errorText?: string };
+								return `⚠️ Tool '${t.type?.replace(/^tool-/, '') ?? 'unknown'}' failed: ${
+									t.errorText ?? 'unknown error'
+								}`;
+							});
+
+						const rawFinalText =
+							toolErrors.length > 0
+								? [replyText, ...toolErrors].filter(Boolean).join('\n\n')
+								: replyText;
+						// Promote any inline <<<SULLY_ARTIFACT…>>> blocks to the durable store
+						// and strip them from the persisted prose (local/SDK path; the CLI-bridge
+						// path above does the same on `collected`).
+						const promoted = rawFinalText
+							? extractAndPromoteArtifacts(
+									rawFinalText,
+									{ threadId, taskId: taskId ?? undefined },
+									artifactTrace
+								)
+							: { strippedText: rawFinalText, artifacts: [] };
+						const finalText = promoted.strippedText || rawFinalText;
+						// Teacher dispatch self-assessment: strip the SULLY_GATE block; if it
+						// validates with escalate:true, override to a real DISPATCH.
+						const gateResult = applyGateEscalation(finalText, decision);
+						const effectiveDecision = gateResult.decision;
+
+						if (finalText) {
+							const senderLabel: 'cc' | 'agy' | 'local' =
+								provider === 'anthropic' ? 'cc' : provider === 'local' ? 'local' : 'agy';
+							// Best-effort token capture — result.usage is resolved by onFinish.
+							// Never block or throw on it; forensic columns are nullable.
+							let promptTokens: number | null = null;
+							let completionTokens: number | null = null;
+							try {
+								const usage = await result.usage;
+								promptTokens = usage?.inputTokens ?? null;
+								completionTokens = usage?.outputTokens ?? null;
+							} catch {
+								/* usage unavailable — leave null */
+							}
+							persistAssistantTurn({
+								text: gateResult.visible || finalText,
+								sender: senderLabel,
+								threadId,
+								model: modelHandle.modelId,
+								tier: currentTier,
+								taskId,
+								// Stamp the reply with the teacher artifact's trace → inline card.
+								traceId: promoted.artifacts[0]?.trace_id ?? null,
+								provider,
+								promptTokens,
+								completionTokens,
+								latencyMs: Date.now() - turnStartedAt,
+								error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
+							});
+							// Auto-name the thread off the first exchange (fire-and-forget).
+							void maybeAutoTitle(threadId);
+						} else {
+							// No reply text but the SDK call still finished — advance state so
+							// the picker chip can show "Claude Haiku 4.5" instead of "Auto".
+							upsertThreadTier(threadId, currentTier, modelHandle.modelId);
+							touchLastActivity(threadId);
+						}
+
+						// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
+						// decision is ANSWER_NOW/CONVERSATIONAL_ONLY here (work turns already
+						// short-circuited above) → journals Talk + markSelfHandled.
+						// FIRE-AND-FORGET: same pattern as before — avoids coupling stream close
+						// to the dispatch listener's roundtrip. Observable via next pollMessages.
+						void applyTurnDecision(effectiveDecision, {
+							taskId,
+							threadId,
+							targetRepo,
+							userText: userMessageText
+						}).catch((e) => {
+							console.error('[sdk-stream] autonomous-dispatch failed', e);
+						});
+					}
+				})
+			);
 		}
 	});
+
+	return createUIMessageStreamResponse({ stream });
 };
