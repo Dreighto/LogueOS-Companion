@@ -551,6 +551,43 @@ export function deleteChatMessage(messageId: number): boolean {
 	}
 }
 
+// The set of `sender` labels a CHAT ASSISTANT reply can carry (CLI/direct/local
+// paths persist 'cc' | 'agy' | 'local'; 'companion' covers the companion-mode
+// label). Deliberately EXCLUDES 'operator' (the human turn) and 'system' (the
+// dispatch ACK / working-bubble rows) so a scoped delete can never touch either.
+const CHAT_REPLY_SENDERS = ['agy', 'local', 'cc', 'companion'] as const;
+
+// Stage 3a (replace-reply-on-reuse): delete the PRIOR chat assistant reply row(s)
+// for one Task. On a keyed operator-turn REUSE (a retry/regenerate re-POST of the
+// same logical turn — same client_turn_id → same reused task_id), the turn produces
+// a NEW assistant reply; without this the stale prior reply survives and reappears
+// on the next history sync/reopen. Scoped TIGHTLY by (task_id AND sender IN the
+// chat-reply set): never removes the operator row, never removes the system/dispatch
+// ACK, and — because it keys on the exact reused task_id — never touches a synthesis
+// reply belonging to a DIFFERENT turn. On a retry-of-a-failed-send (reused but no
+// prior reply exists) it is a harmless no-op (0 rows). Returns the count deleted.
+// Guarded against a pre-migration DB (missing column / file) — returns 0.
+export function deleteChatRepliesForTask(taskId: string): number {
+	if (!taskId) return 0;
+	if (!fs.existsSync(serverConfig.memoryDbPath)) return 0;
+	const db = getDb();
+	try {
+		const placeholders = CHAT_REPLY_SENDERS.map(() => '?').join(', ');
+		const info = db
+			.prepare(
+				`DELETE FROM chat_messages
+				 WHERE task_id = ? AND sender IN (${placeholders})`
+			)
+			.run(taskId, ...CHAT_REPLY_SENDERS);
+		return info.changes;
+	} catch (e: unknown) {
+		console.error('deleteChatRepliesForTask error:', e);
+		return 0;
+	} finally {
+		db.close();
+	}
+}
+
 // Flip a 'pending_approval' proposal message (matched by trace_id) to a
 // terminal status so its tap-to-confirm buttons clear. Scoped to
 // 'pending_approval' so it can never disturb a normal 'sent' row. Returns the

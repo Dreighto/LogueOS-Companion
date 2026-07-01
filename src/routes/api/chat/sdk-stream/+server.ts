@@ -345,7 +345,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						model: resolvedModelId,
 						tier: currentTier,
 						taskId,
-						provider
+						provider,
+						reused
 					});
 				} else if (!errored) {
 					upsertThreadTier(threadId, currentTier, resolvedModelId);
@@ -502,7 +503,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							model: escalationModel,
 							tier: currentTier,
 							taskId,
-							provider: 'anthropic'
+							provider: 'anthropic',
+							reused
 						});
 						await applyTurnDecision(decision, {
 							taskId,
@@ -655,7 +657,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							model: escalationModel,
 							tier: currentTier,
 							taskId,
-							provider: 'anthropic'
+							provider: 'anthropic',
+							reused
 						});
 						await applyTurnDecision(decision, {
 							taskId,
@@ -683,7 +686,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						model: resolvedModelId,
 						tier: currentTier,
 						taskId,
-						provider
+						provider,
+						reused
 					});
 				} else {
 					upsertThreadTier(threadId, currentTier, resolvedModelId);
@@ -841,7 +845,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					promptTokens,
 					completionTokens,
 					latencyMs: Date.now() - turnStartedAt,
-					error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null
+					error: toolErrors.length > 0 ? toolErrors.join(' | ').slice(0, 500) : null,
+					reused
 				});
 			} else if (directErrored || finishReason === 'error') {
 				// Orphan rollback (Stage 1): the stream errored with ZERO reply text

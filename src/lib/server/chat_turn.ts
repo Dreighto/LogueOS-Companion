@@ -16,6 +16,7 @@ import {
 	setActiveThread,
 	getOperatorTurnByClientId,
 	insertOperatorTurnKeyed,
+	deleteChatRepliesForTask,
 	type MessageForensics
 } from './chat';
 import type { ChatMessage } from '$lib/types/chat';
@@ -226,7 +227,28 @@ export function persistAssistantTurn(args: {
 	 *  rebuilds) can tell what the operator actually heard vs what was
 	 *  generated. */
 	status?: string;
+	/**
+	 * Stage 3a (replace-reply-on-reuse): TRUE when this turn REUSED an existing
+	 * keyed operator row + Task (a retry/regenerate re-POST — same client_turn_id).
+	 * When set, the PRIOR chat reply(ies) for this reused Task are deleted BEFORE
+	 * the new reply is written, so a regenerate REPLACES the stale reply instead of
+	 * appending a second one (which would otherwise reappear on the next history
+	 * sync/reopen). FALSE / absent → byte-identical to the pre-Stage-3a behaviour:
+	 * append only, delete nothing. Only ever passed by the sdk-stream chat paths
+	 * (CLI/direct/local); voice + unkeyed turns leave it false.
+	 */
+	reused?: boolean;
 }): void {
+	// Stage 3a: on a keyed REUSE, this new reply REPLACES the prior one — delete the
+	// stale chat reply(ies) for this reused Task BEFORE writing the new row (so we
+	// never delete the row we are about to insert). Tightly scoped in the helper by
+	// (task_id AND chat-reply sender-set): never touches the operator row or the
+	// system/dispatch ACK, and — keyed on THIS reused task_id — never a synthesis
+	// reply for a different turn. On a retry-of-a-failed-send (reused, no prior reply)
+	// it is a harmless 0-row no-op. reused===false does nothing new.
+	if (args.reused === true && args.taskId) {
+		deleteChatRepliesForTask(args.taskId);
+	}
 	// Caller (route handler) already decided this turn is worth persisting —
 	// don't second-guess with a .trim() guard. Originally both routes advanced
 	// tier+activity regardless of text content; an internal trim here silently
