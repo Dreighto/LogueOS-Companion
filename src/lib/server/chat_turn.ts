@@ -10,7 +10,15 @@
 // version; the route handlers stay thin.
 
 import { randomBytes } from 'node:crypto';
-import { addChatMessage, getChatMessages, setActiveThread, type MessageForensics } from './chat';
+import {
+	addChatMessage,
+	getChatMessages,
+	setActiveThread,
+	getOperatorTurnByClientId,
+	insertOperatorTurnKeyed,
+	type MessageForensics
+} from './chat';
+import type { ChatMessage } from '$lib/types/chat';
 import { classifyTier, type Tier } from './phase_classifier';
 import { getThreadState, upsertThreadTier, type ThreadState } from './thread_state';
 import { touchLastActivity, upsertThreadMeta } from './thread_meta';
@@ -32,12 +40,22 @@ export function mintTaskId(): string {
 }
 
 /**
- * Persist the operator's incoming turn. Returns the row so the route can return
- * it to the caller (the legacy route does this for the polled feed).
+ * Persist the operator's incoming turn. Returns the row (so the route can return
+ * it to the polled feed), the EFFECTIVE task id, and whether this call reused an
+ * existing turn instead of writing a new one.
  *
  * Phase 1: carries task_id so the operator row links to its Task, and mints the
  * 'proposed' Task row up-front. Every turn (text or voice, dispatched or not)
  * gets a Task — the unit of work — before any routing decision.
+ *
+ * Stage 2 (idempotent operator-turn persistence): when `clientTurnId` is PRESENT,
+ * one logical turn = at most one operator row, keyed on (threadId, clientTurnId).
+ * A retry/regenerate re-POSTs the SAME turn with a fresh request id; keying on the
+ * client-supplied id makes the re-POST REUSE the original row + its Task instead
+ * of minting a duplicate operator row + a second 'proposed' Task. When `clientTurnId`
+ * is ABSENT, behaviour is byte-identical to before (insert + proposeTask). The key
+ * is the id and NEVER the text, so a fresh send with a NEW id (or no id) can never
+ * collapse a genuine repeat.
  */
 export function persistUserTurn(args: {
 	text: string;
@@ -46,20 +64,65 @@ export function persistUserTurn(args: {
 	ticketId?: string | null;
 	taskId?: string;
 	source?: string;
-}) {
-	if (args.taskId) {
+	/** Stage 2 idempotency key. Absent → today's behaviour, exactly. */
+	clientTurnId?: string | null;
+}): { row: ChatMessage; taskId?: string; reused: boolean } {
+	const text = args.text.trim();
+	const clientTurnId = args.clientTurnId ?? null;
+	const source = args.source ?? 'chat';
+
+	// Mint the up-front 'proposed' Task for a genuinely-NEW turn. One definition
+	// shared by the keyed + unkeyed insert paths; skipped entirely on reuse.
+	const propose = () => {
+		if (!args.taskId) return;
 		proposeTask({
 			taskId: args.taskId,
 			threadId: args.threadId,
-			source: args.source ?? 'chat',
+			source,
 			category: 'general',
-			brief: args.text.trim().slice(0, 280)
+			brief: text.slice(0, 280)
 		});
-		logTaskEvent(args.taskId, 'task_proposed', { source: args.source ?? 'chat' });
+		logTaskEvent(args.taskId, 'task_proposed', { source });
+	};
+
+	// ── Idempotent path — client supplied a per-turn key ──────────────────────
+	if (clientTurnId) {
+		// Fast path: the same logical turn already landed (retry/regenerate).
+		const existing = getOperatorTurnByClientId(args.threadId, clientTurnId);
+		if (existing) {
+			// REUSE — hand back the original row + its Task. Do NOT proposeTask again.
+			return { row: existing.row, taskId: existing.taskId ?? args.taskId, reused: true };
+		}
+		// First sight of this key. Race-safe insert; the partial unique index
+		// collapses a concurrent duplicate of the SAME turn to one operator row.
+		const {
+			row,
+			taskId: rowTaskId,
+			inserted
+		} = insertOperatorTurnKeyed({
+			sender: args.sender || 'operator',
+			message: text,
+			ticketId: args.ticketId ?? null,
+			threadId: args.threadId,
+			clientTurnId,
+			taskId: args.taskId ?? null
+		});
+		if (!inserted) {
+			// Lost the race to a concurrent POST of the SAME turn — treat as reuse so
+			// we never double-propose (the winner proposed / will propose its Task).
+			return { row, taskId: rowTaskId ?? args.taskId, reused: true };
+		}
+		// We wrote the canonical operator row → mint its Task now (the row already
+		// carries task_id via the keyed insert).
+		propose();
+		return { row, taskId: args.taskId, reused: false };
 	}
-	return addChatMessage(
+
+	// ── Unkeyed path — byte-identical to the pre-Stage-2 behaviour ────────────
+	propose();
+	const row = addChatMessage(
 		args.sender || 'operator',
-		args.text.trim(),
+		text,
 		null,
 		args.ticketId ?? null,
 		null,
@@ -67,6 +130,7 @@ export function persistUserTurn(args: {
 		args.threadId,
 		args.taskId ? { taskId: args.taskId } : {}
 	);
+	return { row, taskId: args.taskId, reused: false };
 }
 
 /**

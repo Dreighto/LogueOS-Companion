@@ -120,7 +120,14 @@ export function bootstrapCompanionDb(): void {
 			prompt_tokens: 'INTEGER',
 			completion_tokens: 'INTEGER',
 			latency_ms: 'INTEGER',
-			error: 'TEXT'
+			error: 'TEXT',
+			// Stage 2 (idempotent operator-turn persistence): a client-supplied
+			// per-turn id. A retry/regenerate re-POSTs the SAME logical turn with a
+			// fresh request id; keying the operator row on (thread_id, client_turn_id)
+			// lets the re-POST reuse the original row instead of minting a duplicate.
+			// Additive + nullable — absent on every pre-Stage-2 row (and on any turn
+			// the client doesn't tag), so existing history is untouched.
+			client_turn_id: 'TEXT'
 		};
 		for (const [col, type] of Object.entries(messageMigrations)) {
 			if (!have.has(col)) {
@@ -130,6 +137,14 @@ export function bootstrapCompanionDb(): void {
 		if (!have.has('task_id')) {
 			db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_task ON chat_messages(task_id)');
 		}
+		// Stage 2: enforce ONE operator row per (thread_id, client_turn_id). PARTIAL
+		// (operator-only, non-null key) so assistant/system rows AND untagged operator
+		// turns stay entirely unconstrained — genuine repeats and every legacy row are
+		// free to coexist; only a re-POST carrying the SAME key collapses onto its
+		// original row. IF NOT EXISTS keeps it idempotent.
+		db.exec(
+			"CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_client_turn ON chat_messages(thread_id, client_turn_id) WHERE sender = 'operator' AND client_turn_id IS NOT NULL"
+		);
 
 		// Phase 1: extend pending_jobs into the unified Task object. The table is
 		// created (with the base columns) in dispatchJobs.ts; here we add the

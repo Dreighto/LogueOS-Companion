@@ -84,6 +84,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		// a separate thread_id. Default thread is 'default'.
 		const threadId: string =
 			(body && typeof body.thread === 'string' ? body.thread.trim() : '') || 'default';
+		// Stage 2: client-supplied per-turn id. When present, a retry/regenerate
+		// re-POST of the SAME turn reuses its original operator row + Task instead of
+		// minting a duplicate. Absent → today's behaviour, byte-identical.
+		const clientTurnId: string | null =
+			body && typeof body.client_turn_id === 'string' && body.client_turn_id.trim()
+				? body.client_turn_id.trim()
+				: null;
 		// Image-generation mode. When true, the operator's message is treated
 		// as an image prompt instead of a chat message. Routes to
 		// gemini-2.5-flash-image via the Gemini API. Independent of the
@@ -108,18 +115,27 @@ export const POST: RequestHandler = async ({ request }) => {
 		// 1. Persist the operator's turn + classify the conversation tier via
 		// the shared chat_turn service (PR C). The legacy route alone needs the
 		// returned row + the recent-message count for downstream side-effects.
-		const chatMsg = persistUserTurn({
+		const persistedTurn = persistUserTurn({
 			text: normalizedMessage,
 			threadId,
 			sender: sender || 'operator',
 			ticketId: ticket_id || null,
 			taskId: turnTaskId,
-			source: isTalkback ? 'walkie' : 'chat'
+			source: isTalkback ? 'walkie' : 'chat',
+			clientTurnId
 		});
+		const chatMsg = persistedTurn.row;
+		// On a keyed reuse the EFFECTIVE task id is the original turn's task_id —
+		// use it for classify AND any downstream dispatch so the reused row's Task
+		// stays the single handle (a fresh id would orphan them). No key / new turn
+		// → effectiveTaskId === turnTaskId, unchanged.
+		const effectiveTaskId = persistedTurn.reused
+			? (persistedTurn.taskId ?? turnTaskId)
+			: turnTaskId;
 		const { currentTier, threadState } = classifyAndTouchThread({
 			threadId,
 			userText: normalizedMessage,
-			taskId: turnTaskId
+			taskId: effectiveTaskId
 		});
 		// PR 8: silently mark Deep-tier threads with 3+ exchanges as observation
 		// candidates. Count excludes the just-inserted operator message.
@@ -217,7 +233,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		// the worker streams activity back into companion.db. The KERNEL gateway
 		// path below (runMode.dispatchEnabled) stays OFF in companion mode.
 		if (shouldTrigger && !runMode.dispatchEnabled && runMode.companionDispatchEnabled) {
-			const traceId = turnTaskId;
+			// Use the effective task id so a reused turn's dispatch attaches to its
+			// original Task rather than a fresh, orphaned handle.
+			const traceId = effectiveTaskId;
 			// `worker` was resolved above to 'claude-code' | 'agy' | 'auto'.
 			// Spec §4.3: emit 'gemini' (the listener-accepted frontend name).
 			const dispatchWorker = worker === 'claude-code' ? 'claude-code' : 'gemini';

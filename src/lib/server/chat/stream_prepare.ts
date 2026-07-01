@@ -79,6 +79,12 @@ export interface PrepareTurnLifecycleArgs {
 	source?: string;
 	/** Optional explicit target repo hint (keyword-scan fallback if absent). */
 	targetRepoHint?: string;
+	/**
+	 * Stage 2 idempotency key — a client-supplied per-turn id. When present, a
+	 * retry/regenerate re-POST of the SAME turn reuses its original operator row +
+	 * Task instead of minting duplicates. Absent → today's behaviour, unchanged.
+	 */
+	clientTurnId?: string | null;
 }
 
 export interface TurnLifecycleResult {
@@ -93,6 +99,15 @@ export interface TurnLifecycleResult {
 	 * concurrent peer turn on the same thread can't cross-contaminate the reply.
 	 */
 	operatorRowId: number;
+	/**
+	 * Stage 2: TRUE when this turn REUSED an existing operator row + Task (a keyed
+	 * retry/regenerate re-POST) rather than persisting a fresh one. Surfaced so the
+	 * caller can tell reuse from a fresh insert — critical for the Stage 1 orphan
+	 * rollback, which must NEVER delete a reused (pre-existing, already-answered)
+	 * operator row or expire its handled Task. FALSE on every genuinely-new turn
+	 * (and on every unkeyed turn — today's behaviour).
+	 */
+	reused: boolean;
 	/** Result of the Mutation Gate (R2). Required — compile-enforced so the turn can't proceed without it. */
 	mutationGate: MutationGateResult;
 	/** Pre-stream shadow decision (D1). Journaled only — does not alter reply or dispatch. */
@@ -116,18 +131,30 @@ export async function prepareTurnLifecycle(
 	const taskId = mintTaskId();
 	// Capture the persisted operator row so the hot-window assembly (prepareStream)
 	// can pin its history to THIS turn's own boundary (row id) and never pull in a
-	// concurrent peer turn's freshly-persisted operator row.
-	const operatorRow = persistUserTurn({
+	// concurrent peer turn's freshly-persisted operator row. Stage 2: on a keyed
+	// re-POST (retry/regenerate), persistUserTurn REUSES the original row + Task
+	// instead of minting duplicates — `reused` tells us which taskId is effective.
+	const persisted = persistUserTurn({
 		text: normalizedText,
 		threadId,
 		taskId,
 		source,
-		sender: args.sender
+		sender: args.sender,
+		clientTurnId: args.clientTurnId
 	});
+	// CRITICAL ORDERING: on reuse the EFFECTIVE task id is the existing row's
+	// task_id — NOT the freshly minted one. Rebind HERE, BEFORE classify runs, so
+	// the classifier journal + tier attach to the reused row's Task (a fresh id
+	// would orphan the classify trail from the row it belongs to). persistUserTurn
+	// already skipped the up-front proposeTask + task_proposed journal on reuse, so
+	// classifyAndTouchThread below only re-touches the tier (idempotent) — it never
+	// re-proposes. On a genuinely-new turn effectiveTaskId === taskId, unchanged.
+	const operatorRow = persisted.row;
+	const effectiveTaskId = persisted.reused ? (persisted.taskId ?? taskId) : taskId;
 	const { currentTier, threadState } = classifyAndTouchThread({
 		threadId,
 		userText: normalizedText,
-		taskId
+		taskId: effectiveTaskId
 	});
 	const targetRepo = detectTargetRepo(normalizedText, args.targetRepoHint);
 	// R2: run the Mutation Gate after classify (so the active-task query is
@@ -142,15 +169,18 @@ export async function prepareTurnLifecycle(
 		mutationGate,
 		tier: currentTier
 	});
-	logTaskEvent(taskId, 'turn_decision_shadow', { kind: shadowDecision.kind });
+	logTaskEvent(effectiveTaskId, 'turn_decision_shadow', { kind: shadowDecision.kind });
 
 	return {
-		taskId,
+		taskId: effectiveTaskId,
 		currentTier,
 		threadState,
 		targetRepo,
 		userMessageText: normalizedText,
 		operatorRowId: operatorRow.id,
+		// Surface reuse so the route's orphan rollback can tell a freshly-persisted
+		// operator row (rollback-eligible) from a reused one (NEVER roll back).
+		reused: persisted.reused,
 		mutationGate,
 		shadowDecision
 	};
@@ -185,6 +215,12 @@ export interface PrepareArgs {
 	 * dispatch + journal pipelines don't change.
 	 */
 	spoken?: boolean;
+	/**
+	 * Stage 2 idempotency key — client-supplied per-turn id off the request body.
+	 * Threaded to prepareTurnLifecycle so a retry/regenerate re-POST reuses the
+	 * original operator row + Task. Additive + optional; absent → today's behaviour.
+	 */
+	clientTurnId?: string | null;
 }
 
 export interface PreparedStreamContext {
@@ -213,6 +249,15 @@ export interface PreparedStreamContext {
 	 * to this exact row — never thread-wide.
 	 */
 	operatorRowId: number;
+	/**
+	 * Stage 2: TRUE when the operator turn was REUSED (a keyed retry/regenerate
+	 * re-POST reused its original row + Task) rather than freshly persisted. The
+	 * route MUST gate every orphan rollback on this — rolling back a reused row
+	 * would delete the operator's pre-existing, already-answered message and expire
+	 * its handled Task. Only a fresh insert (reused===false) is a rollback-eligible
+	 * orphan.
+	 */
+	reused: boolean;
 	currentTier: Tier;
 	threadState: ThreadState;
 	targetRepo: string;
@@ -263,13 +308,15 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 		threadState,
 		targetRepo: lifecycleTargetRepo,
 		operatorRowId,
+		reused,
 		mutationGate,
 		shadowDecision
 	} = await prepareTurnLifecycle({
 		text: userText,
 		threadId,
 		source: args.source,
-		targetRepoHint: args.targetRepoHint
+		targetRepoHint: args.targetRepoHint,
+		clientTurnId: args.clientTurnId
 	});
 
 	// ── Hot window ──────────────────────────────────────────────────────────
@@ -392,6 +439,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 		taskId,
 		userText: userMessageText,
 		operatorRowId,
+		reused,
 		currentTier,
 		threadState,
 		targetRepo,

@@ -172,7 +172,17 @@ function latestUserText(messages: UIMessage[]): string {
 // assistant row, or made a dispatch/proposal — those either persist (so
 // finalText/collected is non-empty) or short-circuit (D2.1 work-turn) before
 // reaching any call site here.
-function rollbackOrphanTurn(operatorRowId: number, taskId: string): void {
+//
+// Stage 2 REUSE GUARD (`reused`): a keyed retry/regenerate re-POST REUSES the
+// original operator row + Task (prepareStream returns operatorRowId/taskId of the
+// pre-existing, already-answered turn). That row is NOT an orphan this turn
+// created — deleting it would nuke the operator's real message and expire its
+// handled Task, and retries correlate with the exact transient provider errors
+// that reach these call sites. So a reused turn is NEVER rollback-eligible: bail
+// out up-front. Only a freshly-persisted row (reused===false) is a true orphan.
+// The guard lives inside this single chokepoint so no call site can forget it.
+function rollbackOrphanTurn(operatorRowId: number, taskId: string, reused: boolean): void {
+	if (reused) return;
 	try {
 		// Guard: only touch a row that was in fact persisted this turn.
 		if (operatorRowId) deleteChatMessage(operatorRowId);
@@ -189,6 +199,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		target_repo?: string;
 		provider?: Provider;
 		model?: string;
+		/** Stage 2: client-supplied per-turn id for idempotent operator-turn persistence. */
+		client_turn_id?: string;
 	};
 	try {
 		body = await request.json();
@@ -220,6 +232,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Shared preamble: persist the operator turn, classify the tier, assemble
 	// the hot window, resolve provider + model, decide CLI-vs-direct, compute
 	// tool gating, and build the system prompt. Both paths source from this.
+	// Stage 2: a client-supplied per-turn id makes a retry/regenerate re-POST of the
+	// SAME logical turn reuse its original operator row + Task instead of minting a
+	// duplicate. Additive + optional — absent → today's behaviour, byte-identical.
+	const clientTurnId =
+		typeof body.client_turn_id === 'string' && body.client_turn_id.trim()
+			? body.client_turn_id.trim()
+			: null;
+
 	const ctx = await prepareStream({
 		messages,
 		threadId,
@@ -227,11 +247,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		provider: body.provider,
 		model: body.model,
 		targetRepoHint: body.target_repo,
-		headers: request.headers
+		headers: request.headers,
+		clientTurnId
 	});
 	const {
 		taskId,
 		operatorRowId,
+		reused,
 		currentTier,
 		targetRepo,
 		provider,
@@ -333,7 +355,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					// a single reply token and wrote no assistant row. Undo THIS turn's
 					// operator row + proposed Task. (An errored turn that DID emit text
 					// falls through — a token was shown, so it is not rolled back.)
-					rollbackOrphanTurn(operatorRowId, taskId);
+					// reused===true short-circuits inside — never nuke a reused row/task.
+					rollbackOrphanTurn(operatorRowId, taskId, reused);
 				}
 
 				// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
@@ -383,7 +406,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		// model NEVER ran, zero tokens emitted, no assistant row written. The
 		// operator row + 'proposed' Task minted in prepareStream would otherwise
 		// dangle. Undo BOTH before returning the 503; best-effort, never masks it.
-		rollbackOrphanTurn(operatorRowId, taskId);
+		// reused===true short-circuits inside — never nuke a reused row/task.
+		rollbackOrphanTurn(operatorRowId, taskId, reused);
 		return new Response(
 			JSON.stringify({ error: 'credential_unavailable', detail: (err as Error).message }),
 			{ status: 503, headers: { 'Content-Type': 'application/json' } }
@@ -491,7 +515,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						// emitting a reply token and wrote no assistant row. Undo THIS
 						// turn's operator row + proposed Task (only routing data-parts
 						// were sent, never a reply token).
-						rollbackOrphanTurn(operatorRowId, taskId);
+						// reused===true short-circuits inside — never nuke a reused row/task.
+						rollbackOrphanTurn(operatorRowId, taskId, reused);
 					}
 				},
 				onError: (error: unknown) =>
@@ -567,7 +592,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					// operator row + proposed Task. Gated on fullText (every chunk lands
 					// there before the buffer/stream split) so a turn where the model DID
 					// emit tokens is never rolled back.
-					if (!fullText) rollbackOrphanTurn(operatorRowId, taskId);
+					// reused===true short-circuits inside — never nuke a reused row/task.
+					if (!fullText) rollbackOrphanTurn(operatorRowId, taskId, reused);
 					return;
 				}
 
@@ -824,7 +850,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				// turn, and SKIP the dispatch decision below (an errored turn makes no
 				// routing decision). A turn that emitted a token lands in the finalText
 				// branch above and is never rolled back.
-				rollbackOrphanTurn(operatorRowId, taskId);
+				// reused===true short-circuits inside — never nuke a reused row/task.
+				rollbackOrphanTurn(operatorRowId, taskId, reused);
 				return;
 			} else {
 				// No reply text but the SDK call finished cleanly — advance state so
