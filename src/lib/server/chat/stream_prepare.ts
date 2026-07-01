@@ -87,6 +87,12 @@ export interface TurnLifecycleResult {
 	threadState: ThreadState;
 	targetRepo: string;
 	userMessageText: string;
+	/**
+	 * chat_messages.id of THIS turn's own operator row (just persisted). Used by
+	 * the hot-window assembly to scope history to this turn's boundary so a
+	 * concurrent peer turn on the same thread can't cross-contaminate the reply.
+	 */
+	operatorRowId: number;
 	/** Result of the Mutation Gate (R2). Required — compile-enforced so the turn can't proceed without it. */
 	mutationGate: MutationGateResult;
 	/** Pre-stream shadow decision (D1). Journaled only — does not alter reply or dispatch. */
@@ -108,7 +114,16 @@ export async function prepareTurnLifecycle(
 	const normalizedText = normalizeInputText(text, sourceToNormalizationMode(source));
 
 	const taskId = mintTaskId();
-	persistUserTurn({ text: normalizedText, threadId, taskId, source, sender: args.sender });
+	// Capture the persisted operator row so the hot-window assembly (prepareStream)
+	// can pin its history to THIS turn's own boundary (row id) and never pull in a
+	// concurrent peer turn's freshly-persisted operator row.
+	const operatorRow = persistUserTurn({
+		text: normalizedText,
+		threadId,
+		taskId,
+		source,
+		sender: args.sender
+	});
 	const { currentTier, threadState } = classifyAndTouchThread({
 		threadId,
 		userText: normalizedText,
@@ -135,6 +150,7 @@ export async function prepareTurnLifecycle(
 		threadState,
 		targetRepo,
 		userMessageText: normalizedText,
+		operatorRowId: operatorRow.id,
 		mutationGate,
 		shadowDecision
 	};
@@ -238,6 +254,7 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 		currentTier,
 		threadState,
 		targetRepo: lifecycleTargetRepo,
+		operatorRowId,
 		mutationGate,
 		shadowDecision
 	} = await prepareTurnLifecycle({
@@ -256,25 +273,39 @@ export async function prepareStream(args: PrepareArgs): Promise<PreparedStreamCo
 	// HOT_WINDOW must match working_memory.ts (the Layer-1 summary covers only
 	// older-than-window history; these last turns are sent verbatim).
 	const HOT_WINDOW = 20;
-	const priorTurns: UIMessage[] = getChatMessages(HOT_WINDOW, threadId)
-		.filter(
-			(r) => r.sender !== 'system' && typeof r.message === 'string' && r.message.trim() !== ''
-		)
-		.map(
-			(r) =>
-				({
-					id: String(r.id),
-					role: r.sender === 'operator' ? 'user' : 'assistant',
-					parts: [{ type: 'text', text: r.message }]
-				}) as UIMessage
-		);
-	// Drop the DB's text-only copy of the current turn(s) and use the body's
-	// version instead — it preserves rich parts (e.g. image attachments) that
-	// chat_messages stores only as text.
-	const modelMessages: UIMessage[] = [
-		...priorTurns.slice(0, Math.max(0, priorTurns.length - messages.length)),
-		...messages
-	];
+	// Concurrency scope (M6): two operator messages sent to the SAME thread ~1-2s
+	// apart used to cross-contaminate — the later turn read the earlier, still
+	// in-flight peer's freshly-persisted operator row into its window and answered
+	// BOTH messages (the old `slice(0, len - messages.length)` only dropped a fixed
+	// count from the end, so a peer's dangling operator row survived). Pin the
+	// window to THIS turn's own operator row instead, keyed off its just-persisted
+	// row id:
+	//   1. Exclude any row a later peer persisted AFTER our snapshot (id >
+	//      operatorRowId) — not part of this turn's history.
+	//   2. Drop the TRAILING run of operator rows — our own just-persisted text copy
+	//      PLUS any concurrent-peer operator row(s) that landed alongside it — then
+	//      append the body's rich copy of our own turn instead (it preserves parts
+	//      like image attachments that chat_messages stores only as text).
+	// A settled (non-concurrent) thread ends in exactly ONE trailing operator row —
+	// this turn's own — so single-send history is unchanged from before.
+	const windowRows = getChatMessages(HOT_WINDOW, threadId).filter(
+		(r) =>
+			r.sender !== 'system' &&
+			typeof r.message === 'string' &&
+			r.message.trim() !== '' &&
+			r.id <= operatorRowId
+	);
+	let priorCut = windowRows.length;
+	while (priorCut > 0 && windowRows[priorCut - 1].sender === 'operator') priorCut--;
+	const priorTurns: UIMessage[] = windowRows.slice(0, priorCut).map(
+		(r) =>
+			({
+				id: String(r.id),
+				role: r.sender === 'operator' ? 'user' : 'assistant',
+				parts: [{ type: 'text', text: r.message }]
+			}) as UIMessage
+	);
+	const modelMessages: UIMessage[] = [...priorTurns, ...messages];
 
 	const targetRepo = lifecycleTargetRepo;
 
