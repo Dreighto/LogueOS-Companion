@@ -2,6 +2,7 @@ import type { DeclaredArtifact } from './verifyPoll';
 import { workerLabel } from './worker-registry';
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 const DELIVERABLE_EXT = new Set([
 	'pdf',
@@ -374,7 +375,7 @@ export interface InlineArtifactInput {
  *  turn's artifacts under the SAME id so the live card resolves. */
 export function mintTeacherTraceId(): string {
 	const stamp = Date.now();
-	const rand = Math.floor(stamp % 1_000_000).toString(16);
+	const rand = randomBytes(4).toString('hex');
 	return `sully-teacher-${stamp}-${rand}`;
 }
 
