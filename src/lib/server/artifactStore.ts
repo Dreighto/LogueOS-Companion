@@ -425,3 +425,71 @@ export function promoteInlineArtifacts(
 		return [];
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Thread hard-delete cascade — remove a thread's durable artifacts so nothing
+// orphans on disk when the thread is purged/deleted. Two keying paths, unioned:
+//   1. trace ids gathered from the thread's chat_messages / pending_jobs rows
+//      (worker-promoted artifacts live at <store>/<date>/<traceId>/).
+//   2. a full manifest scan for entries tagged thread_id === threadId (teacher
+//      inline artifacts carry thread_id even when their synthetic trace never
+//      lands on a chat_messages row).
+// Returns the number of store dirs removed.
+// ---------------------------------------------------------------------------
+export function purgeThreadArtifacts(threadId: string, traceIds: string[] = []): number {
+	const repoRoot = artifactRepoRoot();
+	const dirs = new Set<string>();
+
+	// 1. Resolve each trace id to its (date-partitioned) store dir.
+	for (const tid of traceIds) {
+		if (!tid) continue;
+		try {
+			const dir = findStoreDir(repoRoot, tid);
+			if (dir) dirs.add(dir);
+		} catch {
+			/* unresolvable trace — nothing to remove */
+		}
+	}
+
+	// 2. Scan manifests for any artifact tagged with this thread_id.
+	const root = storeRoot(repoRoot);
+	if (fs.existsSync(root)) {
+		let dates: string[] = [];
+		try {
+			dates = fs.readdirSync(root);
+		} catch {
+			dates = [];
+		}
+		for (const date of dates) {
+			const dateDir = path.join(root, date);
+			let traces: string[] = [];
+			try {
+				traces = fs.readdirSync(dateDir);
+			} catch {
+				continue;
+			}
+			for (const trace of traces) {
+				const dir = path.join(dateDir, trace);
+				if (!fs.existsSync(path.join(dir, 'manifest.json'))) continue;
+				try {
+					if (readManifest(dir).some((m) => m.thread_id && m.thread_id === threadId)) {
+						dirs.add(dir);
+					}
+				} catch {
+					/* skip unreadable manifest */
+				}
+			}
+		}
+	}
+
+	let purged = 0;
+	for (const dir of dirs) {
+		try {
+			fs.rmSync(dir, { recursive: true, force: true });
+			purged++;
+		} catch (e) {
+			console.error('purgeThreadArtifacts rm error:', dir, e);
+		}
+	}
+	return purged;
+}
