@@ -38,11 +38,16 @@ import { upsertThreadTier } from '$lib/server/thread_state';
 import { touchLastActivity } from '$lib/server/thread_meta';
 import { getSensitiveTools } from '$lib/server/companion_tools';
 import { persistAssistantTurn } from '$lib/server/chat_turn';
+import { markSelfHandled } from '$lib/server/dispatchJobs';
+import { logTaskEvent } from '$lib/server/chatActivity';
 import { logEscalation } from '$lib/server/escalation_telemetry';
 import { resolveChatModel, MODELS } from '$lib/server/model_catalog';
 import { serverConfig } from '$lib/server/config';
 import { baseTools } from '$lib/server/chat/base_tools';
-import { extractAndPromoteArtifacts } from '$lib/server/chat/artifact_sentinel';
+import {
+	extractAndPromoteArtifacts,
+	hasLiveArtifactSignal
+} from '$lib/server/chat/artifact_sentinel';
 import { maybeAutoTitle } from '$lib/server/auto_title';
 import { extractGateBlock, validateGate } from '$lib/server/decisionGate';
 import type { TurnDecision } from '$lib/server/routing/turn_decision';
@@ -355,6 +360,19 @@ function generateImageReply(opts: {
 				taskId: taskId ?? undefined,
 				provider: 'gemini'
 			});
+			// Close the turn's ledger arc as self-handled. The image short-circuit
+			// never runs applyTurnDecision, so without this the pending_jobs row
+			// (proposed→classified) would stall at 'classified' forever. markSelfHandled
+			// is status-guarded to proposed/classified (no-op if already advanced) and
+			// links the just-persisted 'agy' image reply as synthesis_message_id.
+			if (taskId) {
+				markSelfHandled(taskId);
+				logTaskEvent(taskId, 'gate_evaluated', {
+					action: 'Talk',
+					reason: 'image-generation',
+					dispatched: false
+				});
+			}
 			void maybeAutoTitle(threadId);
 			writer.write({ type: 'start-step' });
 			writer.write({ type: 'text-start', id: textId });
@@ -556,7 +574,12 @@ export const POST: RequestHandler = async ({ request }) => {
 				if (!errored) {
 					// Persist the full reply and run the (possibly gate-escalated)
 					// decision: DISPATCH a worker, PROPOSE, or journal Talk + markSelfHandled.
-					await finalizeReply({
+					// FIRE-AND-FORGET: same pattern as the direct path — the 'finish'
+					// frame is already written above, so the client has the full reply
+					// and finish signal. Don't couple SSE stream close to finalizeReply's
+					// persist + dispatch-listener roundtrip (it holds the iOS reveal drip).
+					// Observable via next pollMessages.
+					void finalizeReply({
 						rawText: collected,
 						decision,
 						threadId,
@@ -567,7 +590,7 @@ export const POST: RequestHandler = async ({ request }) => {
 						model: resolvedModelId,
 						tier: currentTier,
 						provider
-					});
+					}).catch((e) => console.error('[sdk-stream] cli finalize failed', e));
 				}
 			},
 			onError: (error: unknown) => {
@@ -631,7 +654,7 @@ export const POST: RequestHandler = async ({ request }) => {
 					const ck = chunk as { type?: string; text?: string; textDelta?: string; delta?: string };
 					if (ck.type === 'text-delta') {
 						artifactAcc += ck.text ?? ck.textDelta ?? ck.delta ?? '';
-						if (!artifactSignaled && artifactAcc.includes('<<<SULLY_ARTIFACT')) {
+						if (!artifactSignaled && hasLiveArtifactSignal(artifactAcc)) {
 							artifactSignaled = true;
 							writer.write({ type: 'data-sully-artifact', data: { traceId: artifactTrace } });
 						}

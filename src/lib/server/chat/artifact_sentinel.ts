@@ -24,9 +24,33 @@ import {
 const OPEN_RE = /<<<SULLY_ARTIFACT\s*(\{[\s\S]*?\})\s*>>>/g;
 const CLOSE_TAG = '<<<END_SULLY_ARTIFACT>>>';
 
+// Non-global (no lastIndex state) variant used to decide whether the live
+// "generating…" card should fire mid-stream. Same header shape as OPEN_RE plus
+// a capture of everything after the closing `>>>` so we can require content.
+const LIVE_OPEN_RE = /<<<SULLY_ARTIFACT\s*(\{[\s\S]*?\})\s*>>>([\s\S]*)/;
+
 /** True if the text contains an artifact sentinel — cheap pre-check. */
 export function hasArtifactSentinel(text: string): boolean {
 	return text.includes('<<<SULLY_ARTIFACT');
+}
+
+/**
+ * True only for a sentinel that would actually promote: a complete opening
+ * sentinel (`<<<SULLY_ARTIFACT {header}>>>`) with a parseable JSON header AND
+ * at least one non-whitespace byte of content before the close tag. Mirrors the
+ * promote-eligibility test in extractAndPromoteArtifacts so the mid-stream live
+ * card can never outlive a block that won't be promoted (no ghost cards).
+ */
+export function hasLiveArtifactSignal(text: string): boolean {
+	const m = text.match(LIVE_OPEN_RE);
+	if (!m) return false;
+	try {
+		JSON.parse(m[1]);
+	} catch {
+		return false;
+	}
+	const after = m[2].split(CLOSE_TAG)[0];
+	return after.trim().length > 0;
 }
 
 /**
