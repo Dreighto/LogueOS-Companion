@@ -274,7 +274,7 @@ function generateImageReply(opts: {
 				writer.write({ type: 'finish', finishReason: 'error' });
 				return;
 			}
-			persistAssistantTurn({
+			const replyId = persistAssistantTurn({
 				text: md,
 				sender: 'agy',
 				threadId,
@@ -301,6 +301,13 @@ function generateImageReply(opts: {
 			writer.write({ type: 'text-delta', id: textId, delta: md });
 			writer.write({ type: 'text-end', id: textId });
 			writer.write({ type: 'finish-step' });
+			// Stage 1 (server-owned reply-id): emit the persisted row id on a terminal
+			// data-sully-reply-id frame BEFORE finish so the client reconciles the
+			// streamed reply to its stored row without polling history. Guard: only a
+			// valid persisted id (>0) — never on a rolled-back / zero-token turn.
+			if (typeof replyId === 'number' && replyId > 0) {
+				writer.write({ type: 'data-sully-reply-id', data: { id: replyId } });
+			}
 			writer.write({ type: 'finish', finishReason: 'stop' });
 		}
 	});
@@ -486,9 +493,10 @@ export const POST: RequestHandler = async ({ request }) => {
 
 				writer.write({ type: 'text-end', id: textId });
 				writer.write({ type: 'finish-step' });
-				writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
 
 				// Persist the full reply — never a half/failed gen.
+				// Stage 1: persist BEFORE finish so the stored row id can be captured.
+				let replyId: number | undefined;
 				if (collected && !errored) {
 					// SULLY_ARTIFACT promote flow: strip the sentinel block(s) from the
 					// persisted prose and promote them to the durable store under the
@@ -499,7 +507,7 @@ export const POST: RequestHandler = async ({ request }) => {
 						{ threadId, taskId },
 						artifactTrace
 					);
-					persistAssistantTurn({
+					replyId = persistAssistantTurn({
 						text: strippedText || collected,
 						sender: senderLabel,
 						threadId,
@@ -521,6 +529,15 @@ export const POST: RequestHandler = async ({ request }) => {
 					// reused===true short-circuits inside — never nuke a reused row/task.
 					rollbackOrphanTurn(operatorRowId, taskId, reused);
 				}
+
+				// Stage 1 (server-owned reply-id): persist happened above; emit the stored
+				// row id on a terminal data-sully-reply-id frame BEFORE finish so the client
+				// reconciles the streamed reply to its row without polling history. Guard:
+				// only a valid persisted id (>0) — never on a rolled-back / zero-token turn.
+				if (typeof replyId === 'number' && replyId > 0) {
+					writer.write({ type: 'data-sully-reply-id', data: { id: replyId } });
+				}
+				writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
 
 				// D2.1: Replace maybeAutonomousDispatch with applyTurnDecision.
 				// decision is ANSWER_NOW/CONVERSATIONAL_ONLY here (work turns already
@@ -655,11 +672,11 @@ export const POST: RequestHandler = async ({ request }) => {
 
 					writer.write({ type: 'text-end', id: textId });
 					writer.write({ type: 'finish-step' });
-					writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
 
+					let replyId: number | undefined;
 					if (cloudCollected && !errored) {
 						updateEscalationCloudOutput(taskId, cloudCollected);
-						persistAssistantTurn({
+						replyId = persistAssistantTurn({
 							text: cloudCollected,
 							sender: 'cc',
 							threadId,
@@ -669,13 +686,6 @@ export const POST: RequestHandler = async ({ request }) => {
 							provider: 'anthropic',
 							reused
 						});
-						await applyTurnDecision(decision, {
-							taskId,
-							threadId,
-							targetRepo,
-							userText: userMessageText,
-							reused
-						});
 					} else if (errored && !cloudCollected) {
 						// Orphan rollback (Stage 1): the cloud model errored before
 						// emitting a reply token and wrote no assistant row. Undo THIS
@@ -683,6 +693,25 @@ export const POST: RequestHandler = async ({ request }) => {
 						// were sent, never a reply token).
 						// reused===true short-circuits inside — never nuke a reused row/task.
 						rollbackOrphanTurn(operatorRowId, taskId, reused);
+					}
+
+					// Stage 1 (server-owned reply-id): persist happened above; emit the stored
+					// row id on a terminal data-sully-reply-id frame BEFORE finish so the client
+					// reconciles the streamed reply to its row without polling history. Guard:
+					// only a valid persisted id (>0) — never on a rolled-back / zero-token turn.
+					if (typeof replyId === 'number' && replyId > 0) {
+						writer.write({ type: 'data-sully-reply-id', data: { id: replyId } });
+					}
+					writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
+
+					if (cloudCollected && !errored) {
+						await applyTurnDecision(decision, {
+							taskId,
+							threadId,
+							targetRepo,
+							userText: userMessageText,
+							reused
+						});
 					}
 				},
 				onError: (error: unknown) =>
@@ -810,11 +839,11 @@ export const POST: RequestHandler = async ({ request }) => {
 
 					writer.write({ type: 'text-end', id: textId });
 					writer.write({ type: 'finish-step' });
-					writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
 
+					let replyId: number | undefined;
 					if (cloudCollected && !errored) {
 						updateEscalationCloudOutput(taskId, cloudCollected);
-						persistAssistantTurn({
+						replyId = persistAssistantTurn({
 							text: cloudCollected,
 							sender: 'cc',
 							threadId,
@@ -824,6 +853,18 @@ export const POST: RequestHandler = async ({ request }) => {
 							provider: 'anthropic',
 							reused
 						});
+					}
+
+					// Stage 1 (server-owned reply-id): persist happened above; emit the stored
+					// row id on a terminal data-sully-reply-id frame BEFORE finish so the client
+					// reconciles the streamed reply to its row without polling history. Guard:
+					// only a valid persisted id (>0) — never on a rolled-back / zero-token turn.
+					if (typeof replyId === 'number' && replyId > 0) {
+						writer.write({ type: 'data-sully-reply-id', data: { id: replyId } });
+					}
+					writer.write({ type: 'finish', finishReason: errored ? 'error' : 'stop' });
+
+					if (cloudCollected && !errored) {
 						await applyTurnDecision(decision, {
 							taskId,
 							threadId,
@@ -841,10 +882,10 @@ export const POST: RequestHandler = async ({ request }) => {
 				}
 				writer.write({ type: 'text-end', id: textId });
 				writer.write({ type: 'finish-step' });
-				writer.write({ type: 'finish', finishReason: 'stop' });
 
+				let replyId: number | undefined;
 				if (localText) {
-					persistAssistantTurn({
+					replyId = persistAssistantTurn({
 						text: localText,
 						sender: 'local',
 						threadId,
@@ -858,6 +899,16 @@ export const POST: RequestHandler = async ({ request }) => {
 					upsertThreadTier(threadId, currentTier, resolvedModelId);
 					touchLastActivity(threadId);
 				}
+
+				// Stage 1 (server-owned reply-id): persist happened above; emit the stored
+				// row id on a terminal data-sully-reply-id frame BEFORE finish so the client
+				// reconciles the streamed reply to its row without polling history. Guard:
+				// only a valid persisted id (>0) — never on a rolled-back / zero-token turn.
+				if (typeof replyId === 'number' && replyId > 0) {
+					writer.write({ type: 'data-sully-reply-id', data: { id: replyId } });
+				}
+				writer.write({ type: 'finish', finishReason: 'stop' });
+
 				await applyTurnDecision(decision, {
 					taskId,
 					threadId,

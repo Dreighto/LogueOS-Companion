@@ -238,7 +238,7 @@ export function persistAssistantTurn(args: {
 	 * (CLI/direct/local); voice + unkeyed turns leave it false.
 	 */
 	reused?: boolean;
-}): void {
+}): number {
 	// Stage 3a: on a keyed REUSE, this new reply REPLACES the prior one — delete the
 	// stale chat reply(ies) for this reused Task BEFORE writing the new row (so we
 	// never delete the row we are about to insert). Tightly scoped in the helper by
@@ -262,7 +262,7 @@ export function persistAssistantTurn(args: {
 		latencyMs: args.latencyMs ?? null,
 		error: args.error ?? null
 	};
-	addChatMessage(
+	const insertedReply = addChatMessage(
 		args.sender,
 		args.text,
 		args.traceId ?? null,
@@ -287,4 +287,11 @@ export function persistAssistantTurn(args: {
 	// Layer 1 (working memory): refresh the pre-hot-window summary in the
 	// background. Fire-and-forget — never block the reply.
 	void maybeUpdateThreadSummary(args.threadId).catch(() => {});
+
+	// Stage 1 (server-owned reply-id): return the persisted chat_messages.id so the
+	// manual-writer stream paths can emit a terminal data-sully-reply-id frame,
+	// letting the client reconcile the streamed reply to its stored row without
+	// polling history. Additive — existing callers that ignore the return are
+	// byte-for-byte unaffected.
+	return insertedReply.id;
 }
