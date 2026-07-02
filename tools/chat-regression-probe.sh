@@ -101,6 +101,8 @@ if [[ "$FULL" == 1 ]]; then
 fi
 
 # ---- verdict ----------------------------------------------------------------
+# Cost note (no LLM/agent tokens; only Gemini API calls this run made).
+if [[ "$FULL" == 1 ]]; then echo "  COST: ~2 Gemini text turns + 1 image gen (--full)"; else echo "  COST: ~1 Gemini text turn (default tier)"; fi
 echo "=== $PASSES passed, ${#FAILS[@]} failed ==="
 if [[ ${#FAILS[@]} -gt 0 ]]; then
   printf '  ANOMALY: %s\n' "${FAILS[@]}"
