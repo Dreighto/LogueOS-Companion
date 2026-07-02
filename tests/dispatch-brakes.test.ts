@@ -124,20 +124,64 @@ describe('token bucket', () => {
 	});
 });
 
-describe('fingerprint re-escalation guard', () => {
-	it('refuses the same fingerprint twice within the conversation cap', async () => {
+describe('fingerprint re-escalation guard (windowed + thread-scoped)', () => {
+	it('refuses the same fingerprint twice in the SAME thread within the window', async () => {
 		const j = await import('$lib/server/dispatchJobs');
 		const { fingerprintFor, checkFingerprint } = await import('$lib/server/dispatchBrakes');
 		const fp = fingerprintFor('fix build', 'code', 'companion');
-		expect(checkFingerprint(fp).allowed).toBe(true);
+		expect(checkFingerprint(fp, 'thread-A').allowed).toBe(true);
 		j.createJob({
 			traceId: 's9',
 			worker: 'claude-code',
 			category: 'code',
 			brief: 'fix build',
 			fingerprint: fp,
-			predictedTokens: 0
+			predictedTokens: 0,
+			threadId: 'thread-A'
 		});
-		expect(checkFingerprint(fp).allowed).toBe(false);
+		// A fresh identical dispatch in the same thread, seconds later, is still held.
+		expect(checkFingerprint(fp, 'thread-A').allowed).toBe(false);
+	});
+
+	it('ALLOWS the same fingerprint in a DIFFERENT thread', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		const { fingerprintFor, checkFingerprint } = await import('$lib/server/dispatchBrakes');
+		const fp = fingerprintFor('speed test', 'code', 'companion');
+		j.createJob({
+			traceId: 's10',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'speed test',
+			fingerprint: fp,
+			predictedTokens: 0,
+			threadId: 'thread-A'
+		});
+		// Same brief, different conversation → legitimate new request, not a loop.
+		expect(checkFingerprint(fp, 'thread-B').allowed).toBe(true);
+	});
+
+	it('ALLOWS the same fingerprint once the prior dispatch is OUTSIDE the 10-min window', async () => {
+		const j = await import('$lib/server/dispatchJobs');
+		const { fingerprintFor, checkFingerprint } = await import('$lib/server/dispatchBrakes');
+		const { serverConfig } = await import('$lib/server/config');
+		const fp = fingerprintFor('nightly report', 'code', 'companion');
+		j.createJob({
+			traceId: 's11',
+			worker: 'claude-code',
+			category: 'code',
+			brief: 'nightly report',
+			fingerprint: fp,
+			predictedTokens: 0,
+			threadId: 'thread-A'
+		});
+		// Backdate the prior dispatch's started_at to 11 minutes ago (UTC, matching
+		// the CURRENT_TIMESTAMP format the guard compares against).
+		const db = new Database(serverConfig.memoryDbPath);
+		db.prepare(
+			"UPDATE pending_jobs SET started_at = datetime('now', '-11 minutes') WHERE trace_id = ?"
+		).run('s11');
+		db.close();
+		// The identical brief run 11 min ago is a legitimate new request now.
+		expect(checkFingerprint(fp, 'thread-A').allowed).toBe(true);
 	});
 });

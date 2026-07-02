@@ -26,13 +26,14 @@
 import { addChatMessage } from '$lib/server/chat';
 import { runMode } from '$lib/server/config';
 import { dispatchToWorker } from '$lib/server/companionDispatch';
-import { logTaskEvent } from '$lib/server/chatActivity';
+import { logTaskEvent, hasTaskEvent } from '$lib/server/chatActivity';
 import { mintTaskId } from '$lib/server/chat_turn';
 import {
 	markSelfHandled,
 	markGatedProposal,
 	getPendingProposal,
-	markAborted
+	markAborted,
+	getJob
 } from '$lib/server/dispatchJobs';
 import { captureGateBlock } from '$lib/server/routing/captureGate';
 import { isAffirmation } from '$lib/server/routing/confirm';
@@ -90,6 +91,30 @@ export interface ApplyTurnDecisionCtx {
 	 *  companion-v1-voice; persisting the template polluted history and made
 	 *  the next turn echo the template's style. */
 	suppressSpokenChatRow?: boolean;
+	/**
+	 * Stage 2 residual: true when this turn REUSED a pre-existing operator row +
+	 * Task (a keyed retry / regenerate / reconnect re-POST). Such a turn already
+	 * ran its dispatch decision on the first attempt, so re-running it here would
+	 * fire a SECOND dispatch + a second "Dispatch held" system message for the
+	 * same task (chat_messages 2134/2135, 4s apart, one pending_jobs row). The
+	 * guard below skips the re-decision when the task already decided. Absent /
+	 * false for a fresh turn (the common case) — no behavior change there.
+	 */
+	reused?: boolean;
+}
+
+/**
+ * Idempotency probe for the Stage 2 reuse guard: has this task already had its
+ * dispatch decision applied? True if any applyTurnDecision arm already journaled
+ * a `gate_evaluated` event, OR the pending_jobs row has advanced past the
+ * pre-decision states (proposed/classified) — either way a prior turn acted on
+ * it. A reused turn that was interrupted BEFORE its decision (no gate event, row
+ * still proposed/classified) returns false, so it still dispatches.
+ */
+function taskAlreadyDecided(taskId: string): boolean {
+	if (hasTaskEvent(taskId, 'gate_evaluated')) return true;
+	const job = getJob(taskId);
+	return !!job && job.status !== 'proposed' && job.status !== 'classified';
 }
 
 /**
@@ -102,6 +127,13 @@ export async function applyTurnDecision(
 	ctx: ApplyTurnDecisionCtx
 ): Promise<{ spokenSuffix?: string }> {
 	const { taskId, threadId, targetRepo, userText } = ctx;
+	// Stage 2 reuse guard: a keyed retry/regenerate/reconnect re-POST reuses the
+	// original operator row + Task and re-runs the stream, reaching here a SECOND
+	// time for a task whose decision already fired. Skip the re-decision (and the
+	// duplicate dispatch / "Dispatch held" system message) when this task already
+	// decided. Scoped to reused turns so a fresh turn never pays the DB probe; an
+	// interrupted-before-decision retry (reused but not yet decided) still runs.
+	if (ctx.reused && taskAlreadyDecided(taskId)) return {};
 	// Voice-reply opts out of templated spoken chat rows — companion-v1-voice
 	// will generate the spoken reply naturally and those template rows in
 	// history bias the next turn toward AI-chatbot phrasing. Keep all OTHER

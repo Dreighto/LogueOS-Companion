@@ -402,7 +402,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	// so the SDK client closes cleanly (frontend deletes the empty placeholder).
 	const decision = shadowDecision;
 	if (!needsFullReply(decision)) {
-		await applyTurnDecision(decision, { taskId, threadId, targetRepo, userText: userMessageText });
+		await applyTurnDecision(decision, {
+			taskId,
+			threadId,
+			targetRepo,
+			userText: userMessageText,
+			reused
+		});
 		const stream = createUIMessageStream({
 			execute: ({ writer }) => {
 				const messageId = generateId();
@@ -524,7 +530,8 @@ export const POST: RequestHandler = async ({ request }) => {
 						taskId,
 						threadId,
 						targetRepo,
-						userText: userMessageText
+						userText: userMessageText,
+						reused
 					});
 				}
 			},
@@ -666,7 +673,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							taskId,
 							threadId,
 							targetRepo,
-							userText: userMessageText
+							userText: userMessageText,
+							reused
 						});
 					} else if (errored && !cloudCollected) {
 						// Orphan rollback (Stage 1): the cloud model errored before
@@ -820,7 +828,8 @@ export const POST: RequestHandler = async ({ request }) => {
 							taskId,
 							threadId,
 							targetRepo,
-							userText: userMessageText
+							userText: userMessageText,
+							reused
 						});
 					}
 					return;
@@ -853,7 +862,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					taskId,
 					threadId,
 					targetRepo,
-					userText: userMessageText
+					userText: userMessageText,
+					reused
 				});
 			},
 			onError: (error: unknown) =>
@@ -1030,7 +1040,8 @@ export const POST: RequestHandler = async ({ request }) => {
 				taskId,
 				threadId,
 				targetRepo,
-				userText: userMessageText
+				userText: userMessageText,
+				reused
 			}).catch((e) => {
 				console.error('[sdk-stream] autonomous-dispatch failed', e);
 			});

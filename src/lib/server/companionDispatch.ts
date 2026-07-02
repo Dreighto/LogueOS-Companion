@@ -78,7 +78,8 @@ export async function dispatchToWorker(input: DispatchInput): Promise<DispatchRe
 	if (!cap.allowed)
 		return { ok: false, reason: `daily dispatch cap reached (${cap.used}/${cap.cap})` };
 	const fp = fingerprintFor(input.brief, input.category, input.targetRepo);
-	if (!checkFingerprint(fp).allowed) return { ok: false, reason: 'duplicate dispatch fingerprint' };
+	if (!checkFingerprint(fp, input.threadId).allowed)
+		return { ok: false, reason: 'duplicate dispatch fingerprint' };
 	if (!dispatchBucket.take()) return { ok: false, reason: 'rate limited' };
 
 	// ── Dispatch-rejection backstop (R2.2 §3): hard structural guard against

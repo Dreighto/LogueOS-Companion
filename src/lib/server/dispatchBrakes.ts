@@ -8,6 +8,10 @@ import { serverConfig } from './config';
 export const DEFAULT_RETRIES = 2;
 // Max re-uses of one content fingerprint per conversation before refusal.
 const FINGERPRINT_CAP = 1;
+// Fingerprint dedup only looks back this many minutes. A byte-identical brief
+// dispatched hours ago is a legitimate NEW request, not a re-escalation loop;
+// only a rapid-fire repeat inside this window (same thread) is suppressed.
+const FINGERPRINT_WINDOW_MIN = 10;
 
 export function fingerprintFor(brief: string, category: string, targetRepo: string): string {
 	return crypto
@@ -97,20 +101,31 @@ export class TokenBucket {
 export const dispatchBucket = new TokenBucket(5, 1 / 30);
 
 // ── Content-fingerprint no-re-escalation ────────────────────────────────────
-export function checkFingerprint(fp: string): { allowed: boolean } {
+// Anti-re-escalation-loop guard, scoped to WINDOW + THREAD. Counts only
+// matching-fingerprint real dispatches that (a) belong to the same thread and
+// (b) started inside the last FINGERPRINT_WINDOW_MIN minutes. Without both
+// scopes a single byte-identical brief blocked forever, globally (operator hit
+// this: an identical brief run ~18h earlier in another turn HELD a fresh one).
+// A second identical dispatch inside the window in the same thread is still
+// held — that's the actual re-escalation loop this guard exists to stop.
+export function checkFingerprint(fp: string, threadId: string): { allowed: boolean } {
 	if (!fs.existsSync(serverConfig.memoryDbPath)) return { allowed: true };
 	const db = new Database(serverConfig.memoryDbPath, { readonly: true });
 	try {
 		// Proposed/self-handled rows carry fingerprint='' so a real (non-empty)
 		// fingerprint never matches them; the status filter is belt-and-braces
 		// in case a future caller sets a fingerprint pre-dispatch.
+		// started_at is a UTC CURRENT_TIMESTAMP TEXT; datetime('now', -N minutes)
+		// is also UTC, so the string comparison is apples-to-apples.
 		const row = db
 			.prepare(
 				`SELECT COUNT(*) AS n FROM pending_jobs
 				 WHERE fingerprint = ?
-				   AND status NOT IN ('proposed','classified','gated','held')`
+				   AND thread_id = ?
+				   AND status NOT IN ('proposed','classified','gated','held')
+				   AND started_at >= datetime('now', ?)`
 			)
-			.get(fp) as { n: number };
+			.get(fp, threadId, `-${FINGERPRINT_WINDOW_MIN} minutes`) as { n: number };
 		return { allowed: row.n <= FINGERPRINT_CAP - 1 };
 	} catch {
 		return { allowed: true };
